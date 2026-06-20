@@ -1,5 +1,13 @@
 """今日密码: 三角洲行动每日密码查询"""
 
+__plugin_meta__ = {
+    'name': '三角洲今日密码',
+    'author': 'lengxi',
+    'description': '三角洲行动每日密码查询，支持详细地图显示',
+    'version': '1.0.0',
+}
+
+
 import os
 import json
 import asyncio

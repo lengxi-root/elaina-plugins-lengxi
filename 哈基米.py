@@ -1,5 +1,13 @@
 """哈基米: 随机发送哈基米语音"""
 
+__plugin_meta__ = {
+    'name': '哈基米',
+    'author': 'lengxi',
+    'description': '随机发送哈基米语音',
+    'version': '1.0.0',
+}
+
+
 import os
 import random
 import asyncio

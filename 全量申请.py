@@ -1,5 +1,13 @@
 """全量申请: 生成群全量消息授权链接"""
 
+__plugin_meta__ = {
+    'name': '全量申请',
+    'author': 'lengxi',
+    'description': '生成群全量消息授权链接，支持记录申请与列表查看',
+    'version': '1.0.0',
+}
+
+
 import asyncio
 import json
 import os
