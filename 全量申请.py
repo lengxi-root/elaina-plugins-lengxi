@@ -5,6 +5,7 @@ import json
 import os
 from datetime import datetime
 
+from core.base.config import cfg
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler
 
@@ -19,10 +20,18 @@ _URL_TPL = (
     'https://club.vip.qq.com/transfer?open_kuikly_info='
     '%7B%22page_name%22%3A%20%22ai_group_service_agreement_pop_page%22'
     '%2C%22groupCode%22%3A{group_code}'
-    '%2C%22botUin%22%3A3889045760'
-    '%2C%22botUid%22%3A%22u_OGhA3FNDQ22X3X2SxVh33A%22'
+    '%2C%22botUin%22%3A{bot_uin}'
+    '%2C%22botUid%22%3A%22{bot_uid}%22'
     '%2C%22screen%22%3A1%7D'
 )
+
+
+def _get_bot_uin_uid(appid):
+    """从 bot.yaml 配置读取 uin / uid，uin 留空时回退到 robot_qq"""
+    bot_cfg = cfg.get_bot_config(appid) or {}
+    uin = str(bot_cfg.get('uin', '') or '') or str(bot_cfg.get('robot_qq', '') or '')
+    uid = str(bot_cfg.get('uid', '') or '')
+    return uin, uid
 
 _IMG = '![菜单头图 #300px #250px](https://qqbot.ugcimg.cn/102813815/9fd08ad10f048984fc0a9d36f71dd450e0780587/c7f24f5aeadfb1908561622d43de3169)'
 _INPUT_TIP = "请输入群号\n<qqbot-cmd-input text='全量申请 ' show='请点击这里并输入群号' />\n>授权后无需@伊蕾娜也可以处理指令\n格式：全量申请 群号"
@@ -85,7 +94,10 @@ async def apply_full_access(event, match):
     await _record_apply(event, group_code, 'submitted')
     if event.event_type == 'GROUP_MESSAGE_CREATE':
         return await event.reply(f"<@{event.user_id}> 当前群已开启全量消息，无需再次申请")
-    url = _URL_TPL.format(group_code=group_code)
+    bot_uin, bot_uid = _get_bot_uin_uid(event.appid)
+    if not bot_uin or not bot_uid:
+        return await event.reply(f"<@{event.user_id}> 请先在 bot.yaml 中配置 uin 和 uid")
+    url = _URL_TPL.format(group_code=group_code, bot_uin=bot_uin, bot_uid=bot_uid)
     msg = f"请群主点击按钮授权**(免@)**\n**需要QQ版本(9.2.90及以上)**\n\n>IOS也许暂不支持授权\n\n{_IMG}"
     btn = [[{'text': '群主大大请点击这里同意申请', 'link': url, 'style': 1}]]
     await event.reply(msg, btn)
