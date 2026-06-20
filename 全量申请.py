@@ -4,7 +4,7 @@ __plugin_meta__ = {
     'name': '全量申请',
     'author': 'lengxi',
     'description': '生成群全量消息授权链接，支持记录申请与列表查看',
-    'version': '1.0.0',
+    'version': '1.0.1',
 }
 
 
