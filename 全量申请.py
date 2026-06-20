@@ -4,7 +4,7 @@ __plugin_meta__ = {
     'name': '全量申请',
     'author': 'lengxi',
     'description': '生成群全量消息授权链接，支持记录申请与列表查看',
-    'version': '1.0.1',
+    'version': '1.1.0',
 }
 
 
@@ -13,8 +13,8 @@ import json
 import os
 from datetime import datetime
 
-from core.base.config import cfg
 from core.base.logger import PLUGIN, get_logger
+import core.plugin.context as _ctx
 from core.plugin.decorators import handler
 
 
@@ -34,11 +34,24 @@ _URL_TPL = (
 )
 
 
-def _get_bot_uin_uid(appid):
-    """从 bot.yaml 配置读取 uin / uid，uin 留空时回退到 robot_qq"""
-    bot_cfg = cfg.get_bot_config(appid) or {}
-    uin = str(bot_cfg.get('uin', '') or '') or str(bot_cfg.get('robot_qq', '') or '')
-    uid = str(bot_cfg.get('uid', '') or '')
+_CONFIG_DEFAULTS = {
+    'uin': '',
+    'uid': '',
+}
+_CONFIG_COMMENTS = {
+    'uin': '机器人 UIN (QQ号)',
+    'uid': '机器人 UID',
+}
+
+
+def _get_bot_uin_uid():
+    """从插件目录下 data/config.yaml 读取 uin / uid"""
+    ctx = _ctx.ctx
+    if not ctx:
+        return '', ''
+    config = ctx.ensure_config(_CONFIG_DEFAULTS, comments=_CONFIG_COMMENTS)
+    uin = str(config.get('uin', '') or '')
+    uid = str(config.get('uid', '') or '')
     return uin, uid
 
 _IMG = '![菜单头图 #300px #250px](https://qqbot.ugcimg.cn/102813815/9fd08ad10f048984fc0a9d36f71dd450e0780587/c7f24f5aeadfb1908561622d43de3169)'
@@ -102,9 +115,9 @@ async def apply_full_access(event, match):
     await _record_apply(event, group_code, 'submitted')
     if event.event_type == 'GROUP_MESSAGE_CREATE':
         return await event.reply(f"<@{event.user_id}> 当前群已开启全量消息，无需再次申请")
-    bot_uin, bot_uid = _get_bot_uin_uid(event.appid)
+    bot_uin, bot_uid = _get_bot_uin_uid()
     if not bot_uin or not bot_uid:
-        return await event.reply(f"<@{event.user_id}> 请先在 bot.yaml 中配置 uin 和 uid")
+        return await event.reply(f"<@{event.user_id}> 请先在插件配置 data/config.yaml 中填写 uin 和 uid")
     url = _URL_TPL.format(group_code=group_code, bot_uin=bot_uin, bot_uid=bot_uid)
     msg = f"请群主点击按钮授权**(免@)**\n**需要QQ版本(9.2.90及以上)**\n\n>IOS也许暂不支持授权\n\n{_IMG}"
     btn = [[{'text': '群主大大请点击这里同意申请', 'link': url, 'style': 1}]]
