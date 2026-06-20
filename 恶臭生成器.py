@@ -1,5 +1,13 @@
 """恶臭生成器: 将数字转换为 114514 表达式 (本地计算)"""
 
+__plugin_meta__ = {
+    'name': '恶臭生成器',
+    'author': 'lengxi',
+    'description': '将数字转换为 114514 表达式（本地计算）',
+    'version': '1.0.0',
+}
+
+
 import re
 import math
 import bisect

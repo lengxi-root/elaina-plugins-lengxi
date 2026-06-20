@@ -1,5 +1,13 @@
 """音乐点歌: QQ音乐搜索与播放"""
 
+__plugin_meta__ = {
+    'name': '音乐点歌',
+    'author': 'lengxi',
+    'description': 'QQ音乐搜索与播放',
+    'version': '1.0.0',
+}
+
+
 import urllib.parse
 from collections import OrderedDict
 
