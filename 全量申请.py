@@ -14,7 +14,6 @@ import os
 from datetime import datetime
 
 from core.base.logger import PLUGIN, get_logger
-import core.plugin.context as _ctx
 from core.plugin.decorators import handler, on_load
 
 
@@ -34,22 +33,30 @@ _URL_TPL = (
 )
 
 
+_CONFIG_FILE = os.path.join(_DATA_DIR, 'config.json')
 _CONFIG_DEFAULTS = {
     'uin': '',
     'uid': '',
 }
-_CONFIG_COMMENTS = {
-    'uin': '机器人 UIN (QQ号)',
-    'uid': '机器人 UID',
-}
+
+
+def _ensure_config():
+    """确保 data/config.json 存在，不存在则自动创建默认配置"""
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    if not os.path.isfile(_CONFIG_FILE):
+        with open(_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(_CONFIG_DEFAULTS, f, ensure_ascii=False, indent=2)
+        log.info('已自动生成配置文件: data/config.json')
 
 
 def _get_bot_uin_uid():
-    """从插件目录下 data/config.yaml 读取 uin / uid"""
-    ctx = _ctx.ctx
-    if not ctx:
-        return '', ''
-    config = ctx.ensure_config(_CONFIG_DEFAULTS, comments=_CONFIG_COMMENTS)
+    """从插件目录下 data/config.json 读取 uin / uid"""
+    _ensure_config()
+    try:
+        with open(_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except Exception:
+        config = {}
     uin = str(config.get('uin', '') or '')
     uid = str(config.get('uid', '') or '')
     return uin, uid
@@ -57,7 +64,7 @@ def _get_bot_uin_uid():
 
 @on_load
 def _init_config():
-    _get_bot_uin_uid()
+    _ensure_config()
 
 _IMG = '![菜单头图 #300px #250px](https://qqbot.ugcimg.cn/102813815/9fd08ad10f048984fc0a9d36f71dd450e0780587/c7f24f5aeadfb1908561622d43de3169)'
 _INPUT_TIP = "请输入群号\n<qqbot-cmd-input text='全量申请 ' show='请点击这里并输入群号' />\n>授权后无需@伊蕾娜也可以处理指令\n格式：全量申请 群号"
@@ -122,7 +129,7 @@ async def apply_full_access(event, match):
         return await event.reply(f"<@{event.user_id}> 当前群已开启全量消息，无需再次申请")
     bot_uin, bot_uid = _get_bot_uin_uid()
     if not bot_uin or not bot_uid:
-        return await event.reply(f"<@{event.user_id}> 请先在插件配置 data/config.yaml 中填写 uin 和 uid")
+        return await event.reply(f"<@{event.user_id}> 请先在插件配置 data/config.json 中填写 uin 和 uid")
     url = _URL_TPL.format(group_code=group_code, bot_uin=bot_uin, bot_uid=bot_uid)
     msg = f"请群主点击按钮授权**(免@)**\n**需要QQ版本(9.2.90及以上)**\n\n>IOS也许暂不支持授权\n\n{_IMG}"
     btn = [[{'text': '群主大大请点击这里同意申请', 'link': url, 'style': 1}]]
