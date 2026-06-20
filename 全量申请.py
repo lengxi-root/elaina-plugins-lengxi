@@ -15,7 +15,7 @@ from datetime import datetime
 
 from core.base.logger import PLUGIN, get_logger
 import core.plugin.context as _ctx
-from core.plugin.decorators import handler
+from core.plugin.decorators import handler, on_load
 
 
 log = get_logger(PLUGIN, "全量申请")
@@ -53,6 +53,11 @@ def _get_bot_uin_uid():
     uin = str(config.get('uin', '') or '')
     uid = str(config.get('uid', '') or '')
     return uin, uid
+
+
+@on_load
+def _init_config():
+    _get_bot_uin_uid()
 
 _IMG = '![菜单头图 #300px #250px](https://qqbot.ugcimg.cn/102813815/9fd08ad10f048984fc0a9d36f71dd450e0780587/c7f24f5aeadfb1908561622d43de3169)'
 _INPUT_TIP = "请输入群号\n<qqbot-cmd-input text='全量申请 ' show='请点击这里并输入群号' />\n>授权后无需@伊蕾娜也可以处理指令\n格式：全量申请 群号"
