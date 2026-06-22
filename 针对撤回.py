@@ -98,6 +98,31 @@ def _init():
 # ==================== 工具函数 ====================
 
 
+_appid_cache = None
+
+
+def _get_appid():
+    global _appid_cache
+    if _appid_cache:
+        return _appid_cache
+    try:
+        from core.bot.manager import _bot_manager_ref
+        if _bot_manager_ref:
+            for appid in _bot_manager_ref._bots:
+                _appid_cache = appid
+                return appid
+    except Exception:
+        pass
+    return ''
+
+
+def _avatar(uid):
+    appid = _get_appid()
+    if not appid:
+        return ''
+    return f'https://q.qlogo.cn/qqapp/{appid}/{uid}/100'
+
+
 def _is_bot_admin(group_id):
     """检查机器人是否为该群管理员 (从 data.db 查询)"""
     from core.bot.manager import _bot_manager_ref
@@ -331,9 +356,11 @@ async def list_targets(event, match):
         return
 
     lines = []
-    for i, (uid, expire) in enumerate(group_targets.items()):
+    for uid, expire in group_targets.items():
         remain = _format_remaining(expire)
         cancel_btn = f'<qqbot-cmd-input text="e取消针对 {uid}" show="取消" />'
-        lines.append(f'{i+1}. <@{uid}> ({remain}) {cancel_btn}')
+        av = _avatar(uid)
+        avatar_md = f'![头像 #20px #20px]({av}) ' if av else ''
+        lines.append(f'{avatar_md}<@{uid}> ({remain}) {cancel_btn}')
     await event.reply('针对列表:\n' + '\n'.join(lines))
 
