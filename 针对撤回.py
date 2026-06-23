@@ -88,10 +88,10 @@ async def _periodic_cleanup():
 
 
 @on_load
-def _init():
+async def _init():
     global _cleanup_task
     _load_targets()
-    _cleanup_task = asyncio.get_event_loop().create_task(_periodic_cleanup())
+    _cleanup_task = asyncio.create_task(_periodic_cleanup())
     log.info('针对撤回插件已加载')
 
 
@@ -363,4 +363,5 @@ async def list_targets(event, match):
         avatar_md = f'![头像 #20px #20px]({av}) ' if av else ''
         lines.append(f'{avatar_md}<@{uid}> ({remain}) {cancel_btn}')
     await event.reply('针对列表:\n' + '\n'.join(lines))
+
 
