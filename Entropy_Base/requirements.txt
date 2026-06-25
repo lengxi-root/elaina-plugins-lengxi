@@ -1,0 +1,5 @@
+# 熵增基座依赖
+# 渲染浏览器复用框架自带的 playwright 模块, 无需在此单独 playwright install chromium。
+httpx
+jinja2
+playwright

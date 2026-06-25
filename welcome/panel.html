@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>群成员入群欢迎</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#fff; --card2:#f0f2f7; --fg:#1f2330;
+    --mut:#8a90a2; --bd:#e3e6ef; --accent:#5b6cff; --ok:#16a34a; --err:#dc2626;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif;
+       background:var(--bg);color:var(--fg);padding:18px;font-size:14px}
+  h2{font-size:16px;margin-bottom:4px}
+  .sub{color:var(--mut);font-size:12px;margin-bottom:14px}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .tab{padding:7px 14px;border-radius:8px;background:var(--card);border:1px solid var(--bd);
+       cursor:pointer;color:var(--mut)}
+  .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px;margin-bottom:14px}
+  .row{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  label{font-weight:600;min-width:92px}
+  input[type=text],input[type=number],textarea{
+    background:var(--card2);border:1px solid var(--bd);border-radius:8px;padding:9px 11px;
+    color:var(--fg);font-size:14px;font-family:inherit;flex:1;min-width:160px}
+  textarea{width:100%;min-height:120px;resize:vertical;line-height:1.6}
+  .hint{color:var(--mut);font-size:12px;margin-top:4px;flex-basis:100%}
+  button{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 16px;
+         cursor:pointer;font-size:14px}
+  button.ghost{background:var(--card2);color:var(--fg);border:1px solid var(--bd)}
+  button.danger{background:var(--err)}
+  button:active{transform:translateY(1px)}
+  .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+  .switch .knob{width:42px;height:24px;border-radius:12px;background:var(--bd);position:relative;transition:.2s}
+  .switch .knob::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
+       background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .switch.on .knob{background:var(--accent)}
+  .switch.on .knob::after{left:20px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
+  th{color:var(--mut);font-weight:600}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-all}
+  .pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px}
+  .pill.ok{background:rgba(22,163,74,.12);color:var(--ok)}
+  .pill.err{background:rgba(220,38,38,.12);color:var(--err)}
+  .empty{color:var(--mut);text-align:center;padding:24px}
+  .resp{max-width:420px;white-space:pre-wrap}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#1f2330;color:#fff;padding:10px 18px;border-radius:8px;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .hidden{display:none}
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  #btn_json{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;min-height:120px}
+  .hint code{background:var(--card2);border:1px solid var(--bd);border-radius:4px;padding:1px 5px;font-size:12px}
+  .pager{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:14px}
+  .pager button[disabled]{opacity:.4;cursor:not-allowed}
+</style>
+</head>
+<body>
+  <h2>群成员入群欢迎</h2>
+  <div class="sub">提取不活跃群 · 群成员入群按模板自动推送 · 全部操作可在此设置与测试</div>
+
+  <div class="tabs">
+    <div class="tab on" data-tab="cfg">配置</div>
+    <div class="tab" data-tab="whitelist">群白名单</div>
+    <div class="tab" data-tab="pending">群列表</div>
+    <div class="tab" data-tab="delay">延迟队列</div>
+    <div class="tab" data-tab="rec">发送记录</div>
+  </div>
+
+  <!-- 配置 -->
+  <div id="tab-cfg">
+    <div class="card">
+      <div class="row">
+        <label>入群监控</label>
+        <div class="switch" id="sw-monitor" onclick="toggleMonitor()"><span class="knob"></span><span id="sw-text">关闭</span></div>
+        <div class="hint">开启后, 群列表中的群 (或测试群) 有新成员入群时, 自动按模板推送一次。</div>
+      </div>
+      <div class="row">
+        <label>不活跃阈值</label>
+        <input type="number" id="days" min="1" style="max-width:120px"> <span class="mut">天内无人发言</span>
+        <div class="hint">「提取群列表」会把最近这么多天内无人发言的群加入群列表。老群无发言记录时默认视为不活跃。</div>
+      </div>
+      <div class="row">
+        <label>延迟回复</label>
+        <input type="number" id="reply_delay" min="0" max="300" style="max-width:120px"> <span class="mut">秒</span>
+        <div class="hint">新成员入群后等待多少秒再发模板。0 = 立即回复;1-300 = 延迟回复(用 event_id 被动回复)。等待中的群可在「延迟队列」页看到倒计时。</div>
+      </div>
+      <div class="row">
+        <label>全群模式</label>
+        <div class="switch" id="sw-allgroups" onclick="toggleAllGroups()"><span class="knob"></span><span id="sw-allgroups-text">关闭</span></div>
+        <div class="hint">开启后不管群列表，任何群有人入群都会发送模板消息。</div>
+      </div>
+      <div class="row">
+        <label>合并用户欢迎</label>
+        <div class="switch" id="sw-merge" onclick="toggleMerge()"><span class="knob"></span><span id="sw-merge-text">关闭</span></div>
+        <div class="hint">开启后，延迟回复期间同群多人入群时，合并为一条消息发送。需配合延迟回复使用。</div>
+      </div>
+      <div class="row" id="row-merge-tpl" style="display:block">
+        <label style="display:block;margin-bottom:8px">合并模板</label>
+        <textarea id="merge_template" placeholder="支持占位符 {user_ids} / {group_id}"></textarea>
+        <div class="hint">合并模式专用模板。<code>{user_ids}</code> 会被替换为多个 <code>&lt;@user_id&gt;</code> 拼接，例如: <code>&lt;@uid1&gt;&lt;@uid2&gt;&lt;@uid3&gt;</code>。<code>{group_id}</code> 为群号。</div>
+      </div>
+      <div class="row" id="row-daily-limit">
+        <label>每日上限</label>
+        <input type="number" id="daily_limit" min="0" style="max-width:120px"> <span class="mut">次/天</span>
+        <span id="daily-sent-stat" class="mut" style="margin-left:8px"></span>
+        <div class="hint">全群模式下每天最多发送多少次。填 0 表示无限制。仅在全群模式开启时生效。</div>
+      </div>
+      <div class="row">
+        <label>测试群</label>
+        <input type="text" id="test_group" placeholder="群 openid, 如 9D618866DF094CEF98FA18D75C89FD7A">
+        <div class="hint">该群不论是否在群列表中, 入群时都会推送模板。</div>
+      </div>
+      <div class="row" style="display:block">
+        <label style="display:block;margin-bottom:8px">入群模板</label>
+        <textarea id="template" placeholder="支持占位符 {group_id} / {user_id}"></textarea>
+        <div class="hint">跟随机器人默认 markdown 设置, 仅去掉自动后缀。</div>
+      </div>
+      <div class="row" style="display:block">
+        <label style="display:block;margin-bottom:8px">模板按钮 (框架原生按钮行 JSON)</label>
+        <div style="margin-bottom:10px">
+          <button class="ghost" onclick="fillBtnSample()">填入示例</button>
+          <button class="ghost" onclick="formatBtnJson()">格式化</button>
+        </div>
+        <textarea id="btn_json" placeholder='[[{"text":"🎀今日老婆","data":"/今日老婆","enter":true},{"text":"💞群友老婆","data":"/群友老婆","enter":true}]]'></textarea>
+        <div class="hint">直接写框架原生按钮行,<b>外层数组=行,内层数组=该行的按钮</b>,原样发送(行你自己分)。指令按钮用 <code>data</code>,链接按钮用 <code>link</code>,可选 <code>enter</code>(点击直接发出)。JSON 须双引号 + <code>true</code>。留空=无按钮。</div>
+      </div>
+      <div class="toolbar">
+        <button onclick="saveConfig()">保存配置</button>
+        <button class="ghost" onclick="testSend()">测试发送模板</button>
+        <button class="ghost" onclick="testMergeSend()">测试发送合并模板</button>
+        <span id="cfg-stat" class="mut"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 群白名单 -->
+  <div id="tab-whitelist" class="hidden">
+    <div class="card">
+      <div class="hint" style="margin-bottom:14px;padding:10px 12px;background:var(--card2);border-radius:8px">
+        全群模式下的群白名单。白名单为空时全部群都会发送；添加白名单后仅白名单内的群会发送入群消息。仅在全群模式开启时生效。
+      </div>
+      <div class="toolbar">
+        <input type="text" id="wl_input" placeholder="输入群号手动添加" style="max-width:320px">
+        <button onclick="addWhitelist()">添加</button>
+        <button class="ghost" onclick="showDbGroups()">从数据库选择</button>
+        <button class="ghost" onclick="loadWhitelist()">刷新</button>
+        <span id="wl-stat" class="mut"></span>
+      </div>
+      <table>
+        <thead><tr><th>群 ID</th><th>添加时间</th><th></th></tr></thead>
+        <tbody id="wl-body"></tbody>
+      </table>
+      <div id="wl-empty" class="empty hidden">白名单为空, 全群模式下所有群都会发送。</div>
+      <div class="pager" id="wl-pager"></div>
+    </div>
+    <!-- 数据库群选择弹窗 -->
+    <div id="db-groups-panel" class="card hidden">
+      <div class="toolbar">
+        <b>从数据库选择群</b>
+        <button class="ghost" onclick="hideDbGroups()">关闭</button>
+        <button class="ghost" onclick="loadDbGroups()">刷新</button>
+        <span id="db-stat" class="mut"></span>
+      </div>
+      <table>
+        <thead><tr><th>群 ID</th><th></th></tr></thead>
+        <tbody id="db-body"></tbody>
+      </table>
+      <div id="db-empty" class="empty hidden">数据库中无群记录。</div>
+      <div class="pager" id="db-pager"></div>
+    </div>
+  </div>
+
+  <!-- 群列表 -->
+  <div id="tab-pending" class="hidden">
+    <div class="card">
+      <div class="hint" id="pending-notice" style="margin-bottom:14px;padding:10px 12px;background:var(--card2);border-radius:8px;display:none">
+        ⚠️ 当前已开启全群模式，群列表仅在未开启全群模式时有效，否则无用。
+      </div>
+      <div class="toolbar">
+        <button onclick="extract()">提取群列表</button>
+        <button class="ghost" onclick="loadPending()">刷新</button>
+        <span id="pending-stat" class="mut"></span>
+      </div>
+      <table>
+        <thead><tr><th>群 ID</th><th>最后发言</th><th>加入时间</th><th></th></tr></thead>
+        <tbody id="pending-body"></tbody>
+      </table>
+      <div id="pending-empty" class="empty hidden">群列表为空, 点「提取群列表」从不活跃群中提取。</div>
+      <div class="pager" id="pending-pager"></div>
+    </div>
+  </div>
+
+  <!-- 延迟队列 -->
+  <div id="tab-delay" class="hidden">
+    <div class="card">
+      <div class="toolbar">
+        <button class="ghost" onclick="loadDelay()">刷新</button>
+        <span id="delay-stat" class="mut"></span>
+      </div>
+      <table>
+        <thead><tr><th>群 ID</th><th>触发用户</th><th>设定延迟</th><th>剩余倒计时</th></tr></thead>
+        <tbody id="delay-body"></tbody>
+      </table>
+      <div id="delay-empty" class="empty hidden">当前没有等待延迟发送的群。</div>
+    </div>
+  </div>
+
+  <!-- 发送记录 -->
+  <div id="tab-rec" class="hidden">
+    <div class="card">
+      <div class="toolbar">
+        <button class="ghost" onclick="loadRecords()">刷新</button>
+        <button class="danger" onclick="clearRecords()">清空记录</button>
+        <span id="rec-stat" class="mut"></span>
+      </div>
+      <table>
+        <thead><tr><th>时间</th><th>群 ID</th><th>来源</th><th>状态</th><th>完整响应</th></tr></thead>
+        <tbody id="rec-body"></tbody>
+      </table>
+      <div id="rec-empty" class="empty hidden">暂无发送记录。</div>
+      <div class="pager" id="rec-pager"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const TOKEN = qs.get('token') || '';
+const _bm = location.pathname.match(/^(.*)\/api\/web-pages\//);
+const API = (_bm ? _bm[1] : '') + '/api/ext/groupmonitor';
+
+let STATE = { monitor:false, allGroups:false, mergeWelcome:false, pendingPage:1, recPage:1, wlPage:1, dbPage:1 };
+const PAGE_SIZE = 1000;
+
+function renderPager(prefix, page, total, ps, fn){
+  const pages = Math.max(1, Math.ceil(total/(ps||PAGE_SIZE)));
+  const el = $(prefix+'-pager');
+  if(pages<=1){ el.innerHTML=''; return; }
+  el.innerHTML = `<button class="ghost" ${page<=1?'disabled':''} onclick="${fn}(${page-1})">上一页</button>`
+    + `<span class="mut">第 ${page} / ${pages} 页 · 共 ${total}</span>`
+    + `<button class="ghost" ${page>=pages?'disabled':''} onclick="${fn}(${page+1})">下一页</button>`;
+}
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
+function hdr(){ return {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}; }
+async function api(path, method, body){
+  const sep = path.includes('?') ? '&' : '?';
+  const r = await fetch(API+path+(method==='GET'?(sep+'token='+TOKEN):''), {
+    method: method||'GET', headers: hdr(), body: body?JSON.stringify(body):undefined });
+  return r.json();
+}
+
+// 同步后台主题色 (iframe 嵌入)
+function applyTheme(){
+  let ps=null;
+  try{ if(window.parent && window.parent!==window) ps=getComputedStyle(window.parent.document.documentElement); }catch(e){ ps=null; }
+  if(!ps) return;
+  const g=n=>ps.getPropertyValue(n).trim();
+  const map={'--bg':['--bg','--background'],'--card':['--bg2','--bg-float','--card'],
+    '--card2':['--bg3','--bg2'],'--fg':['--text','--fg'],
+    '--mut':['--text3','--text2','--muted'],'--bd':['--border','--bd']};
+  const root=document.documentElement.style;
+  for(const k in map){ for(const v of map[k]){ const val=g(v); if(val){ root.setProperty(k,val); break; } } }
+}
+
+function switchTab(t){
+  document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('on', e.dataset.tab===t));
+  $('tab-cfg').classList.toggle('hidden', t!=='cfg');
+  $('tab-whitelist').classList.toggle('hidden', t!=='whitelist');
+  $('tab-pending').classList.toggle('hidden', t!=='pending');
+  $('tab-delay').classList.toggle('hidden', t!=='delay');
+  $('tab-rec').classList.toggle('hidden', t!=='rec');
+  stopDelayTimer();
+  if(t==='whitelist') loadWhitelist();
+  if(t==='pending') loadPending();
+  if(t==='delay') startDelayTimer();
+  if(t==='rec') loadRecords();
+}
+document.querySelectorAll('.tab').forEach(e=>e.onclick=()=>switchTab(e.dataset.tab));
+
+function setMonitorUI(on){
+  STATE.monitor=on;
+  $('sw-monitor').classList.toggle('on', on);
+  $('sw-text').textContent = on ? '开启' : '关闭';
+}
+
+function setAllGroupsUI(on){
+  STATE.allGroups=on;
+  $('sw-allgroups').classList.toggle('on', on);
+  $('sw-allgroups-text').textContent = on ? '开启' : '关闭';
+  $('row-daily-limit').style.display = on ? '' : 'none';
+  $('pending-notice').style.display = on ? '' : 'none';
+}
+
+function setMergeUI(on){
+  STATE.mergeWelcome=on;
+  $('sw-merge').classList.toggle('on', on);
+  $('sw-merge-text').textContent = on ? '开启' : '关闭';
+  $('row-merge-tpl').style.display = on ? 'block' : 'none';
+}
+
+async function loadStatus(){
+  const j = await api('/status','GET');
+  if(!j.success){ toast('加载失败'); return; }
+  const d = j.data;
+  setMonitorUI(d.monitor_enabled);
+  setAllGroupsUI(d.all_groups_mode);
+  setMergeUI(d.merge_welcome);
+  $('daily_limit').value = d.daily_limit || 0;
+  const sentToday = d.daily_sent_count || 0;
+  const limitVal = d.daily_limit || 0;
+  $('daily-sent-stat').textContent = `(今日已发 ${sentToday}${limitVal>0 ? '/' + limitVal : ''})`;
+  $('days').value = d.inactive_days;
+  $('reply_delay').value = d.reply_delay;
+  $('test_group').value = d.test_group || '';
+  $('template').value = d.template || '';
+  $('merge_template').value = d.merge_template || '';
+  const btns = Array.isArray(d.buttons) ? d.buttons : [];
+  $('btn_json').value = btns.length ? JSON.stringify(btns, null, 2) : '';
+  $('cfg-stat').textContent = `群列表 ${d.pending_count} 个 · 发送记录 ${d.sent_count} 条`;
+}
+
+// 解析按钮 JSON 文本框; 返回 {ok, buttons|err}
+function parseBtnJson(){
+  const raw = ($('btn_json').value || '').trim();
+  if(!raw) return { ok:true, buttons:[] };
+  let arr;
+  try{ arr = JSON.parse(raw); }
+  catch(e){ return { ok:false, err:'JSON 格式错误: '+e.message }; }
+  if(!Array.isArray(arr)) return { ok:false, err:'需为 JSON 数组 (以 [ 开头)' };
+  return { ok:true, buttons:arr };
+}
+
+function fillBtnSample(){
+  $('btn_json').value = JSON.stringify([
+    [{text:'🎀今日老婆', data:'/今日老婆', enter:true},
+     {text:'💞群友老婆', data:'/群友老婆', enter:true}],
+    [{text:'🌐 官网', link:'https://www.qq.com'}]
+  ], null, 2);
+}
+
+function formatBtnJson(){
+  const r = parseBtnJson();
+  if(!r.ok){ toast(r.err); return; }
+  $('btn_json').value = r.buttons.length ? JSON.stringify(r.buttons, null, 2) : '';
+}
+
+async function toggleMonitor(){
+  const next = !STATE.monitor;
+  const j = await api('/config','POST',{ monitor_enabled: next });
+  if(j.success){ setMonitorUI(next); toast(next?'已开启入群监控':'已关闭入群监控'); }
+  else toast(j.message||'操作失败');
+}
+
+async function toggleAllGroups(){
+  const next = !STATE.allGroups;
+  const j = await api('/config','POST',{ all_groups_mode: next });
+  if(j.success){ setAllGroupsUI(next); toast(next?'已开启全群模式':'已关闭全群模式'); }
+  else toast(j.message||'操作失败');
+}
+
+async function toggleMerge(){
+  const next = !STATE.mergeWelcome;
+  const j = await api('/config','POST',{ merge_welcome: next });
+  if(j.success){ setMergeUI(next); toast(next?'已开启合并用户欢迎':'已关闭合并用户欢迎'); }
+  else toast(j.message||'操作失败');
+}
+
+async function saveConfig(){
+  let days = parseInt($('days').value,10); if(!(days>=1)) days=3;
+  let delay = parseInt($('reply_delay').value,10); if(!(delay>=0)) delay=0; if(delay>300) delay=300;
+  let dailyLimit = parseInt($('daily_limit').value,10); if(!(dailyLimit>=0)) dailyLimit=0;
+  const br = parseBtnJson();
+  if(!br.ok){ toast(br.err); return; }
+  const buttons = br.buttons;
+  const j = await api('/config','POST',{
+    test_group: $('test_group').value.trim(),
+    template: $('template').value,
+    inactive_days: days,
+    reply_delay: delay,
+    daily_limit: dailyLimit,
+    merge_template: $('merge_template').value,
+    buttons });
+  toast(j.success ? '已保存' : (j.message||'保存失败'));
+  if(j.success) loadStatus();
+}
+
+async function testSend(){
+  const gid = $('test_group').value.trim();
+  if(!gid && !confirm('未填写测试群, 将尝试用已保存的测试群发送。继续?')) return;
+  toast('发送中...');
+  const j = await api('/test_send','POST', gid?{group_id:gid}:{});
+  toast(j.success ? '✅ 已发送到测试群' : ('❌ '+(j.message||'发送失败')));
+  loadStatus();
+}
+
+async function testMergeSend(){
+  const gid = $('test_group').value.trim();
+  if(!gid && !confirm('未填写测试群, 将尝试用已保存的测试群发送合并模板。继续?')) return;
+  toast('发送中...');
+  const j = await api('/test_merge_send','POST', gid?{group_id:gid}:{});
+  toast(j.success ? ('✅ '+j.message) : ('❌ '+(j.message||'发送失败')));
+  loadStatus();
+}
+
+async function extract(){
+  toast('提取中...');
+  const j = await api('/extract','POST',{});
+  if(j.success){ toast(j.message||'提取完成'); loadPending(); loadStatus(); }
+  else toast(j.message||'提取失败');
+}
+
+async function loadPending(page){
+  if(page) STATE.pendingPage = page;
+  const j = await api('/pending?page='+STATE.pendingPage,'GET');
+  const rows = (j.data||[]);
+  const total = j.total!=null ? j.total : rows.length;
+  STATE.pendingPage = j.page || STATE.pendingPage;
+  if(!rows.length && STATE.pendingPage>1){ return loadPending(STATE.pendingPage-1); }
+  $('pending-stat').textContent = `共 ${total} 个待发群`;
+  $('pending-empty').classList.toggle('hidden', total>0);
+  $('pending-body').innerHTML = rows.map(r=>`<tr>
+    <td class="mono">${esc(r.group_id)}</td>
+    <td>${esc(r.last_active||'—')}</td>
+    <td>${esc(r.added_at||'')}</td>
+    <td><button class="ghost" onclick="delPending('${esc(r.group_id)}')">移除</button></td>
+  </tr>`).join('');
+  renderPager('pending', STATE.pendingPage, total, j.page_size, 'loadPending');
+}
+
+async function delPending(gid){
+  const j = await api('/pending_delete','POST',{group_id:gid});
+  toast(j.message||'已处理'); loadPending(); loadStatus();
+}
+
+async function loadRecords(page){
+  if(page) STATE.recPage = page;
+  const j = await api('/records?page='+STATE.recPage,'GET');
+  const rows = (j.data||[]);
+  const total = j.total!=null ? j.total : rows.length;
+  STATE.recPage = j.page || STATE.recPage;
+  if(!rows.length && STATE.recPage>1){ return loadRecords(STATE.recPage-1); }
+  $('rec-stat').textContent = `共 ${total} 条`;
+  $('rec-empty').classList.toggle('hidden', total>0);
+  $('rec-body').innerHTML = rows.map(r=>{
+    const ok = r.status==='success';
+    return `<tr>
+      <td>${esc(r.created_at)}</td>
+      <td class="mono">${esc(r.group_id)}</td>
+      <td>${esc(r.source)}</td>
+      <td><span class="pill ${ok?'ok':'err'}">${esc(r.status)}</span></td>
+      <td class="resp mono">${esc(r.response)}</td>
+    </tr>`;
+  }).join('');
+  renderPager('rec', STATE.recPage, total, j.page_size, 'loadRecords');
+}
+
+async function clearRecords(){
+  if(!confirm('确定清空全部发送记录?')) return;
+  const j = await api('/records_clear','POST',{});
+  toast(j.message||'已清空'); loadRecords(1); loadStatus();
+}
+
+// ---- 延迟队列 (客户端倒计时, 定期向后端刷新) ----
+let DELAY_TIMER=null, DELAY_REFRESH=null;
+function fmtSec(s){ s=Math.max(0,Math.round(s)); const m=Math.floor(s/60), r=s%60; return m?`${m}分${r}秒`:`${r}秒`; }
+function renderDelay(rows){
+  $('delay-stat').textContent = `共 ${rows.length} 个待发`;
+  $('delay-empty').classList.toggle('hidden', rows.length>0);
+  $('delay-body').innerHTML = rows.map(r=>{
+    const uids = (r.user_ids && r.user_ids.length > 1) ? r.user_ids.join(', ') : esc(r.user_id||'-');
+    return `<tr>
+      <td class="mono">${esc(r.group_id)}</td>
+      <td class="mono">${uids}</td>
+      <td>${esc(r.delay)} 秒</td>
+      <td class="delay-rem mono" data-rem="${r.remaining}">${fmtSec(r.remaining)}</td>
+    </tr>`;
+  }).join('');
+}
+async function loadDelay(){
+  const j = await api('/delayed_queue','GET');
+  renderDelay(j.rows||[]);
+}
+function tickDelay(){
+  document.querySelectorAll('#delay-body .delay-rem').forEach(td=>{
+    let rem = parseFloat(td.dataset.rem||'0') - 1;
+    if(rem<0) rem=0;
+    td.dataset.rem = rem; td.textContent = fmtSec(rem);
+  });
+}
+function startDelayTimer(){
+  loadDelay();
+  DELAY_TIMER = setInterval(tickDelay, 1000);
+  DELAY_REFRESH = setInterval(loadDelay, 5000);
+}
+function stopDelayTimer(){
+  if(DELAY_TIMER){ clearInterval(DELAY_TIMER); DELAY_TIMER=null; }
+  if(DELAY_REFRESH){ clearInterval(DELAY_REFRESH); DELAY_REFRESH=null; }
+}
+
+// ---- 白名单 ----
+async function loadWhitelist(page){
+  if(page) STATE.wlPage = page;
+  const j = await api('/whitelist?page='+STATE.wlPage,'GET');
+  const rows = (j.data||[]);
+  const total = j.total!=null ? j.total : rows.length;
+  STATE.wlPage = j.page || STATE.wlPage;
+  if(!rows.length && STATE.wlPage>1){ return loadWhitelist(STATE.wlPage-1); }
+  $('wl-stat').textContent = `共 ${total} 个白名单群`;
+  $('wl-empty').classList.toggle('hidden', total>0);
+  $('wl-body').innerHTML = rows.map(r=>`<tr>
+    <td class="mono">${esc(r.group_id)}</td>
+    <td>${esc(r.added_at||'')}</td>
+    <td><button class="ghost" onclick="delWhitelist('${esc(r.group_id)}')">移除</button></td>
+  </tr>`).join('');
+  renderPager('wl', STATE.wlPage, total, j.page_size, 'loadWhitelist');
+}
+
+async function addWhitelist(){
+  const gid = $('wl_input').value.trim();
+  if(!gid){ toast('请输入群号'); return; }
+  const j = await api('/whitelist_add','POST',{group_id:gid});
+  toast(j.message||'已处理');
+  $('wl_input').value = '';
+  loadWhitelist();
+}
+
+async function addWhitelistFromDb(gid){
+  const j = await api('/whitelist_add','POST',{group_id:gid});
+  toast(j.message||'已处理');
+  loadWhitelist();
+}
+
+async function delWhitelist(gid){
+  const j = await api('/whitelist_delete','POST',{group_id:gid});
+  toast(j.message||'已处理'); loadWhitelist();
+}
+
+// ---- 数据库群选择 ----
+function showDbGroups(){ $('db-groups-panel').classList.remove('hidden'); loadDbGroups(); }
+function hideDbGroups(){ $('db-groups-panel').classList.add('hidden'); }
+
+async function loadDbGroups(page){
+  if(page) STATE.dbPage = page;
+  const j = await api('/db_groups?page='+STATE.dbPage,'GET');
+  const rows = (j.data||[]);
+  const total = j.total!=null ? j.total : rows.length;
+  STATE.dbPage = j.page || STATE.dbPage;
+  if(!rows.length && STATE.dbPage>1){ return loadDbGroups(STATE.dbPage-1); }
+  $('db-stat').textContent = `共 ${total} 个群`;
+  $('db-empty').classList.toggle('hidden', total>0);
+  $('db-body').innerHTML = rows.map(gid=>`<tr>
+    <td class="mono">${esc(gid)}</td>
+    <td><button class="ghost" onclick="addWhitelistFromDb('${esc(gid)}')">添加到白名单</button></td>
+  </tr>`).join('');
+  renderPager('db', STATE.dbPage, total, j.page_size, 'loadDbGroups');
+}
+
+applyTheme();
+loadStatus();
+</script>
+</body>
+</html>

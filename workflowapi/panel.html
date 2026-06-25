@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工作流API</title>
+<style>
+  :root{--bg:#eef1f8;--card:#fff;--bd:#e3e6ee;--tx:#2b2f38;--mut:#8a92a6;--pri:#4f6ef7;--pri2:#3d5ae0;--ok:#16a34a;--dl:#ef4444;--warning:#f59e0b;--info:#3b82f6;--accent-light:#7c8cff;--code:#f3f5fb;--canvas:#e9ecf5;--dotc:#d3d8e6;--grad:linear-gradient(135deg,#5a78ff,#7c5cff);--sh1:0 1px 2px rgba(22,28,45,.06);--sh2:0 6px 18px rgba(22,28,45,.10);--sh3:0 24px 60px rgba(15,18,28,.38);}
+  @media(prefers-color-scheme:dark){:root{--bg:#13161d;--card:#1f2330;--bd:#2e3445;--tx:#e6e9f0;--mut:#8a92a6;--code:#161a23;--canvas:#0f1218;--dotc:#262c3a;--grad:linear-gradient(135deg,#4f6ef7,#7c5cff);--sh1:0 1px 2px rgba(0,0,0,.3);--sh2:0 6px 18px rgba(0,0,0,.4);--sh3:0 24px 60px rgba(0,0,0,.6);}}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--tx);font-size:14px;}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:var(--dotc);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-thumb:hover{background:var(--mut);background-clip:padding-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  .wrap{display:flex;height:100vh;overflow:hidden}
+  /* ---- 左侧工作流列表 ---- */
+  .side{width:200px;flex-shrink:0;border-right:1px solid var(--bd);background:var(--card);display:flex;flex-direction:column;box-shadow:var(--sh1)}
+  .side h1{font-size:14.5px;font-weight:700;margin:0;padding:14px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;letter-spacing:.2px}
+  .side h1 .logo{width:28px;height:28px;border-radius:8px;background:var(--grad);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:var(--sh1)}
+  .side h1 .logo svg{width:17px;height:17px;color:#fff}
+  .wf-list{flex:1;overflow-y:auto;padding:8px}
+  .wf-list .lbl{font-size:11px;color:var(--mut);font-weight:600;padding:4px 8px 6px;letter-spacing:.4px}
+  .wf-item{padding:9px 11px;border-radius:9px;cursor:pointer;margin-bottom:4px;border:1px solid transparent;display:flex;align-items:center;gap:8px;transition:background .15s,border-color .15s}
+  .wf-item:hover{background:var(--bg)}
+  .wf-item.active{background:color-mix(in srgb,var(--pri) 10%,var(--card));border-color:var(--pri)}
+  .wf-item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex-shrink:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)}
+  .dot.off{background:var(--dotc);box-shadow:none}
+  .side .foot{border-top:1px solid var(--bd);padding:10px;display:flex;flex-direction:column;gap:7px}
+  .row{display:flex;gap:6px;align-items:center}
+  /* ---- 中间画布 ---- */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .topbar{height:52px;flex-shrink:0;border-bottom:1px solid var(--bd);background:var(--card);display:flex;align-items:center;gap:8px;padding:0 14px;overflow-x:auto;box-shadow:var(--sh1)}
+  .topbar .tb-lbl{font-size:12px;color:var(--mut);font-weight:600;white-space:nowrap}
+  .palette{display:flex;gap:7px;align-items:center}
+  .pal-btn{padding:6px 11px;border-radius:9px;border:1px solid var(--bd);background:var(--card);cursor:pointer;font-size:12.5px;display:flex;align-items:center;gap:6px;white-space:nowrap;transition:transform .12s,border-color .12s,box-shadow .12s}
+  .pal-btn:hover{border-color:var(--pri);transform:translateY(-1px);box-shadow:var(--sh1)}
+  .canvas-wrap{flex:1;position:relative;overflow:auto;background:var(--canvas);
+    background-image:radial-gradient(var(--dotc) 1.2px,transparent 1.2px);background-size:24px 24px}
+  .canvas{position:relative;width:4000px;height:2600px}
+  svg.links{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1}
+  svg.links path{pointer-events:stroke;cursor:pointer}
+  /* ---- 节点 ---- */
+  .node{position:absolute;width:190px;background:var(--card);border:1px solid var(--bd);border-radius:12px;
+    box-shadow:var(--sh2);z-index:2;user-select:none;transition:box-shadow .15s,transform .05s}
+  .node:hover{box-shadow:0 10px 26px rgba(22,28,45,.16)}
+  .node.sel{border-color:var(--pri);box-shadow:0 0 0 3px color-mix(in srgb,var(--pri) 30%,transparent),var(--sh2)}
+  .node .nh{padding:8px 11px;border-radius:11px 11px 0 0;color:#fff;font-weight:600;font-size:12.5px;
+    display:flex;align-items:center;gap:7px;cursor:move}
+  .node .nh .del{margin-left:auto;cursor:pointer;opacity:.8;font-size:14px;line-height:1}
+  .node .nh .del:hover{opacity:1}
+  .node .nb{padding:9px 11px;font-size:12px;color:var(--mut);word-break:break-all;max-height:84px;overflow:hidden}
+  .node .nb b{color:var(--tx);font-weight:600}
+  .port{position:absolute;width:14px;height:14px;border-radius:50%;background:var(--card);border:2px solid var(--mut);cursor:crosshair;z-index:3;transition:transform .1s}
+  .port:hover,.port.waiting{border-color:var(--pri);background:var(--pri);transform:scale(1.2)}
+  .port.in{left:-8px;top:50%;transform:translateY(-50%)}
+  .port.out{right:-8px}
+  .port-lbl{position:absolute;right:16px;font-size:10px;color:var(--mut);white-space:nowrap}
+  /* ---- 节点设置浮窗（自适应） ---- */
+  .modal-ov{position:fixed;inset:0;background:rgba(15,18,28,.5);display:flex;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(3px);padding:24px;animation:ov-in .18s ease}
+  @keyframes ov-in{from{opacity:0}to{opacity:1}}
+  @keyframes mo-in{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}
+  .modal-ov.hide{display:none}
+  .modal{width:clamp(380px,46vw,660px);max-height:min(90vh,860px);background:var(--card);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--sh3);animation:mo-in .2s cubic-bezier(.2,.8,.2,1)}
+  .dh{padding:15px 18px;border-bottom:1px solid var(--bd);font-weight:700;font-size:14.5px;display:flex;align-items:center;gap:9px}
+  .dh .dh-ic{width:26px;height:26px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+  .dh .dh-ic svg{width:15px;height:15px}
+  .dh .x{margin-left:auto;cursor:pointer;color:var(--mut);font-size:18px;line-height:1;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;transition:background .15s}
+  .dh .x:hover{background:var(--bg);color:var(--tx)}
+  .modal-body{display:flex;flex:1;min-height:0;overflow:hidden}
+  .db{flex:1;overflow-y:auto;padding:18px 20px 20px}
+  .modal.wide{width:clamp(560px,76vw,1020px)}
+  .dsel{width:290px;flex-shrink:0;border-left:1px solid var(--bd);background:var(--code);overflow-y:auto;padding:14px 14px 18px}
+  .dsel.hide{display:none}
+  .dsel-h{font-size:13px;font-weight:700;margin:0 0 4px}
+  .dsrc{border:1px solid var(--bd);border-radius:9px;background:var(--card);padding:10px;margin-bottom:10px}
+  .dsrc-t{display:flex;align-items:center;gap:6px;font-size:12.5px;margin-bottom:7px}
+  .dsrc-t svg{width:14px;height:14px;flex-shrink:0}
+  .dsrc-url{color:var(--mut);font-size:11px;font-family:ui-monospace,Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dchips{margin-bottom:6px}
+  .dsel-src{margin-bottom:9px;padding:7px 10px;font-size:12px}
+  details.adv{margin-top:13px;border:1px solid var(--bd);border-radius:9px;background:color-mix(in srgb,var(--code) 60%,transparent);padding:0 12px}
+  details.adv>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--mut);padding:10px 0;list-style:none;user-select:none}
+  details.adv>summary::-webkit-details-marker{display:none}
+  details.adv>summary::before{content:'\25B8';margin-right:6px;font-size:10px}
+  details.adv[open]>summary::before{content:'\25BE'}
+  details.adv[open]{padding-bottom:12px}
+  .node .nh svg{width:14px;height:14px;flex-shrink:0}
+  .pal-btn svg{width:14px;height:14px}
+  label.fl{display:block;font-size:12px;color:var(--mut);font-weight:600;margin:13px 0 5px}
+  label.fl:first-child{margin-top:0}
+  input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--bd);border-radius:9px;background:var(--bg);color:var(--tx);font-size:13px;font-family:inherit;transition:border-color .15s,box-shadow .15s}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px color-mix(in srgb,var(--pri) 18%,transparent);background:var(--card)}
+  textarea{resize:vertical;min-height:66px;line-height:1.55}
+  .ck{display:flex;align-items:center;gap:7px;margin:7px 0;font-size:13px}
+  .ck input{width:auto}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  button.btn{padding:8px 13px;border-radius:9px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer;font-size:13px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:5px;transition:transform .12s,border-color .12s,background .12s,box-shadow .12s}
+  button.btn:hover{border-color:var(--pri);transform:translateY(-1px)}
+  button.btn.pri{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 3px 10px color-mix(in srgb,var(--pri) 38%,transparent)}
+  button.btn.pri:hover{filter:brightness(1.06);box-shadow:0 6px 16px color-mix(in srgb,var(--pri) 45%,transparent)}
+  button.btn.dl{color:var(--dl);border-color:color-mix(in srgb,var(--dl) 35%,var(--bd))}
+  button.btn.dl:hover{background:color-mix(in srgb,var(--dl) 10%,var(--card));border-color:var(--dl)}
+  button.btn.sm{padding:5px 10px;font-size:12px}
+  .hint{font-size:11.5px;color:var(--mut);margin-top:5px;line-height:1.55}
+  .help-ic{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--pri);cursor:pointer;vertical-align:-3px;margin-left:5px;transition:transform .12s}
+  .help-ic:hover{transform:scale(1.18)}
+  .help-ic svg{width:15px;height:15px}
+  /* 可视化按钮生成器 */
+  .bb{border:1px solid var(--bd);border-radius:9px;padding:8px;background:color-mix(in srgb,var(--card) 55%,transparent);margin-top:4px}
+  .bb-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .bb-seg{display:inline-flex;border:1px solid var(--bd);border-radius:7px;overflow:hidden}
+  .bb-seg button{border:0;background:transparent;color:var(--mut);font-size:11.5px;padding:3px 12px;cursor:pointer;transition:background .12s,color .12s}
+  .bb-seg button.on{background:var(--grad);color:#fff}
+  .bb-row{border:1px dashed var(--bd);border-radius:8px;padding:6px;margin-bottom:7px}
+  .bb-rh{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--mut);margin-bottom:5px}
+  .bb-cells{display:flex;flex-wrap:wrap;gap:6px}
+  .bb-card{flex:0 0 auto;width:112px;border:1px solid var(--bd);border-radius:7px;padding:5px;background:var(--card);display:flex;flex-direction:column;gap:4px;transition:border-color .12s,box-shadow .12s}
+  .bb-card:hover{border-color:color-mix(in srgb,var(--pri) 45%,var(--bd));box-shadow:0 2px 7px color-mix(in srgb,var(--pri) 12%,transparent)}
+  .bb-ch{display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:var(--mut)}
+  .bb-i{width:100%;padding:3px 5px;font-size:11px;border-radius:5px;border:1px solid var(--bd);background:var(--bg,var(--card));color:var(--tx)}
+  .bb-i:focus{outline:0;border-color:var(--pri)}
+  select.bb-i{padding:2px 3px}
+  .bb-x{cursor:pointer;color:var(--mut);font-size:12px;line-height:1;padding:0 4px;border-radius:5px}
+  .bb-x:hover{color:var(--dl);background:color-mix(in srgb,var(--dl) 12%,transparent)}
+  .bb-add{align-self:stretch;min-width:54px;border:1px dashed var(--bd);border-radius:7px;background:transparent;color:var(--pri);cursor:pointer;font-size:11.5px;padding:5px}
+  .bb-add:hover{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 8%,transparent)}
+  .bb-add:disabled{opacity:.4;cursor:not-allowed}
+  .bb-json{width:100%;min-height:128px;resize:vertical;font-family:ui-monospace,Consolas,'Courier New',monospace;font-size:12px;line-height:1.5;padding:8px;border-radius:7px;border:1px solid var(--bd);background:var(--bg,var(--card));color:var(--tx)}
+  .bb-json:focus{outline:0;border-color:var(--pri)}
+  .bb-jerr{color:var(--dl);font-size:11.5px;margin-top:4px;min-height:15px}
+  .cond-help{margin:8px 0 4px;padding:9px 11px;border:1px solid color-mix(in srgb,var(--pri) 32%,var(--bd));border-left:3px solid var(--pri);border-radius:8px;background:color-mix(in srgb,var(--pri) 8%,transparent);font-size:12px;line-height:1.65;color:var(--tx)}
+  .cond-help.hide{display:none}
+  .cond-help b{color:var(--pri);font-weight:600}
+  /* ---- 插入面板 / JSON 树 ---- */
+  .insert-box{margin-top:14px;border:1px dashed var(--bd);border-radius:10px;padding:10px;background:color-mix(in srgb,var(--code) 60%,transparent)}
+  .insert-box h4{margin:0 0 7px;font-size:12px;color:var(--mut);font-weight:600}
+  .tag{display:inline-block;background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:3px 7px;margin:2px;font-size:11.5px;cursor:pointer;font-family:ui-monospace,Menlo,Consolas,monospace;transition:border-color .12s,color .12s}
+  .tag:hover{border-color:var(--pri);color:var(--pri)}
+  .tree{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.7;max-height:260px;overflow:auto;background:var(--code);border:1px solid var(--bd);border-radius:9px;padding:10px;margin-top:6px}
+  .tree .k{color:var(--pri);cursor:pointer;border-radius:4px;padding:0 2px}
+  .tree .k:hover{background:color-mix(in srgb,var(--pri) 15%,transparent);text-decoration:none}
+  .tree .v{color:var(--ok)}
+  .tree .ind{padding-left:14px;border-left:1px dashed var(--bd);margin-left:4px}
+  .empty{color:var(--mut);text-align:center;margin-top:64px;font-size:13px}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(60px);background:#1e2330;color:#fff;padding:11px 18px;border-radius:10px;opacity:0;transition:.28s cubic-bezier(.2,.8,.2,1);z-index:999;font-size:13px;box-shadow:var(--sh2)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .kvrow{display:flex;gap:6px;margin-bottom:5px}
+  .kvrow input{flex:1}
+  .kvrow .rm{cursor:pointer;color:var(--dl);padding:6px}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  @media(max-width:640px){
+    .side{width:150px}
+    .modal,.modal.wide{width:96vw;max-height:94vh;border-radius:14px}
+    .modal-ov{padding:10px}
+    .grid2{grid-template-columns:1fr}
+    .modal-body{flex-direction:column}
+    .dsel{width:auto;border-left:none;border-top:1px solid var(--bd);max-height:42vh}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- 左：工作流列表 -->
+  <div class="side">
+    <h1><span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M9 6h6a3 3 0 0 1 3 3v6"/></svg></span>工作流API</h1>
+    <div class="wf-list" id="wfList"></div>
+    <div class="foot">
+      <div class="ck"><input type="checkbox" id="gEnabled" onchange="onGlobal()"><label for="gEnabled" style="margin:0">插件总开关</label></div>
+      <button class="btn pri" onclick="newWorkflow()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>新建工作流</button>
+      <div class="row">
+        <button class="btn sm" style="flex:1" onclick="exportJson()">导出</button>
+        <button class="btn sm" style="flex:1" onclick="importJson()">导入</button>
+      </div>
+      <button class="btn pri" onclick="save()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>保存并热重载</button>
+    </div>
+  </div>
+
+  <!-- 中：画布 -->
+  <div class="main">
+    <div class="topbar" id="topbar">
+      <span class="tb-lbl">添加节点：</span>
+      <div class="palette" id="palette"></div>
+      <span style="flex:1"></span>
+      <button class="btn sm" onclick="autoArrange()">整理布局</button>
+      <button class="btn sm" onclick="fitView()">回到起点</button>
+      <button class="btn sm" title="在新标签页单独打开整个面板" onclick="openStandalone()">新页面打开</button>
+    </div>
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="canvas" id="canvas">
+        <svg class="links" id="links"></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 节点设置浮窗 -->
+  <div class="modal-ov hide" id="modalOv">
+    <div class="modal" id="modal">
+      <div class="dh"><span id="drawerTitle">节点设置</span><span class="x" onclick="closeModal()">✕</span></div>
+      <div class="modal-body">
+        <div class="db" id="drawerBody"></div>
+        <aside class="dsel hide" id="dataSel"></aside>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const TOKEN = qs.get('token') || '';
+const _bm = location.pathname.match(/^(.*)\/api\/web-pages\//);
+const API = (_bm ? _bm[1] : '') + '/api/workflow-api';
+
+let DATA = {version:2, settings:{enabled:true, default_timeout:15}, workflows:[]};
+let META = {};
+let SELWF = -1;       // 选中工作流索引
+let SELNODE = null;   // 选中节点 id
+let TESTED = {};      // {nodeId: {json,text,status}} 测试过的 API 返回
+let lastField = null; // 最近聚焦、可插入变量的输入框
+let DSEL_SRC = null;  // 数据选择侧栏当前展示的上游 API 节点 id
+let CONDHELP_OPEN = false; // 条件节点「用法说明」是否展开
+let connecting = null;// {nodeId, output} 连线进行中
+const NODE_W = 188;
+
+function hdr(){ return {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}; }
+async function api(path, method, body){
+  const r = await fetch(API+path+(method==='GET'?('?token='+TOKEN):''), {
+    method, headers: hdr(), body: body?JSON.stringify(body):undefined});
+  return r.json();
+}
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function uid(p){ return p+'_'+Math.random().toString(36).slice(2,8); }
+function curWf(){ return SELWF>=0 ? DATA.workflows[SELWF] : null; }
+function nodeMeta(t){ return (META.node_types||[]).find(n=>n.value===t) || {label:t,color:'#888',outputs:1}; }
+// 各节点类型 SVG 图标（线性、currentColor）
+const SVG='http://www.w3.org/2000/svg';
+const ICONS={
+  trigger:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  api:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>',
+  condition:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6M12 9 6 15v6M12 9l6 6v6"/><circle cx="12" cy="3" r="1.6"/></svg>',
+  reply:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  set_var:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>',
+  delay:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg>'
+};
+function icon(t){ return ICONS[t]||''; }
+// 节点主题色：统一引用框架主题变量，不再使用各自写死的颜色
+const NODE_COLOR={trigger:'var(--ok)',api:'var(--pri)',condition:'var(--warning)',reply:'var(--accent-light)',set_var:'var(--info)',delay:'var(--mut)'};
+function nodeColor(t){ return NODE_COLOR[t]||'var(--pri)'; }
+// 同步框架主题：面板以 iframe 形式嵌入后台，读取父级（同源）已应用的主题变量并映射到本面板
+function applyFrameworkTheme(){
+  let ps=null;
+  try{ if(window.parent && window.parent!==window && window.parent.document) ps=getComputedStyle(window.parent.document.documentElement); }
+  catch(e){ ps=null; } // 跨源或独立打开时保留内置默认配色
+  if(!ps) return;
+  const g=n=>ps.getPropertyValue(n).trim();
+  const accent=g('--accent'), bg=g('--bg');
+  if(!accent && !bg) return; // 父级未提供框架主题变量
+  const r=document.documentElement.style, set=(k,v)=>{ if(v) r.setProperty(k,v); };
+  set('--bg', bg);
+  set('--card', g('--bg-float')||g('--bg2'));
+  set('--bd', g('--border'));
+  set('--tx', g('--text'));
+  set('--mut', g('--text3'));
+  set('--pri', accent);
+  set('--pri2', g('--accent-hover'));
+  set('--ok', g('--success'));
+  set('--dl', g('--danger'));
+  set('--warning', g('--warning'));
+  set('--info', g('--info'));
+  set('--accent-light', g('--accent-light'));
+  set('--code', g('--bg3')||g('--bg2'));
+  set('--canvas', g('--bg2'));
+  set('--dotc', g('--border'));
+  if(accent) set('--grad', 'linear-gradient(135deg,'+accent+','+(g('--accent-light')||accent)+')');
+}
+function initTheme(){
+  applyFrameworkTheme();
+  // 用户在后台切换主题会写入 localStorage，同源 iframe 会收到 storage 事件
+  window.addEventListener('storage', e=>{ if(!e || e.key===null || e.key==='elaina_theme') applyFrameworkTheme(); });
+  window.addEventListener('focus', applyFrameworkTheme);
+  // 兜底：iframe 可能早于父级应用主题，稍后重试
+  setTimeout(applyFrameworkTheme, 300);
+  setTimeout(applyFrameworkTheme, 1200);
+}
+
+async function boot(){
+  const [cfg, meta] = await Promise.all([api('/config','GET'), api('/meta','GET')]);
+  if(cfg.success) DATA = cfg.data;
+  if(meta.success) META = meta.meta;
+  if(!DATA.workflows) DATA.workflows = [];
+  document.getElementById('gEnabled').checked = DATA.settings.enabled !== false;
+  renderPalette();
+  renderWfList();
+  if(DATA.workflows.length){ selectWf(0); }
+  applyFrameworkTheme();
+}
+
+/* ================= 左侧列表 ================= */
+function renderWfList(){
+  const el = document.getElementById('wfList');
+  if(!DATA.workflows.length){ el.innerHTML='<div class="empty" style="margin-top:24px">还没有工作流<br>点下方新建</div>'; return; }
+  el.innerHTML = DATA.workflows.map((w,i)=>`
+    <div class="wf-item ${i===SELWF?'active':''}" onclick="selectWf(${i})">
+      <span class="dot ${w.enabled?'':'off'}" title="点击切换启用" onclick="event.stopPropagation();toggleWf(${i})"></span>
+      <span class="nm" title="${esc(w.name)}">${esc(w.name||w.id)}</span>
+    </div>`).join('');
+}
+function toggleWf(i){ DATA.workflows[i].enabled=!DATA.workflows[i].enabled; renderWfList(); }
+function onGlobal(){ DATA.settings.enabled = document.getElementById('gEnabled').checked; }
+
+function newWorkflow(){
+  const name = prompt('工作流名称：','新工作流');
+  if(name===null) return;
+  const tid = uid('node');
+  DATA.workflows.push({
+    id: uid('wf'), name: name||'新工作流', enabled:true,
+    nodes:[{id:tid,type:'trigger',x:120,y:200,data:{trigger_type:'exact',trigger_content:'',priority:0,
+      owner_only:false,group_only:false,direct_only:false,channel_only:false,ignore_at_check:false,cooldown:0,event_types:[]}}],
+    connections:[]
+  });
+  renderWfList(); selectWf(DATA.workflows.length-1);
+}
+function delWorkflow(){
+  if(SELWF<0) return;
+  if(!confirm('确定删除工作流「'+(curWf().name)+'」？')) return;
+  DATA.workflows.splice(SELWF,1); SELWF=-1; SELNODE=null; closeDrawer(); renderWfList(); renderCanvas();
+}
+function selectWf(i){ SELWF=i; SELNODE=null; DSEL_SRC=null; TESTED={}; closeDrawer(); renderWfList(); renderCanvas(); }
+
+/* ================= 调色板 ================= */
+function renderPalette(){
+  document.getElementById('palette').innerHTML = (META.node_types||[]).map(n=>
+    n.single ? '' : `<div class="pal-btn" onclick="addNode('${n.value}')"><span style="color:${nodeColor(n.value)};display:inline-flex">${icon(n.value)}</span>${esc(n.label)}</div>`
+  ).join('');
+}
+function addNode(type){
+  const w = curWf();
+  if(!w){ toast('请先新建/选择工作流'); return; }
+  const wrap = document.getElementById('canvasWrap');
+  let x, y;
+  if(w.nodes && w.nodes.length){
+    const last = w.nodes.reduce((a,b)=>b.x>a.x?b:a); // 当前最靠后的节点
+    x = last.x + NODE_W + 62; y = last.y;            // 放到其右侧再往后一点
+  } else {
+    x = wrap.scrollLeft + 80; y = wrap.scrollTop + 80;
+  }
+  const defaults = {
+    api:{method:'GET',url:'',headers:{},body:'',body_type:'json',timeout:10,response:'json',save_as:'r'+(w.nodes.filter(n=>n.type==='api').length+1),output_template:''},
+    condition:{condition_type:'contains',condition_value:'',var_name:''},
+    reply:{reply_type:'text',content:'',image_source:'url',image_value:'',from_step:'',file_name:'',ark_template_id:23,ark_kv:[],buttons:[]},
+    set_var:{var_name:'',var_value:''},
+    delay:{seconds:1}
+  };
+  const id = uid('node');
+  w.nodes.push({id,type,x,y,data:JSON.parse(JSON.stringify(defaults[type]||{}))});
+  renderCanvas(); // 直接放到画布上，不自动打开配置抽屉
+  wrap.scrollLeft = Math.max(0, x + NODE_W/2 - wrap.clientWidth/2);
+  wrap.scrollTop = Math.max(0, y + 40 - wrap.clientHeight/2);
+}
+function deleteNode(id){
+  const w=curWf(); const n=w.nodes.find(x=>x.id===id);
+  if(n&&n.type==='trigger'){ toast('触发节点不可删除'); return; }
+  w.nodes = w.nodes.filter(x=>x.id!==id);
+  w.connections = w.connections.filter(c=>c.from_node!==id && c.to_node!==id);
+  if(SELNODE===id){ SELNODE=null; closeDrawer(); }
+  renderCanvas();
+}
+
+/* ================= 画布渲染 ================= */
+function renderCanvas(){
+  const cv = document.getElementById('canvas');
+  cv.querySelectorAll('.node').forEach(e=>e.remove());
+  const w = curWf();
+  if(!w){ renderConnections(); return; }
+  for(const n of w.nodes) cv.appendChild(buildNode(n));
+  renderConnections();
+}
+function buildNode(n){
+  const m = nodeMeta(n.type);
+  const el = document.createElement('div');
+  el.className='node'+(n.id===SELNODE?' sel':'');
+  el.style.left=n.x+'px'; el.style.top=n.y+'px';
+  el.dataset.node=n.id;
+  const delBtn = n.type==='trigger' ? '' : `<span class="del" title="删除" onclick="event.stopPropagation();deleteNode('${n.id}')">✕</span>`;
+  let ports = `<div class="port in" data-node="${n.id}" title="输入"></div>`;
+  if(m.outputs===2){
+    ports += `<div class="port out" data-node="${n.id}" data-out="output_1" style="top:34%"></div><span class="port-lbl" style="top:30%">真</span>`;
+    ports += `<div class="port out" data-node="${n.id}" data-out="output_2" style="top:70%"></div><span class="port-lbl" style="top:66%">假</span>`;
+  } else {
+    ports += `<div class="port out" data-node="${n.id}" data-out="output_1" style="top:50%;transform:translateY(-50%)"></div>`;
+  }
+  if(n.type==='trigger') ports = ports.replace(/<div class="port in"[^>]*><\/div>/,''); // 触发节点无输入
+  el.innerHTML = `<div class="nh" style="background:${nodeColor(n.type)}">${icon(n.type)}<span>${esc(m.label)}</span>${delBtn}</div>
+    <div class="nb">${nodeSummary(n)}</div>${ports}`;
+  // 拖动
+  el.querySelector('.nh').addEventListener('mousedown',e=>startDrag(e,n,el));
+  el.addEventListener('mousedown',e=>{ if(!e.target.classList.contains('port')) {} });
+  el.addEventListener('click',e=>{ if(e.target.classList.contains('port')||e.target.classList.contains('del')) return; selectNode(n.id); });
+  // 端口事件
+  el.querySelectorAll('.port.out').forEach(p=>p.addEventListener('click',e=>{e.stopPropagation();startConnect(n.id,p.dataset.out,p);}));
+  const pin = el.querySelector('.port.in');
+  if(pin) pin.addEventListener('click',e=>{e.stopPropagation();finishConnect(n.id);});
+  return el;
+}
+function nodeSummary(n){
+  const d=n.data||{};
+  if(n.type==='trigger'){ const tt=(META.trigger_types||[]).find(x=>x.value===d.trigger_type); return `<b>${esc(tt?tt.label:d.trigger_type)}</b><br>${esc(d.trigger_content||'(未设置)')}`; }
+  if(n.type==='api') return `<b>${esc(d.method)}</b> ${esc(d.url||'(未设置URL)')}<br>存为 <b>{${esc(d.save_as)}}</b>`;
+  if(n.type==='condition'){ const c=(META.condition_ops||[]).find(x=>x.value===d.condition_type); const detail=d.var_name?`${esc(d.var_name)} ${esc(d.condition_value||'')}`.trim():esc(d.condition_value||''); return `<b>${esc(c?c.label:d.condition_type)}</b><br>${detail}`; }
+  if(n.type==='reply'){ const r=(META.reply_types||[]).find(x=>x.value===d.reply_type); return `<b>${esc(r?r.label:d.reply_type)}</b><br>${esc((d.content||d.image_value||'').slice(0,60))||'(空)'}`; }
+  if(n.type==='set_var') return `<b>{${esc(d.var_name||'?')}}</b> = ${esc(d.var_value||'')}`;
+  if(n.type==='delay') return `等待 <b>${esc(d.seconds)}</b> 秒`;
+  return '';
+}
+
+/* ---- 连线 ---- */
+function startConnect(nodeId,output,portEl){
+  document.querySelectorAll('.port.waiting').forEach(p=>p.classList.remove('waiting'));
+  connecting={nodeId,output}; portEl.classList.add('waiting');
+  toast('点击目标节点左侧的输入圆点完成连线');
+}
+function finishConnect(toNode){
+  if(!connecting){ return; }
+  if(connecting.nodeId===toNode){ toast('不能连到自己'); connecting=null; document.querySelectorAll('.port.waiting').forEach(p=>p.classList.remove('waiting')); return; }
+  const w=curWf();
+  // 同一 from 输出端口只允许一条连线（保持线性/分支清晰）；condition 的两个输出各一条
+  w.connections = w.connections.filter(c=>!(c.from_node===connecting.nodeId && c.from_output===connecting.output));
+  if(!w.connections.some(c=>c.from_node===connecting.nodeId&&c.from_output===connecting.output&&c.to_node===toNode))
+    w.connections.push({from_node:connecting.nodeId,from_output:connecting.output,to_node:toNode});
+  connecting=null; document.querySelectorAll('.port.waiting').forEach(p=>p.classList.remove('waiting'));
+  renderConnections(); toast('已连接');
+}
+function delConn(idx){ const w=curWf(); if(confirm('删除这条连线？')){ w.connections.splice(idx,1); renderConnections(); } }
+function renderConnections(){
+  const svg=document.getElementById('links'); const w=curWf();
+  svg.innerHTML='';
+  if(!w) return;
+  const wrap=document.getElementById('canvasWrap'); const base=wrap.getBoundingClientRect();
+  const sl=wrap.scrollLeft, st=wrap.scrollTop;
+  w.connections.forEach((c,idx)=>{
+    const fp=document.querySelector(`.port.out[data-node="${c.from_node}"][data-out="${c.from_output}"]`);
+    const tp=document.querySelector(`.port.in[data-node="${c.to_node}"]`);
+    if(!fp||!tp) return;
+    const fr=fp.getBoundingClientRect(), tr=tp.getBoundingClientRect();
+    const x1=fr.left-base.left+sl+7, y1=fr.top-base.top+st+7;
+    const x2=tr.left-base.left+sl+7, y2=tr.top-base.top+st+7;
+    const dx=Math.max(40,Math.abs(x2-x1)/2);
+    const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',`M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`);
+    path.setAttribute('fill','none');
+    path.setAttribute('stroke',c.from_output==='output_2'?'#ef4444':'#4f6ef7');
+    path.setAttribute('stroke-width','2.5');
+    path.addEventListener('click',()=>delConn(idx));
+    const t=document.createElementNS('http://www.w3.org/2000/svg','title'); t.textContent='点击删除连线'; path.appendChild(t);
+    svg.appendChild(path);
+  });
+}
+
+/* ---- 拖动节点 ---- */
+function startDrag(e,n,el){
+  e.preventDefault();
+  const sx=e.clientX, sy=e.clientY, ox=n.x, oy=n.y;
+  function mv(ev){ n.x=Math.max(0,ox+(ev.clientX-sx)); n.y=Math.max(0,oy+(ev.clientY-sy));
+    el.style.left=n.x+'px'; el.style.top=n.y+'px'; renderConnections(); }
+  function up(){ document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); }
+  document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
+}
+
+function autoArrange(){
+  const w=curWf(); if(!w) return;
+  // 简易分层：从触发节点 BFS，按层级排 x，层内排 y
+  const trig=w.nodes.find(n=>n.type==='trigger'); if(!trig) return;
+  const level={}; level[trig.id]=0; const q=[trig.id];
+  while(q.length){ const id=q.shift();
+    w.connections.filter(c=>c.from_node===id).forEach(c=>{ if(level[c.to_node]==null){ level[c.to_node]=level[id]+1; q.push(c.to_node);} }); }
+  const byLvl={}; w.nodes.forEach(n=>{ const l=level[n.id]??0; (byLvl[l]=byLvl[l]||[]).push(n); });
+  Object.keys(byLvl).forEach(l=>{ byLvl[l].forEach((n,i)=>{ n.x=120+l*250; n.y=120+i*150; }); });
+  renderCanvas();
+}
+function fitView(){ const wrap=document.getElementById('canvasWrap'); wrap.scrollTo({left:0,top:0,behavior:'smooth'}); }
+
+/* ================= 节点设置浮窗 ================= */
+function selectNode(id){ SELNODE=id; DSEL_SRC=null; document.querySelectorAll('.node').forEach(e=>e.classList.toggle('sel',e.dataset.node===id)); openModal(); }
+function openStandalone(){ window.open(location.href,'_blank'); }
+function closeModal(){ SELNODE=null; document.getElementById('modalOv').classList.add('hide'); document.getElementById('modal').classList.remove('wide'); document.getElementById('dataSel').classList.add('hide'); document.querySelectorAll('.node.sel').forEach(e=>e.classList.remove('sel')); }
+function closeDrawer(){ closeModal(); }
+function setND(k,v){ const n=curWf().nodes.find(x=>x.id===SELNODE); if(n){ n.data[k]=v; refreshNodeBody(n); } }
+function refreshNodeBody(n){ const el=document.querySelector(`.node[data-node="${n.id}"] .nb`); if(el) el.innerHTML=nodeSummary(n); }
+
+function openModal(){
+  const n=curWf().nodes.find(x=>x.id===SELNODE); if(!n) return;
+  const m=nodeMeta(n.type);
+  document.getElementById('modalOv').classList.remove('hide');
+  document.getElementById('drawerTitle').innerHTML=`<span class="dh-ic" style="background:${nodeColor(n.type)}">${icon(n.type)}</span>${esc(m.label)}节点`;
+  document.getElementById('drawerBody').innerHTML = drawerHTML(n);
+  bindDrawer(n);
+  renderDataSel(n);
+}
+function openDrawer(){ openModal(); }
+function opt(list,cur){ return list.map(o=>`<option value="${esc(o.value)}" ${o.value===cur?'selected':''}>${esc(o.label)}</option>`).join(''); }
+
+function drawerHTML(n){
+  const d=n.data;
+  if(n.type==='trigger') return triggerForm(d);
+  if(n.type==='api') return apiForm(d);
+  if(n.type==='condition') return condForm(d);
+  if(n.type==='reply') return replyForm(d);
+  if(n.type==='set_var') return `
+    <label class="fl">变量名</label><input data-k="var_name" value="${esc(d.var_name)}" placeholder="如 score">
+    <label class="fl">变量值（可用模板）</label><textarea data-k="var_value" data-tpl="1">${esc(d.var_value)}</textarea>
+    ${insertPanel()}`;
+  if(n.type==='delay') return `<label class="fl">等待秒数（0-30）</label><input type="number" data-k="seconds" value="${esc(d.seconds)}" min="0" max="30">`;
+  return '';
+}
+function triggerForm(d){
+  return `
+  <label class="fl">触发方式</label><select data-k="trigger_type">${opt(META.trigger_types||[],d.trigger_type)}</select>
+  <label class="fl">触发内容 / 正则</label><input data-k="trigger_content" value="${esc(d.trigger_content)}" placeholder="如 ^天气\\s*(\\S+)$">
+  <div class="hint">指令正则即存于此。保存后自动注册为独立指令，文件变更会自动热重载。</div>
+  <label class="fl">作用域</label>
+  <div class="ck"><input type="checkbox" data-k="group_only" ${d.group_only?'checked':''}><label style="margin:0">仅群聊</label></div>
+  <div class="ck"><input type="checkbox" data-k="direct_only" ${d.direct_only?'checked':''}><label style="margin:0">仅私聊</label></div>
+  <div class="ck"><input type="checkbox" data-k="channel_only" ${d.channel_only?'checked':''}><label style="margin:0">仅频道</label></div>
+  <div class="ck"><input type="checkbox" data-k="owner_only" ${d.owner_only?'checked':''}><label style="margin:0">仅主人</label></div>
+  <div class="ck"><input type="checkbox" data-k="ignore_at_check" ${d.ignore_at_check?'checked':''}><label style="margin:0">免@也触发</label></div>
+  <div class="grid2">
+    <div><label class="fl">优先级</label><input type="number" data-k="priority" value="${esc(d.priority)}"></div>
+    <div><label class="fl">冷却(秒)</label><input type="number" data-k="cooldown" value="${esc(d.cooldown)}" min="0"></div>
+  </div>
+  <label class="fl">限定事件类型（留空=全部）</label>
+  <select data-k="event_types" multiple size="5" style="height:auto">${(META.event_types||[]).map(t=>`<option value="${t}" ${(d.event_types||[]).includes(t)?'selected':''}>${t}</option>`).join('')}</select>`;
+}
+function apiForm(d){
+  return `
+  <div class="grid2">
+    <div><label class="fl">方法</label><select data-k="method">${(META.methods||[]).map(x=>`<option ${x===d.method?'selected':''}>${x}</option>`).join('')}</select></div>
+    <div><label class="fl">结果存为</label><input data-k="save_as" value="${esc(d.save_as)}" placeholder="r1"></div>
+  </div>
+  <label class="fl">请求 URL（可用模板，如 {1}）</label><input data-k="url" data-tpl="1" value="${esc(d.url)}" placeholder="https://...">
+  <details class="adv"><summary>高级设置（请求头 / 请求体 / 超时）</summary>
+    <label class="fl">请求头（每行 K: V，或 JSON）</label><textarea data-k="headers" data-json="1" data-tpl="1">${esc(headersToText(d.headers))}</textarea>
+    <div class="grid2">
+      <div><label class="fl">请求体类型</label><select data-k="body_type">${opt(META.body_types||[],d.body_type)}</select></div>
+      <div><label class="fl">响应解析</label><select data-k="response">${opt(META.response_types||[],d.response)}</select></div>
+    </div>
+    <label class="fl">请求体（POST/PUT 时，可用模板）</label><textarea data-k="body" data-tpl="1">${esc(typeof d.body==='string'?d.body:JSON.stringify(d.body,null,2))}</textarea>
+    <label class="fl">超时（秒）</label><input type="number" data-k="timeout" value="${esc(d.timeout)}" min="1">
+  </details>
+  <div class="btnrow"><button class="btn pri" onclick="testApi()"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style="vertical-align:-2px;margin-right:4px"><polygon points="6 4 20 12 6 20 6 4"/></svg>测试此API（拉真实返回）</button></div>
+  <div class="hint">测试成功后，点下方 JSON 字段即可把对应取值（如 {${esc(d.save_as)}.字段}）追加到下方输出内容。</div>
+  <div id="testResult"></div>
+  <label class="fl">输出内容（本节点对外输出，可被后续节点引用）</label>
+  <textarea data-k="output_template" data-tpl="1" placeholder="点击上方字段自动追加，如：城市 {${esc(d.save_as)}.city} 天气 {${esc(d.save_as)}.weather}；留空则默认输出原始返回">${esc(d.output_template||'')}</textarea>
+  <div class="hint">后续节点可用 {${esc(d.save_as)}.字段} 取某字段，或 {${esc(d.save_as)}.__output__} 取此输出内容；右侧「数据选择」可一键插入。</div>`;
+}
+// 各条件类型对应的输入框配置与用法说明（给不懂编程的用户看）
+// var:[标签,占位] 显示变量名框；val:[标签,占位,是否数字] 显示比较值框
+const COND_FIELDS = {
+  contains:    {val:['要包含的文字','如 天气'], help:'消息里<b>包含</b>这段文字就成立。例：填「天气」，用户发「今天天气如何」即成立。'},
+  not_contains:{val:['不能包含的文字','如 广告'], help:'消息里<b>不含</b>这段文字时成立。'},
+  equals:      {val:['要完全等于的文字','如 签到'], help:'消息内容与这段文字<b>完全相同</b>时成立。'},
+  ne:          {val:['不能等于的文字','如 签到'], help:'消息内容与这段文字<b>不相同</b>时成立。'},
+  regex:       {val:['正则表达式','如 ^\\d{6}$'], help:'用<b>正则</b>匹配消息内容。例：^\\d{6}$ 匹配纯 6 位数字。不熟悉正则可先用「包含/等于」。'},
+  random:      {val:['触发几率 %（0~100）','如 30',true], help:'按百分比<b>随机</b>触发。填 30 ≈ 30% 概率走「真」分支，可用于抽奖、彩蛋。'},
+  user_id:     {val:['发送者 ID','如 10086'], help:'当<b>发消息的人</b>ID 等于此值时成立，常用来只对管理员/自己生效。'},
+  group_id:    {val:['群号 / 频道 ID','如 200222'], help:'当<b>来源群</b>ID 等于此值时成立，常用来只在某个群生效。'},
+  empty:       {var:['变量名（留空＝判断消息内容）','如 r1.code'], help:'判断<b>变量</b>（填了变量名）或<b>消息内容</b>（留空）是否为<b>空</b>。'},
+  not_empty:   {var:['变量名（留空＝判断消息内容）','如 r1.code'], help:'判断<b>变量</b>或<b>消息内容</b>是否<b>非空</b>，常用于「拿到数据才继续」。'},
+  var_equals:  {var:['变量名','如 r1.code'], val:['要等于的值','如 200'], help:'取出变量的值，与右边的值<b>相等</b>时成立。变量名可填上游 API 的 {r1.字段} 里的「r1.字段」。'},
+  var_gt:      {var:['变量名','如 score'], val:['要大于的数值','如 60',true], help:'变量按<b>数字</b>比较，<b>大于</b>此数值时成立。'},
+  var_lt:      {var:['变量名','如 score'], val:['要小于的数值','如 60',true], help:'变量按<b>数字</b>比较，<b>小于</b>此数值时成立。'},
+  time_range:  {val:['小时区间（0~23）','如 9-18'], help:'当前<b>整点小时</b>落在区间内时成立。如 9-18；跨午夜可写 22-6。'},
+  weekday_in:  {val:['星期（用 | 分隔）','如 周一|周三|周五'], help:'今天是其中之一时成立。支持 周一…周日，或数字 0=周日…6=周六。'},
+  expression:  {val:['比较表达式','如 {score}>60'], help:'简单比较：== != &gt; &lt; &gt;= &lt;=，可用 &amp;&amp; 和 ||。可嵌入 {变量}，如 {r1.code}==200。'},
+};
+function condForm(d){
+  const ct=d.condition_type||'contains';
+  const cfg=COND_FIELDS[ct]||COND_FIELDS.contains;
+  let fields='';
+  if(cfg.var){ const lb=cfg.var[0], ph=cfg.var[1]; fields+=`<label class="fl">${esc(lb)}</label><input data-k="var_name" value="${esc(d.var_name)}" placeholder="${esc(ph)}">`; }
+  if(cfg.val){ const lb=cfg.val[0], ph=cfg.val[1], num=cfg.val[2]; fields+=`<label class="fl">${esc(lb)}（可用模板）</label><input data-k="condition_value" data-tpl="1" ${num?'inputmode="decimal" ':''}value="${esc(d.condition_value)}" placeholder="${esc(ph)}">`; }
+  if(!cfg.var && !cfg.val) fields='<div class="hint">此条件无需额外填写。</div>';
+  return `
+  <label class="fl">条件类型 <span class="help-ic" title="点击查看用法" onclick="toggleCondHelp(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7.5" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg></span></label>
+  <select data-k="condition_type">${opt(META.condition_ops||[],ct)}</select>
+  <div class="cond-help ${CONDHELP_OPEN?'':'hide'}" id="condHelp">${cfg.help}</div>
+  ${fields}
+  <div class="hint">满足 → 走「真」分支；否则走「假」分支。两个输出端口分别连后续节点。</div>
+  ${insertPanel()}`;
+}
+function toggleCondHelp(e){ if(e) e.stopPropagation(); CONDHELP_OPEN=!CONDHELP_OPEN; const el=document.getElementById('condHelp'); if(el) el.classList.toggle('hide',!CONDHELP_OPEN); }
+function replyForm(d){
+  const rt=d.reply_type;
+  let extra='';
+  if(rt==='image'){
+    extra=`<label class="fl">图片来源</label><select data-k="image_source">${opt(META.reply_image_sources||[],d.image_source)}</select>`;
+    if(d.image_source==='response') extra+=`<label class="fl">取自哪个API（节点存为名，留空=最近一次）</label><input data-k="from_step" value="${esc(d.from_step)}" placeholder="r1">`;
+    else extra+=`<label class="fl">图片URL（可用模板）</label><input data-k="image_value" data-tpl="1" value="${esc(d.image_value)}" placeholder="{r1.data.url}">`;
+  }
+  if(rt==='file') extra=`<label class="fl">文件名（可选）</label><input data-k="file_name" data-tpl="1" value="${esc(d.file_name)}">`;
+  if(rt==='ark') extra=`<label class="fl">ARK模板ID</label><input type="number" data-k="ark_template_id" value="${esc(d.ark_template_id)}">
+    <label class="fl">ARK字段（JSON数组，[{"key","value"}]）</label><textarea data-k="ark_kv" data-json="1" data-tpl="1">${esc(JSON.stringify(d.ark_kv||[]))}</textarea>`;
+  const contentLabel = rt==='image'?'附带文字':(rt==='voice'?'语音URL':(rt==='video'?'视频URL':(rt==='file'?'文件URL':'回复内容')));
+  return `
+  <label class="fl">回复类型</label><select data-k="reply_type">${opt(META.reply_types||[],d.reply_type)}</select>
+  <label class="fl">${contentLabel}（可用模板）</label><textarea data-k="content" data-tpl="1" placeholder="支持 {r1.字段}、{1}、{date} 等">${esc(d.content)}</textarea>
+  ${extra}
+  <label class="fl">按钮（可选）</label>
+  <div class="bb" id="btnBuilder">${buttonBuilderInner(d.buttons=normButtons(d.buttons))}</div>
+  ${insertPanel()}`;
+}
+
+/* ===== 可视化按钮生成器（每行最多10个，最多5行）===== */
+const BTN_MAXROW=5, BTN_MAXCOL=10;
+const BTN_STYLES=[[1,'蓝字'],[0,'灰字'],[4,'蓝底白字'],[2,'黑框'],[3,'红字']];
+let BTN_MODE='visual'; // visual | json
+function normButtons(arr){ // 兼容旧数据：扁平数组→按每行10个折行；保证二维
+  if(!Array.isArray(arr)||!arr.length) return [];
+  if(!Array.isArray(arr[0])){ const rows=[]; for(let i=0;i<arr.length;i+=BTN_MAXCOL) rows.push(arr.slice(i,i+BTN_MAXCOL)); return rows; }
+  return arr.map(r=>Array.isArray(r)?r:[r]);
+}
+function curBtns(){ const n=curWf()&&curWf().nodes.find(x=>x.id===SELNODE); if(!n) return []; n.data.buttons=normButtons(n.data.buttons); return n.data.buttons; }
+function btnKind(b){ if('link' in b||b.type===0) return 'link'; if(b.type===1) return 'callback'; return 'input'; }
+function btnVal(b){ return ('link' in b)?(b.link||''):(b.data||''); }
+function buttonBuilderInner(rows){
+  const seg=`<div class="bb-top"><span></span><span class="bb-seg">
+    <button type="button" class="${BTN_MODE==='visual'?'on':''}" onclick="btnMode('visual')">可视化</button>
+    <button type="button" class="${BTN_MODE==='json'?'on':''}" onclick="btnMode('json')">JSON</button></span></div>`;
+  return seg + (BTN_MODE==='json' ? btnJsonInner(rows) : btnVisualInner(rows));
+}
+function btnVisualInner(rows){
+  let h='';
+  rows.forEach((row,ri)=>{
+    h+=`<div class="bb-row"><div class="bb-rh"><span>第 ${ri+1} 行（${row.length}/${BTN_MAXCOL}）</span><span class="bb-x" title="删除整行" onclick="btnDelRow(${ri})">删除行 ✕</span></div><div class="bb-cells">`;
+    row.forEach((b,ci)=>{ h+=btnCard(b,ri,ci); });
+    h+=`<button type="button" class="bb-add" onclick="btnAddBtn(${ri})" ${row.length>=BTN_MAXCOL?'disabled':''}>+ 按钮</button>`;
+    h+=`</div></div>`;
+  });
+  h+=`<button type="button" class="btn sm" onclick="btnAddRow()" ${rows.length>=BTN_MAXROW?'disabled':''}>+ 添加一行</button>`;
+  h+=`<div class="hint">每行最多 ${BTN_MAXCOL} 个按钮，最多 ${BTN_MAXROW} 行。文字/值支持模板变量（先点输入框再从下方插入，如 {1}、{r1.字段}）。<br>链接=跳转网页，回调=点击触发 INTERACTION_CREATE 事件（值为回调标识），填充输入=把值填进用户输入框。</div>`;
+  return h;
+}
+function btnJsonInner(rows){
+  return `<textarea class="bb-json" id="bbJson" spellcheck="false" placeholder='[[{"text":"百度","link":"https://baidu.com"}]]' onfocus="lastField=this" oninput="btnJsonApply(this)">${esc(JSON.stringify(rows,null,2))}</textarea>
+  <div class="bb-jerr" id="bbJsonErr"></div>
+  <div class="hint">二维数组，每个子数组为一行。链接 <code>{"text","link"}</code>；回调 <code>{"text","type":1,"data"}</code>；填充 <code>{"text","type":2,"data"}</code>；样式 <code>style</code> 可选(0灰/2黑框/3红/4蓝底)。每行≤${BTN_MAXCOL}个、≤${BTN_MAXROW}行。</div>`;
+}
+function btnMode(m){ if(BTN_MODE===m) return; BTN_MODE=m; btnRerender(); }
+function btnJsonApply(ta){
+  const errEl=document.getElementById('bbJsonErr'); if(!errEl) return;
+  let v; try{ v=JSON.parse(ta.value||'[]'); }catch(e){ errEl.textContent='JSON 格式错误: '+e.message; return; }
+  if(!Array.isArray(v)){ errEl.textContent='按钮必须是数组'; return; }
+  const rows=normButtons(v);
+  if(rows.length>BTN_MAXROW){ errEl.textContent='最多 '+BTN_MAXROW+' 行'; return; }
+  if(rows.some(r=>!Array.isArray(r)||r.length>BTN_MAXCOL)){ errEl.textContent='每行最多 '+BTN_MAXCOL+' 个按钮'; return; }
+  errEl.textContent='';
+  const n=curWf().nodes.find(x=>x.id===SELNODE); if(n){ n.data.buttons=rows; refreshNodeBody(n); }
+}
+function btnCard(b,ri,ci){
+  const kind=btnKind(b), val=btnVal(b), style=b.style==null?1:b.style;
+  const valPh=kind==='link'?'链接 URL':(kind==='callback'?'回调标识':'填充内容');
+  return `<div class="bb-card">
+    <div class="bb-ch"><span>按钮 ${ci+1}</span><span class="bb-x" title="删除" onclick="btnDelBtn(${ri},${ci})">✕</span></div>
+    <input class="bb-i" placeholder="按钮文字" value="${esc(b.text||'')}" onfocus="lastField=this" oninput="btnSet(${ri},${ci},'text',this.value)">
+    <select class="bb-i" onchange="btnSetKind(${ri},${ci},this.value)">
+      <option value="link" ${kind==='link'?'selected':''}>链接</option>
+      <option value="callback" ${kind==='callback'?'selected':''}>回调</option>
+      <option value="input" ${kind==='input'?'selected':''}>填充输入</option>
+    </select>
+    <input class="bb-i" placeholder="${valPh}" value="${esc(val)}" onfocus="lastField=this" oninput="btnSet(${ri},${ci},'value',this.value)">
+    <select class="bb-i" onchange="btnSet(${ri},${ci},'style',this.value)">
+      ${BTN_STYLES.map(([v,l])=>`<option value="${v}" ${Number(style)===v?'selected':''}>${l}</option>`).join('')}
+    </select>
+  </div>`;
+}
+function btnRerender(){ const el=document.getElementById('btnBuilder'); if(el) el.innerHTML=buttonBuilderInner(curBtns()); const n=curWf().nodes.find(x=>x.id===SELNODE); if(n) refreshNodeBody(n); }
+function btnSet(ri,ci,field,v){
+  const b=curBtns()[ri] && curBtns()[ri][ci]; if(!b) return;
+  if(field==='text'){ b.text=v; }
+  else if(field==='value'){ if('link' in b) b.link=v; else b.data=v; }
+  else if(field==='style'){ if(Number(v)===1) delete b.style; else b.style=Number(v); }
+  const n=curWf().nodes.find(x=>x.id===SELNODE); if(n) refreshNodeBody(n); // 文字/值/样式：仅更新模型，不重渲染，保留焦点
+}
+function btnSetKind(ri,ci,kind){
+  const rows=curBtns(); const b=rows[ri] && rows[ri][ci]; if(!b) return;
+  const val=btnVal(b), text=b.text||'', style=b.style;
+  const nb={text}; if(kind==='link') nb.link=val; else { nb.type=kind==='callback'?1:2; nb.data=val; }
+  if(style!=null&&Number(style)!==1) nb.style=style;
+  rows[ri][ci]=nb; btnRerender();
+}
+function btnAddBtn(ri){ const rows=curBtns(); if(!rows[ri]||rows[ri].length>=BTN_MAXCOL) return; rows[ri].push({text:'按钮',link:''}); btnRerender(); }
+function btnDelBtn(ri,ci){ const rows=curBtns(); if(!rows[ri]) return; rows[ri].splice(ci,1); if(!rows[ri].length) rows.splice(ri,1); btnRerender(); }
+function btnAddRow(){ const rows=curBtns(); if(rows.length>=BTN_MAXROW) return; rows.push([{text:'按钮',link:''}]); btnRerender(); }
+function btnDelRow(ri){ const rows=curBtns(); rows.splice(ri,1); btnRerender(); }
+
+function headersToText(h){ if(!h||typeof h!=='object') return ''; return Object.entries(h).map(([k,v])=>k+': '+v).join('\n'); }
+function textToHeaders(t){ const o={}; (t||'').split('\n').forEach(l=>{ const i=l.indexOf(':'); if(i>0) o[l.slice(0,i).trim()]=l.slice(i+1).trim(); }); return o; }
+
+/* 绑定抽屉内所有输入到节点 data */
+function bindDrawer(n){
+  const body=document.getElementById('drawerBody');
+  body.querySelectorAll('[data-k]').forEach(el=>{
+    const k=el.dataset.k;
+    const handler=()=>{
+      let v;
+      if(el.type==='checkbox') v=el.checked;
+      else if(el.multiple) v=Array.from(el.selectedOptions).map(o=>o.value);
+      else if(el.type==='number') v=el.value===''?0:Number(el.value);
+      else v=el.value;
+      if(el.dataset.json){ // headers / ark_kv / buttons
+        if(k==='headers'){ n.data[k]=textToHeaders(v); }
+        else { try{ n.data[k]=v.trim()?JSON.parse(v):[]; }catch(e){ /* 等输入完整 */ return; } }
+      } else { n.data[k]=v; }
+      refreshNodeBody(n);
+      if(k==='trigger_type'||k==='reply_type'||k==='image_source'||k==='condition_type'){ openModal(); }
+    };
+    el.addEventListener(el.tagName==='SELECT'||el.type==='checkbox'?'change':'input',handler);
+    if(el.dataset.tpl) el.addEventListener('focus',()=>lastField=el);
+  });
+}
+
+/* ================= 测试API + JSON树 + 变量插入 ================= */
+async function testApi(){
+  const n=curWf().nodes.find(x=>x.id===SELNODE); if(!n) return;
+  const box=document.getElementById('testResult'); box.innerHTML='<div class="hint">请求中…</div>';
+  const r=await api('/test_api','POST',{request:n.data, vars:sampleVars()});
+  if(!r.success && r.error){ box.innerHTML=`<div class="hint" style="color:var(--dl)">失败：${esc(r.error)}</div>`; return; }
+  TESTED[n.id]={json:r.json,text:r.text,status:r.status};
+  let h=`<div class="hint">HTTP ${esc(r.status)} ${r.is_binary?'(二进制 '+r.bytes_len+' 字节)':''}</div>`;
+  if(r.json!=null){ h+=`<div class="tree">${tree(r.json,n.data.save_as,'output')}</div>`; }
+  else if(r.text){ h+=`<div class="tree">${esc(r.text.slice(0,2000))}</div>`; }
+  box.innerHTML=h;
+}
+function sampleVars(){ return {content:'测试 示例',user_id:'10001',group_id:'2002','1':'示例参数','$1':'示例参数','0':'测试 示例'}; }
+function tree(obj,base,dest){
+  const ds=dest?",'"+dest+"'":'';
+  function walk(o,path){
+    if(Array.isArray(o)) return o.map((v,i)=>{
+      const p=path+'['+i+']';
+      return (v&&typeof v==='object')?`<div class="ind"><span class="k" onclick="pick('${esc(p)}'${ds})">[${i}]</span>${walk(v,p)}</div>`
+        :`<div class="ind"><span class="k" onclick="pick('${esc(p)}'${ds})">[${i}]</span>: <span class="v">${esc(JSON.stringify(v))}</span></div>`;
+    }).join('');
+    if(o&&typeof o==='object') return Object.entries(o).map(([k,v])=>{
+      const p=path?path+'.'+k:k;
+      return (v&&typeof v==='object')?`<div class="ind"><span class="k" onclick="pick('${esc(p)}'${ds})">${esc(k)}</span>${walk(v,p)}</div>`
+        :`<div class="ind"><span class="k" onclick="pick('${esc(p)}'${ds})">${esc(k)}</span>: <span class="v">${esc(JSON.stringify(v))}</span></div>`;
+    }).join('');
+    return `<span class="v">${esc(JSON.stringify(o))}</span>`;
+  }
+  return walk(obj,base);
+}
+function pick(path,dest){ insert('{'+path+'}',dest); }
+function insert(token,dest){
+  if(dest==='output'){
+    const ta=document.querySelector('#drawerBody [data-k="output_template"]');
+    if(ta){
+      if(document.activeElement===ta){
+        const s=ta.selectionStart, e=ta.selectionEnd;
+        ta.value=ta.value.slice(0,s)+token+ta.value.slice(e);
+        ta.focus(); ta.selectionStart=ta.selectionEnd=s+token.length;
+      } else {
+        ta.value+=token; ta.focus(); ta.selectionStart=ta.selectionEnd=ta.value.length;
+      }
+      ta.dispatchEvent(new Event('input')); lastField=ta;
+      toast('已追加 '+token); return;
+    }
+  }
+  if(lastField && document.body.contains(lastField)){
+    const el=lastField, s=el.selectionStart??el.value.length, e=el.selectionEnd??el.value.length;
+    el.value=el.value.slice(0,s)+token+el.value.slice(e);
+    el.dispatchEvent(new Event('input'));
+    el.focus(); el.selectionStart=el.selectionEnd=s+token.length;
+    toast('已插入 '+token); return;
+  }
+  const ta=document.querySelector('#drawerBody [data-k="output_template"]');
+  if(ta){ ta.value+=token; ta.dispatchEvent(new Event('input')); ta.focus(); toast('已追加 '+token); return; }
+  navigator.clipboard&&navigator.clipboard.writeText(token);
+  toast('已复制 '+token+'（请先点输入框再插入）');
+}
+/* ================= 数据选择侧栏（上游 API 输出） ================= */
+function ancestorApis(nodeId){
+  const w=curWf(); if(!w) return [];
+  const conns=w.connections||[];
+  const seen=new Set(), stack=[nodeId];
+  while(stack.length){
+    const cur=stack.pop();
+    for(const c of conns){ if(c.to_node===cur && !seen.has(c.from_node)){ seen.add(c.from_node); stack.push(c.from_node); } }
+  }
+  return (w.nodes||[]).filter(x=>x.type==='api'&&seen.has(x.id));
+}
+function renderDataSel(n){
+  const panel=document.getElementById('dataSel'), modal=document.getElementById('modal');
+  const ups=n?ancestorApis(n.id):[];
+  if(!ups.length){ panel.classList.add('hide'); modal.classList.remove('wide'); panel.innerHTML=''; DSEL_SRC=null; return; }
+  panel.classList.remove('hide'); modal.classList.add('wide');
+  // 选中要展示的上游节点（默认第一个；原选中节点已不在列表则回退）
+  if(!DSEL_SRC || !ups.some(a=>a.id===DSEL_SRC)) DSEL_SRC=ups[0].id;
+  const a=ups.find(x=>x.id===DSEL_SRC)||ups[0];
+  const sv=a.data.save_as||'r1';
+  let h='<div class="dsel-h">数据选择</div>'+
+        '<div class="hint" style="margin:0 0 9px">先点左侧输入框，再点下方字段即可插入引用。</div>';
+  // 多个上游 API 节点：下拉选择显示哪个，不再一起堆叠
+  if(ups.length>1){
+    h+='<select class="dsel-src" onchange="setDselSrc(this.value)">'+
+       ups.map(x=>{ const s=x.data.save_as||'r1'; const u=(x.data.url||'未配置URL').replace(/^https?:\/\//,'').slice(0,26);
+         return `<option value="${x.id}" ${x.id===a.id?'selected':''}>${esc(s)} · ${esc(u)}</option>`; }).join('')+
+       '</select>';
+  } else {
+    h+=`<div class="dsrc-t" style="margin:0 0 8px">${icon('api')}<b>${esc(sv)}</b><span class="dsrc-url">${esc((a.data.url||'未配置 URL').slice(0,40))}</span></div>`;
+  }
+  h+=`<div class="dchips">`+
+     `<span class="tag" onclick="insert('{${esc(sv)}.__output__}')">{${esc(sv)}.输出}</span>`+
+     `<span class="tag" onclick="insert('{${esc(sv)}}')">{${esc(sv)}.原文}</span>`+
+     `<span class="tag" onclick="insert('{${esc(sv)}.__status__}')">{${esc(sv)}.状态码}</span>`+
+     `</div>`;
+  const t=TESTED[a.id];
+  if(t&&t.json!=null) h+=`<div class="tree">${tree(t.json,sv)}</div>`;
+  else if(t&&t.text) h+=`<div class="tree">${esc(t.text.slice(0,2000))}</div>`;
+  else h+=`<button class="btn sm" onclick="loadFields('${a.id}')">拉取此API字段</button>`;
+  panel.innerHTML=h;
+}
+function setDselSrc(id){ DSEL_SRC=id; const n=curWf().nodes.find(x=>x.id===SELNODE); renderDataSel(n); }
+async function loadFields(id){
+  const a=curWf().nodes.find(x=>x.id===id); if(!a) return;
+  const r=await api('/test_api','POST',{request:a.data, vars:sampleVars()});
+  if(!r.success && r.error){ toast('拉取失败：'+esc(r.error)); return; }
+  TESTED[id]={json:r.json,text:r.text,status:r.status};
+  const n=curWf().nodes.find(x=>x.id===SELNODE); renderDataSel(n);
+}
+function insertPanel(){
+  return `<div class="insert-box"><h4>点击插入变量（先点上方输入框）</h4>
+    ${(META.variables||[]).map(v=>`<span class="tag" title="${esc(v.desc)}" onclick="insert('${esc(v.token.split(' ')[0])}')">${esc(v.token)}</span>`).join('')}
+    <div style="margin-top:6px"><button class="btn dl sm" onclick="delWorkflow()">删除此工作流</button></div>
+    </div>`;
+}
+
+/* ================= 导入导出 / 保存 ================= */
+function exportJson(){
+  const blob=new Blob([JSON.stringify(DATA,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='workflow_api.json'; a.click();
+}
+function importJson(){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='.json';
+  inp.onchange=()=>{ const f=inp.files[0]; if(!f) return; const rd=new FileReader();
+    rd.onload=()=>{ try{ const j=JSON.parse(rd.result); if(j.workflows){ DATA=j; document.getElementById('gEnabled').checked=DATA.settings.enabled!==false; renderWfList(); SELWF=DATA.workflows.length?0:-1; if(SELWF>=0)selectWf(0); else renderCanvas(); toast('已导入'); } else toast('文件格式不对'); }catch(e){ toast('解析失败'); } };
+    rd.readAsText(f); };
+  inp.click();
+}
+async function save(){
+  renderCanvas();
+  const r=await api('/save','POST',{data:DATA});
+  if(r.success){ DATA=r.data; if(!DATA.workflows)DATA.workflows=[]; renderWfList(); if(SELWF>=DATA.workflows.length)SELWF=DATA.workflows.length-1; renderCanvas(); toast('已保存并热重载 ✓'); }
+  else toast('保存失败：'+(r.message||'')); 
+}
+
+window.addEventListener('resize',renderConnections);
+document.getElementById('modalOv').addEventListener('mousedown',e=>{ if(e.target.id==='modalOv') closeModal(); });
+window.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!document.getElementById('modalOv').classList.contains('hide')) closeModal(); });
+document.getElementById('canvasWrap').addEventListener('scroll',renderConnections);
+document.getElementById('canvas').addEventListener('click',e=>{ if(e.target.id==='canvas'||e.target.tagName==='svg'){ if(connecting){connecting=null;document.querySelectorAll('.port.waiting').forEach(p=>p.classList.remove('waiting'));} } });
+initTheme();
+boot();
+</script>
+</body>
+</html>
