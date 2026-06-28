@@ -64,6 +64,7 @@
   <div class="tabs">
     <div class="tab on" data-tab="cfg">配置</div>
     <div class="tab" data-tab="whitelist">群白名单</div>
+    <div class="tab" data-tab="blacklist">黑名单群</div>
     <div class="tab" data-tab="pending">群列表</div>
     <div class="tab" data-tab="delay">延迟队列</div>
     <div class="tab" data-tab="rec">发送记录</div>
@@ -173,6 +174,25 @@
     </div>
   </div>
 
+  <!-- 黑名单群 -->
+  <div id="tab-blacklist" class="hidden">
+    <div class="card">
+      <div class="hint" style="margin-bottom:14px;padding:10px 12px;background:var(--card2);border-radius:8px">
+        群管理员或群主通过「关闭欢迎」指令关闭的群。黑名单中的群不会发送入群欢迎消息。移除后该群将恢复正常推送。
+      </div>
+      <div class="toolbar">
+        <button class="ghost" onclick="loadBlacklist()">刷新</button>
+        <span id="bl-stat" class="mut"></span>
+      </div>
+      <table>
+        <thead><tr><th>群 ID</th><th>关闭者</th><th>关闭时间</th><th></th></tr></thead>
+        <tbody id="bl-body"></tbody>
+      </table>
+      <div id="bl-empty" class="empty hidden">暂无黑名单群。</div>
+      <div class="pager" id="bl-pager"></div>
+    </div>
+  </div>
+
   <!-- 群列表 -->
   <div id="tab-pending" class="hidden">
     <div class="card">
@@ -273,11 +293,13 @@ function switchTab(t){
   document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('on', e.dataset.tab===t));
   $('tab-cfg').classList.toggle('hidden', t!=='cfg');
   $('tab-whitelist').classList.toggle('hidden', t!=='whitelist');
+  $('tab-blacklist').classList.toggle('hidden', t!=='blacklist');
   $('tab-pending').classList.toggle('hidden', t!=='pending');
   $('tab-delay').classList.toggle('hidden', t!=='delay');
   $('tab-rec').classList.toggle('hidden', t!=='rec');
   stopDelayTimer();
   if(t==='whitelist') loadWhitelist();
+  if(t==='blacklist') loadBlacklist();
   if(t==='pending') loadPending();
   if(t==='delay') startDelayTimer();
   if(t==='rec') loadRecords();
@@ -323,7 +345,7 @@ async function loadStatus(){
   $('merge_template').value = d.merge_template || '';
   const btns = Array.isArray(d.buttons) ? d.buttons : [];
   $('btn_json').value = btns.length ? JSON.stringify(btns, null, 2) : '';
-  $('cfg-stat').textContent = `群列表 ${d.pending_count} 个 · 发送记录 ${d.sent_count} 条`;
+  $('cfg-stat').textContent = `群列表 ${d.pending_count} 个 · 黑名单 ${d.disabled_count||0} 个 · 发送记录 ${d.sent_count} 条`;
 }
 
 // 解析按钮 JSON 文本框; 返回 {ok, buttons|err}
@@ -560,6 +582,31 @@ async function loadDbGroups(page){
     <td><button class="ghost" onclick="addWhitelistFromDb('${esc(gid)}')">添加到白名单</button></td>
   </tr>`).join('');
   renderPager('db', STATE.dbPage, total, j.page_size, 'loadDbGroups');
+}
+
+// ---- 黑名单 ----
+let blPage = 1;
+async function loadBlacklist(page){
+  if(page) blPage = page;
+  const j = await api('/disabled?page='+blPage,'GET');
+  const rows = (j.data||[]);
+  const total = j.total!=null ? j.total : rows.length;
+  blPage = j.page || blPage;
+  if(!rows.length && blPage>1){ return loadBlacklist(blPage-1); }
+  $('bl-stat').textContent = `共 ${total} 个黑名单群`;
+  $('bl-empty').classList.toggle('hidden', total>0);
+  $('bl-body').innerHTML = rows.map(r=>`<tr>
+    <td class="mono">${esc(r.group_id)}</td>
+    <td class="mono">${esc(r.disabled_by||'—')}</td>
+    <td>${esc(r.added_at||'')}</td>
+    <td><button class="ghost" onclick="delBlacklist('${esc(r.group_id)}')">移除</button></td>
+  </tr>`).join('');
+  renderPager('bl', blPage, total, j.page_size, 'loadBlacklist');
+}
+
+async function delBlacklist(gid){
+  const j = await api('/disabled_delete','POST',{group_id:gid});
+  toast(j.message||'已处理'); loadBlacklist(); loadStatus();
 }
 
 applyTheme();
