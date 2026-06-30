@@ -171,8 +171,8 @@ def _stringify(v):
 # ==================== 模板渲染 ====================
 
 
-def resolve_token(token, base, store):
-    """解析单个 {token}; 顺序: 保存的响应 > 基础/自定义变量 > 动态变量。"""
+def _resolve_token_opt(token, base, store):
+    """解析单个 token; 命中返回字符串, 未命中(非已知变量)返回 None。"""
     token = token.strip()
     head, _, rest = token.partition('.')
     if head in store:
@@ -191,20 +191,32 @@ def resolve_token(token, base, store):
         return _stringify(base[token])
     if head in base and not rest:
         return _stringify(base[head])
-    dyn = _dynamic(token)
-    if dyn is not None:
-        return dyn
-    return ''
+    return _dynamic(token)
 
 
-def render(value, base, store):
-    """递归渲染: 字符串中的 {token} 替换; dict/list 递归 (保留结构)。"""
+def resolve_token(token, base, store):
+    """解析单个 {token}; 顺序: 保存的响应 > 基础/自定义变量 > 动态变量。未命中返回 ''。"""
+    v = _resolve_token_opt(token, base, store)
+    return '' if v is None else v
+
+
+def render(value, base, store, keep_unknown=False):
+    """递归渲染: 字符串中的 {token} 替换; dict/list 递归 (保留结构)。
+
+    keep_unknown=True 时, 无法解析的 {token} 原样保留 (不清空) —— 用于渲染用户
+    手写的 JSON 请求体, 避免把请求体里字面量 JSON 片段 (如 {id:1}) 当成空变量删掉。
+    """
     if isinstance(value, str):
-        return _TOKEN_RE.sub(lambda m: resolve_token(m.group(1), base, store), value)
+        def _sub(m):
+            if keep_unknown:
+                v = _resolve_token_opt(m.group(1), base, store)
+                return m.group(0) if v is None else v
+            return resolve_token(m.group(1), base, store)
+        return _TOKEN_RE.sub(_sub, value)
     if isinstance(value, dict):
-        return {render(k, base, store): render(v, base, store) for k, v in value.items()}
+        return {render(k, base, store, keep_unknown): render(v, base, store, keep_unknown) for k, v in value.items()}
     if isinstance(value, list):
-        return [render(v, base, store) for v in value]
+        return [render(v, base, store, keep_unknown) for v in value]
     return value
 
 
@@ -307,8 +319,12 @@ def _render_json_body(body, base, store):
         except Exception:
             structure = None
         if structure is not None:
-            return render(structure, base, store)
-        rendered = render(body, base, store)
+            # keep_unknown: 字符串值里若含字面量大括号 (如嵌套 JSON {id:1}),
+            # 不当成空变量删掉; 已知变量仍正常替换。
+            return render(structure, base, store, keep_unknown=True)
+        # 模板不是合法 JSON: 只替换「已知变量」, 字面量大括号 (含嵌套 JSON 片段)
+        # 原样保留, 避免被当成空变量删掉; 渲染后能解析则按结构发送, 否则原样文本发送。
+        rendered = render(body, base, store, keep_unknown=True)
         if isinstance(rendered, str):
             try:
                 return json.loads(rendered)
@@ -333,7 +349,20 @@ async def run_api(request, base, store):
     body = request.get('body', '')
     if method in ('POST', 'PUT', 'PATCH', 'DELETE') and body not in ('', None):
         if body_type == 'json':
-            kwargs['json'] = _render_json_body(body, base, store)
+            rendered = _render_json_body(body, base, store)
+            if isinstance(rendered, dict | list):
+                kwargs['json'] = rendered
+            else:
+                # 模板本身不是合法 JSON (如值里嵌了未转义的 JSON 文本): 按用户原样
+                # 发送文本体并显式声明 application/json, 不再交给 aiohttp 的 json= ——
+                # 否则会把整段字符串再序列化成一个带引号的 JSON 字符串, 服务端收到的
+                # 不是对象而是字符串, 字段全部丢失。
+                text = rendered if isinstance(rendered, str) else _stringify(rendered)
+                kwargs['data'] = text.encode('utf-8')
+                hdrs = kwargs.get('headers') or {}
+                if not any(k.lower() == 'content-type' for k in hdrs):
+                    hdrs = {**hdrs, 'Content-Type': 'application/json'}
+                kwargs['headers'] = hdrs
         elif body_type == 'form':
             rendered = render(body, base, store)
             kwargs['data'] = {str(k): str(v) for k, v in rendered.items()} if isinstance(rendered, dict) else rendered
