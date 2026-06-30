@@ -15,12 +15,16 @@
   --amber:#f59e0b; --amber-soft:color-mix(in srgb,var(--amber) 14%,transparent);
   --blue:#3b82f6; --blue-soft:color-mix(in srgb,var(--blue) 12%,transparent);
   --radius:14px; --radius-sm:9px;
+  /* 全局界面缩放: 默认 90% (相当于未缩放时按 90% 显示, 比 100% 更紧凑) */
+  --ui-scale:.9;
   --shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.05); --shadow-lg:0 12px 36px rgba(15,23,42,.12);
   --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
+/* 默认按 90% 缩放整体界面; 在 iframe 内 vh 相对 iframe 视口, 缩放后仍铺满 */
+html{zoom:var(--ui-scale)}
 body{font-family:var(--font);color:var(--ink);background:
   radial-gradient(1100px 560px at 100% -10%,color-mix(in srgb,var(--brand) 9%,transparent) 0%,transparent 55%),
   var(--bg);
@@ -54,7 +58,7 @@ input,textarea,select{font-family:inherit}
 .login-err{color:var(--red);font-size:13px;margin-top:12px;min-height:18px;text-align:center}
 
 /* ===== App layout ===== */
-#app{display:none;height:100vh;flex-direction:column}
+#app{display:none;height:calc(100vh / var(--ui-scale));flex-direction:column;max-width:100%;overflow-x:hidden}
 .topbar{height:62px;flex:0 0 62px;display:flex;align-items:center;gap:14px;padding:0 20px;
   background:color-mix(in srgb,var(--card) 82%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);z-index:10}
 .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:16px}
@@ -194,7 +198,7 @@ input,textarea,select{font-family:inherit}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .thumb .rm{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:12px;line-height:18px;text-align:center}
 .bubble .imgs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
-.bubble .imgs img{max-width:160px;max-height:160px;border-radius:10px;border:1px solid var(--line);cursor:pointer;display:block}
+.bubble .imgs img{max-width:min(160px,100%);max-height:160px;height:auto;border-radius:10px;border:1px solid var(--line);cursor:pointer;display:block}
 .composer .hint{font-size:11px;color:var(--muted);margin-top:7px;padding-left:4px}
 
 /* activity */
