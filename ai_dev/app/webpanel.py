@@ -29,6 +29,10 @@ def register_routes():
     """通过框架 register_route 注册全部 /api/ext/aidev/* 路由 (热重载安全)。"""
     register_route('GET', _PREFIX + '/config', _get_config)
     register_route('POST', _PREFIX + '/config', _set_config)
+    register_route('GET', _PREFIX + '/presets', _get_presets)
+    register_route('POST', _PREFIX + '/presets/save', _save_preset)
+    register_route('POST', _PREFIX + '/presets/delete', _del_preset)
+    register_route('POST', _PREFIX + '/presets/apply', _apply_preset)
     register_route('GET', _PREFIX + '/models', _get_models)
     register_route('GET', _PREFIX + '/sessions', _get_sessions)
     register_route('POST', _PREFIX + '/sessions', _create_session)
@@ -61,6 +65,28 @@ async def _set_config(request: web.Request):
             updates['api_key'] = ak.strip()
     aiconfig.set_runtime(updates)
     return web.json_response({'success': True, 'config': aiconfig.public_config()})
+
+
+async def _get_presets(request: web.Request):
+    return web.json_response({'success': True, **aiconfig.list_presets()})
+
+
+async def _save_preset(request: web.Request):
+    body = await _json(request)
+    return web.json_response({'success': True, **aiconfig.save_preset(body)})
+
+
+async def _del_preset(request: web.Request):
+    body = await _json(request)
+    return web.json_response({'success': True, **aiconfig.delete_preset(str(body.get('id', '')))})
+
+
+async def _apply_preset(request: web.Request):
+    body = await _json(request)
+    res = aiconfig.apply_preset(str(body.get('id', '')))
+    if res is None:
+        return web.json_response({'success': False, 'error': '站点不存在'})
+    return web.json_response({'success': True, 'config': aiconfig.public_config(), **res})
 
 
 async def _get_models(request: web.Request):
@@ -107,10 +133,17 @@ async def _get_history(request: web.Request):
     for m in msgs:
         role = m.get('role')
         if role == 'user':
-            view.append({'role': 'user', 'content': m.get('content', '')})
+            view.append({'role': 'user', 'content': _content_text(m.get('content', ''))})
         elif role == 'assistant' and m.get('content'):
-            view.append({'role': 'assistant', 'content': m.get('content', '')})
+            view.append({'role': 'assistant', 'content': _content_text(m.get('content', ''))})
     return web.json_response({'success': True, 'messages': view, 'events': _store().session_events(sid)})
+
+
+def _content_text(content):
+    """content 可能是字符串或多模态数组, 统一取出文本部分用于展示。"""
+    if isinstance(content, list):
+        return '\n'.join(p.get('text', '') for p in content if isinstance(p, dict) and p.get('type') == 'text')
+    return content or ''
 
 
 async def _post_chat(request: web.Request):
@@ -118,10 +151,12 @@ async def _post_chat(request: web.Request):
     message = str(body.get('message', '')).strip()
     model = str(body.get('model', '') or '')
     sid = str(body.get('session_id', '') or '')
-    if not message:
+    raw_images = body.get('images') or []
+    images = [u for u in raw_images if isinstance(u, str) and u.startswith('data:image')][:8] if isinstance(raw_images, list) else []
+    if not message and not images:
         return web.json_response({'success': False, 'error': '消息为空'}, status=400)
     sess = _store().ensure_session(sid)
-    result = await agentmod.run_agent(_store(), sess['id'], message, model)
+    result = await agentmod.run_agent(_store(), sess['id'], message, model, images=images)
     return web.json_response({
         'success': result.get('ok', False),
         'session_id': sess['id'],

@@ -26,7 +26,9 @@ log = get_logger(PLUGIN, '工作流API')
 _session: aiohttp.ClientSession | None = None
 _session_lock = asyncio.Lock()
 
-_TOKEN_RE = re.compile(r'\{([^{}]+)\}')
+# 变量占位符 {token}: token 内不含大括号与双引号,
+# 以免把请求体里字面量 JSON ({"a":1}) 误当成变量而被清空 (真实变量名不含引号)。
+_TOKEN_RE = re.compile(r'\{([^{}"]+)\}')
 _WEEKDAYS = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
 _DAYMAP = {'周一': 1, '周二': 2, '周三': 3, '周四': 4, '周五': 5, '周六': 6, '周日': 0,
            '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4, '星期五': 5, '星期六': 6, '星期日': 0}
