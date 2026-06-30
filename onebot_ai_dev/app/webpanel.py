@@ -34,6 +34,7 @@ def register_routes():
     register_route('POST', _PREFIX + '/presets/delete', _del_preset)
     register_route('POST', _PREFIX + '/presets/apply', _apply_preset)
     register_route('GET', _PREFIX + '/models', _get_models)
+    register_route('POST', _PREFIX + '/availability', _availability)
     register_route('GET', _PREFIX + '/sessions', _get_sessions)
     register_route('POST', _PREFIX + '/sessions', _create_session)
     register_route('POST', _PREFIX + '/sessions/delete', _delete_session)
@@ -56,6 +57,9 @@ async def _set_config(request: web.Request):
     for k in ('base_url', 'model', 'temperature', 'max_iterations', 'history_limit', 'system_prompt', 'reasoning_effort'):
         if k in body:
             updates[k] = body[k]
+    for k in ('auto_switch', 'health_check'):
+        if k in body:
+            updates[k] = bool(body[k])
     # api_key: 仅当显式提供且非空白时才更新; null 清除
     if 'api_key' in body:
         ak = body['api_key']
@@ -108,6 +112,26 @@ async def _get_models(request: web.Request):
         return web.json_response({'success': True, 'models': models})
     except Exception as e:  # noqa: BLE001
         return web.json_response({'success': False, 'error': str(e), 'models': []})
+
+
+async def _availability(request: web.Request):
+    """用一条「你好」逐模型探测可用性。body: {base_url?, api_key?, preset_id?, models:[...]}。
+
+    api_key 留空时按 preset_id 解析已保存密钥, 仍无则回退当前生效配置。注意: 部分中转站
+    可能禁止/限制此类轮询 (会消耗额度或触发风控), 仅在用户主动检测/开启轮询时调用。"""
+    body = await _json(request)
+    models = [str(m).strip() for m in (body.get('models') or []) if str(m).strip()]
+    if not models:
+        return web.json_response({'success': False, 'error': '未指定模型', 'results': []})
+    ep = aiconfig.preset_endpoint(str(body.get('preset_id') or ''))
+    base = (body.get('base_url') or '').strip().rstrip('/') or ep['base_url']
+    key = (body.get('api_key') or '').strip() or ep['api_key']
+    if not key:
+        return web.json_response({'success': False, 'error': '未配置 api_key', 'results': []})
+    probes = await asyncio.gather(*(agentmod.probe_endpoint(base, key, m) for m in models))
+    results = [{'model': m, 'ok': r.get('ok', False), 'status': r.get('status', 0), 'error': r.get('error', '')}
+               for m, r in zip(models, probes)]
+    return web.json_response({'success': True, 'results': results})
 
 
 async def _get_sessions(request: web.Request):

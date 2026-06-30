@@ -284,6 +284,54 @@ input,textarea,select{font-family:inherit}
 .preset-bar select{flex:1;min-width:0;height:38px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg2);padding:0 10px;font-size:13px;color:var(--ink)}
 .preset-bar .btn-ghost{flex:0 0 auto;padding:0 12px;height:38px}
 
+/* 自定义下拉 (与 set-input 统一外观, 替代原生 select 丑样式) */
+.set-select{width:100%;height:44px;border:1.5px solid var(--line);border-radius:12px;padding:0 38px 0 14px;
+  font-size:14px;background:var(--bg2);color:var(--ink);appearance:none;-webkit-appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a8a99' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat:no-repeat;background-position:right 13px center;transition:.2s}
+.set-select:focus{outline:none;border-color:var(--brand);background-color:var(--card);box-shadow:0 0 0 4px var(--brand-soft)}
+
+/* 开关 (toggle) */
+.switch-row{display:flex;align-items:flex-start;gap:11px;cursor:pointer;margin-bottom:12px}
+.switch-row input{display:none}
+.switch-row .sw{flex:0 0 auto;width:40px;height:23px;border-radius:99px;background:var(--line2,var(--line));position:relative;transition:.2s;margin-top:1px}
+.switch-row .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s}
+.switch-row input:checked + .sw{background:var(--brand)}
+.switch-row input:checked + .sw::after{transform:translateX(17px)}
+.switch-row .sw-text{display:flex;flex-direction:column;gap:2px}
+.switch-row .sw-text b{font-size:13.5px;color:var(--ink)}
+.switch-row .sw-text small{font-size:11.5px;color:var(--muted);line-height:1.4}
+.set-warn{font-size:11.5px;color:var(--amber,#c98a00);background:color-mix(in srgb,var(--amber,#f0a500) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--amber,#f0a500) 35%,transparent);border-radius:10px;padding:8px 11px;margin-top:4px;line-height:1.5}
+.btn-sm{height:32px;padding:0 12px;font-size:12.5px;border-radius:9px}
+
+/* 站点卡片与模型行 */
+.site-list{display:flex;flex-direction:column;gap:10px}
+.site-empty{font-size:12.5px;color:var(--muted);padding:10px 2px}
+.site-card{border:1.5px solid var(--line);border-radius:13px;background:var(--bg2);padding:12px 13px}
+.site-head{display:flex;align-items:center;gap:8px}
+.site-info{flex:1;min-width:0}
+.site-info b{font-size:13.5px;color:var(--ink);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.site-info span{font-size:11px;color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.site-info .badge-active{display:inline-block;font-size:10px;color:var(--brand);border:1px solid var(--brand);border-radius:6px;padding:0 5px;margin-left:6px;vertical-align:1px}
+.site-acts{flex:0 0 auto;display:flex;gap:6px}
+.site-models{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.site-models .mhint{font-size:11.5px;color:var(--muted)}
+.mrow{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:9px;background:var(--card);border:1px solid var(--line)}
+.mrow .mchk{flex:0 0 auto;display:flex;align-items:center;cursor:pointer}
+.mrow .mchk input{display:none}
+.mrow .mchk .cbx{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line2,var(--line));display:flex;align-items:center;justify-content:center;transition:.15s}
+.mrow .mchk .cbx svg{width:12px;height:12px;stroke:#fff;opacity:0}
+.mrow .mchk input:checked + .cbx{background:var(--brand);border-color:var(--brand)}
+.mrow .mchk input:checked + .cbx svg{opacity:1}
+.mrow .mname{flex:1;min-width:0;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .mprio{flex:0 0 auto;width:58px;height:30px;border:1.5px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--ink);font-size:12px;padding:0 6px;text-align:center}
+.mrow .mprio:focus{outline:none;border-color:var(--brand)}
+.mrow .mtest{flex:0 0 auto;height:30px;padding:0 9px;font-size:11.5px;border-radius:8px;border:1.5px solid var(--line);background:var(--bg2);color:var(--ink2);white-space:nowrap;transition:.15s}
+.mrow .mtest:hover{color:var(--brand);border-color:var(--brand)}
+.mrow .mstat{flex:0 0 auto;font-size:11px;min-width:20px;text-align:center}
+.mstat.ok{color:var(--green)}.mstat.err{color:var(--red)}.mstat.wait{color:var(--muted)}
+
 @media(max-width:1180px){.activity{width:270px;flex-basis:270px}}
 @media(max-width:1020px){
   .activity{position:fixed;top:0;right:0;bottom:0;width:320px;max-width:86vw;z-index:40;border-radius:0;
@@ -407,38 +455,28 @@ input,textarea,select{font-family:inherit}
 <div class="modal" id="settingsModal">
   <div class="modal-card">
     <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>AI 设置</h2>
-    <div class="sub">管理多个 AI 站点（接口地址/密钥/模型），随时一键切换。密钥仅保存在服务器本地。</div>
-    <div class="set-row preset-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/></svg>AI 站点 (预设)</div>
-      <div class="preset-bar">
-        <select id="presetSel"><option value="">— 新站点 —</option></select>
-        <button class="btn-ghost" id="presetApply" type="button">切换</button>
-        <button class="btn-ghost" id="presetDel" type="button">删除</button>
+    <div class="sub">管理多个 AI 站点与模型；可在调用失败时按优先级自动切换，并可轮询模型可用性。密钥仅保存在服务器本地。</div>
+
+    <div class="set-row">
+      <label class="switch-row"><input type="checkbox" id="setAutoSwitch"><span class="sw"></span>
+        <span class="sw-text"><b>自动切换模型（故障转移）</b><small>调用失败（5xx/429/超时等）时，按下方优先级自动切换到下一个已启用的模型重试。</small></span></label>
+      <label class="switch-row"><input type="checkbox" id="setHealthCheck"><span class="sw"></span>
+        <span class="sw-text"><b>轮询模型可用性</b><small>发送前用一条「你好」探测各模型是否可用，自动跳过不可用的。</small></span></label>
+      <div class="set-warn">⚠️ 某些中转站可能禁止/限制轮询模型可用性（会消耗额度或触发风控），请谨慎使用。</div>
+    </div>
+
+    <div class="set-row">
+      <div class="set-label" style="justify-content:space-between">
+        <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/></svg>AI 站点与模型</span>
+        <button class="btn-ghost btn-sm" id="addSiteBtn" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>增加站点</button>
       </div>
-      <input class="set-input" id="presetName" placeholder="站点名称，如「OpenAI 官方」「中转 A」" spellcheck="false" autocomplete="off" style="margin-top:8px">
-      <div class="set-hint">选择一个站点会把下面字段填好；填好地址/密钥/模型后点「存为站点」保存或更新。「切换」会立即应用该站点。</div>
+      <div class="site-list" id="siteList"></div>
+      <div class="set-hint">每个站点点「获取模型」拉取列表后，逐个设置是否启用、优先级（数字小者优先）与检测可用性。改动点「保存并应用」生效。</div>
     </div>
-    <div class="set-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>接口地址 (base_url)</div>
-      <input class="set-input" id="setBaseUrl" placeholder="https://api.openai.com/v1" spellcheck="false" autocomplete="off">
-      <div class="set-hint">需为 OpenAI 兼容接口，通常以 /v1 结尾。</div>
-    </div>
-    <div class="set-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/></svg>API 密钥 (api_key)</div>
-      <input class="set-input" id="setApiKey" type="password" placeholder="留空表示不修改已保存的密钥" spellcheck="false" autocomplete="off">
-      <div class="set-hint">将以 Bearer 方式调用上游；留空不会清除现有密钥。</div>
-    </div>
-    <div class="set-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>模型 (model)</div>
-      <div class="set-modelrow">
-        <select id="setModel"></select>
-        <button class="btn-ghost" id="setFetchModels" type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>获取模型</button>
-      </div>
-      <div class="set-hint">点「获取模型」用上面填写的地址/密钥拉取列表。</div>
-    </div>
+
     <div class="set-row">
       <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>深度思考 (reasoning_effort)</div>
-      <select id="setReasoning">
+      <select id="setReasoning" class="set-select">
         <option value="">默认 (跟随模型)</option>
         <option value="minimal">minimal — 最少思考</option>
         <option value="low">low — 低</option>
@@ -455,8 +493,32 @@ input,textarea,select{font-family:inherit}
     <div class="set-err" id="setErr"></div>
     <div class="modal-actions">
       <button class="btn-primary" id="setSave" type="button">保存并应用</button>
-      <button class="btn-ghost" id="presetSave" type="button">存为站点</button>
       <button class="btn-ghost" id="setCancel" type="button">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 增加站点 dialog -->
+<div class="modal" id="addSiteModal">
+  <div class="modal-card" style="width:420px">
+    <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/></svg>增加站点</h2>
+    <div class="sub" id="addSiteSub">填写站点地址与密钥，保存后即新增一个 AI 站点。</div>
+    <div class="set-row">
+      <div class="set-label">站点地址 (base_url)</div>
+      <input class="set-input" id="newSiteUrl" placeholder="https://api.openai.com/v1" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="set-row">
+      <div class="set-label">API 密钥 (api_key)</div>
+      <input class="set-input" id="newSiteKey" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
+    </div>
+    <div class="set-row">
+      <div class="set-label">站点名称（可选）</div>
+      <input class="set-input" id="newSiteName" placeholder="如「中转 A」，留空则用地址" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="set-err" id="addSiteErr"></div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="addSiteOk" type="button">确定</button>
+      <button class="btn-ghost" id="addSiteCancel" type="button">取消</button>
     </div>
   </div>
 </div>
@@ -634,51 +696,134 @@ async function loadModels(){
 }
 $('#modelSel').addEventListener('change',e=>{MODEL=e.target.value;localStorage.setItem('ai_dev_model',MODEL);$('#chatModel').textContent=MODEL;});
 
-/* ---- settings: 自定义 base_url / api_key + 自动获取模型 ---- */
+/* ---- settings: 站点与模型管理 + 故障转移/可用性轮询 ---- */
+let PRESETS=[], ACTIVE_PRESET='';
+let SITE_MODELS={};   // {presetId: [{name,enabled,priority,status}]}  (设置弹窗内的工作副本)
+const CHK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
 function setErr(msg,ok){const el=$('#setErr');el.textContent=msg||'';el.classList.toggle('ok',!!ok);}
 function openSettings(){
-  $('#setBaseUrl').value=CFG.base_url||'';
-  $('#setApiKey').value='';
-  $('#setApiKey').placeholder=CFG.api_key_set?'已配置 (留空表示不修改)':'sk-...';
   $('#setReasoning').value=CFG.reasoning_effort||'';
   $('#setMaxIter').value=(CFG.max_iterations!=null?CFG.max_iterations:50);
-  fillSetModels(MODEL?[MODEL]:[],MODEL);
-  if($('#presetSel')){$('#presetSel').value=ACTIVE_PRESET||'';
-    const ap=PRESETS.find(x=>x.id===ACTIVE_PRESET);$('#presetName').value=ap?ap.name:'';}
+  $('#setAutoSwitch').checked=!!CFG.auto_switch;
+  $('#setHealthCheck').checked=!!CFG.health_check;
+  SITE_MODELS={};
+  PRESETS.forEach(p=>{SITE_MODELS[p.id]=(p.models||[]).map(m=>({name:m.name,enabled:m.enabled!==false,priority:(m.priority!=null?m.priority:1),status:''}));});
+  renderSites();
   setErr('');
   $('#settingsModal').classList.add('show');
 }
 function closeSettings(){$('#settingsModal').classList.remove('show');}
-function fillSetModels(list,selected){
-  const sel=$('#setModel');sel.innerHTML='';
-  const arr=(list&&list.length)?list:[selected||MODEL||'gpt-4.1-nano'];
-  arr.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o);});
-  if(selected&&arr.includes(selected))sel.value=selected;
+
+function renderSites(){
+  const box=$('#siteList');
+  if(!PRESETS.length){box.innerHTML='<div class="site-empty">还没有站点。点右上「增加站点」添加一个 AI 站点（地址 + 密钥）。</div>';return;}
+  box.innerHTML=PRESETS.map(p=>{
+    const ms=SITE_MODELS[p.id]||[];
+    const active=p.id===ACTIVE_PRESET?'<span class="badge-active">使用中</span>':'';
+    const rows=ms.length?ms.map(m=>modelRowHtml(p.id,m)).join('')
+      :'<div class="mhint">尚未获取模型，点「获取模型」拉取该站点的可用模型列表。</div>';
+    return `<div class="site-card" data-id="${esc(p.id)}">
+      <div class="site-head">
+        <div class="site-info"><b>${esc(p.name||'未命名站点')}${active}</b><span>${esc(p.base_url||'')||'（未填地址）'}</span></div>
+        <div class="site-acts">
+          <button class="btn-ghost btn-sm" data-act="fetch" type="button">${ic('refresh',13)} 获取模型</button>
+          <button class="btn-ghost btn-sm" data-act="apply" type="button">切换</button>
+          <button class="btn-ghost btn-sm" data-act="del" type="button">删除</button>
+        </div>
+      </div>
+      <div class="site-models">${rows}</div>
+    </div>`;
+  }).join('');
 }
-async function fetchSetModels(){
-  const base=$('#setBaseUrl').value.trim(), key=$('#setApiKey').value.trim();
-  const btn=$('#setFetchModels');btn.disabled=true;btn.innerHTML=ic('refresh',15)+' 获取中…';setErr('');
+function modelRowHtml(pid,m){
+  const st=m.status==='ok'?'<span class="mstat ok" title="可用">✓ 可用</span>'
+    :m.status==='err'?'<span class="mstat err" title="不可用">✗ 不可用</span>'
+    :m.status==='wait'?'<span class="mstat wait">检测中…</span>':'<span class="mstat"></span>';
+  return `<div class="mrow" data-model="${esc(m.name)}">
+    <label class="mchk"><input type="checkbox" ${m.enabled?'checked':''} data-k="enabled">
+      <span class="cbx">${CHK}</span></label>
+    <span class="mname" title="${esc(m.name)}">${esc(m.name)}</span>
+    <input class="mprio" type="number" min="0" step="1" value="${m.priority!=null?m.priority:1}" data-k="priority" title="优先级：数字小者优先">
+    <button class="mtest" data-act="test" type="button">检测</button>
+    ${st}
+  </div>`;
+}
+function siteModel(pid,name){return (SITE_MODELS[pid]||[]).find(x=>x.name===name);}
+
+/* 站点列表交互 (事件委托) */
+$('#siteList').addEventListener('click',async e=>{
+  const card=e.target.closest('.site-card');if(!card)return;
+  const pid=card.getAttribute('data-id');
+  const actBtn=e.target.closest('[data-act]');if(!actBtn)return;
+  const act=actBtn.getAttribute('data-act');
+  if(act==='fetch')return fetchSiteModels(pid,actBtn);
+  if(act==='del')return delSite(pid);
+  if(act==='apply'){await applyPreset(pid);renderSites();setErr('已切换并应用该站点',true);return;}
+  if(act==='test'){const row=e.target.closest('.mrow');return testModel(pid,row.getAttribute('data-model'));}
+});
+$('#siteList').addEventListener('change',e=>{
+  const card=e.target.closest('.site-card');if(!card)return;
+  const pid=card.getAttribute('data-id');const row=e.target.closest('.mrow');if(!row)return;
+  const m=siteModel(pid,row.getAttribute('data-model'));if(!m)return;
+  const k=e.target.getAttribute('data-k');
+  if(k==='enabled')m.enabled=e.target.checked;
+  else if(k==='priority'){const v=parseInt(e.target.value,10);m.priority=isNaN(v)?1:v;}
+});
+
+async function fetchSiteModels(pid,btn){
+  const p=PRESETS.find(x=>x.id===pid);if(!p)return;
+  btn.disabled=true;const old=btn.innerHTML;btn.innerHTML=ic('refresh',13)+' 获取中…';setErr('');
   try{
-    const qs=new URLSearchParams();if(base)qs.set('base_url',base);if(key)qs.set('api_key',key);
-    const d=await (await api('/api/ext/aidev/models'+(qs.toString()?'?'+qs.toString():''))).json();
-    if(d.success&&d.models&&d.models.length){fillSetModels(d.models,$('#setModel').value||MODEL);setErr('获取到 '+d.models.length+' 个模型',true);}
-    else setErr(d.error||'未获取到模型');
+    const qs=new URLSearchParams();if(p.base_url)qs.set('base_url',p.base_url);qs.set('preset_id',pid);
+    const d=await (await api('/api/ext/aidev/models?'+qs.toString())).json();
+    if(d.success&&d.models&&d.models.length){
+      const prev=SITE_MODELS[pid]||[];
+      SITE_MODELS[pid]=d.models.map((name,i)=>{const o=prev.find(x=>x.name===name);
+        return o?{...o,status:o.status||''}:{name,enabled:false,priority:i+1,status:''};});
+      renderSites();setErr('「'+(p.name||'站点')+'」获取到 '+d.models.length+' 个模型',true);
+    }else setErr(d.error||'未获取到模型');
   }catch(e){setErr('请求失败: '+e.message);}
-  btn.disabled=false;btn.innerHTML=ic('refresh',15)+' 获取模型';
 }
+async function testModel(pid,name){
+  const m=siteModel(pid,name);if(!m)return;
+  m.status='wait';renderSites();
+  try{
+    const d=await (await api('/api/ext/aidev/availability',{method:'POST',body:JSON.stringify({preset_id:pid,models:[name]})})).json();
+    const r=(d.results||[])[0];
+    m.status=(r&&r.ok)?'ok':'err';
+    if(d.success&&r&&!r.ok)setErr(name+'：'+(r.error||'不可用'));
+    else if(!d.success)setErr(d.error||'检测失败');
+  }catch(e){m.status='err';setErr('请求失败: '+e.message);}
+  renderSites();
+}
+async function delSite(pid){
+  const p=PRESETS.find(x=>x.id===pid);
+  if(!confirm('确定删除站点「'+(p?p.name:'')+'」？'))return;
+  const d=await (await api('/api/ext/aidev/presets/delete',{method:'POST',body:JSON.stringify({id:pid})})).json();
+  PRESETS=d.presets||[];ACTIVE_PRESET=d.active_id||'';delete SITE_MODELS[pid];
+  fillSiteSelectors();renderSites();setErr('站点已删除',true);
+}
+
 async function saveSettings(){
-  const base=$('#setBaseUrl').value.trim(), key=$('#setApiKey').value.trim(), m=$('#setModel').value, re=$('#setReasoning').value;
-  const miRaw=$('#setMaxIter').value.trim();
+  const re=$('#setReasoning').value, miRaw=$('#setMaxIter').value.trim();
   const btn=$('#setSave');btn.disabled=true;btn.textContent='保存中…';setErr('');
   try{
-    const payload={base_url:base,model:m,reasoning_effort:re};
+    const payload={reasoning_effort:re,auto_switch:$('#setAutoSwitch').checked,health_check:$('#setHealthCheck').checked};
     if(miRaw!==''){const mi=parseInt(miRaw,10);if(isNaN(mi)||mi<1){setErr('工具调用上限需为 ≥1 的整数');btn.disabled=false;btn.textContent='保存并应用';return;}payload.max_iterations=mi;}
-    if(key)payload.api_key=key;          // 留空不修改已保存密钥
     const d=await (await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify(payload)})).json();
     if(!d.success){setErr(d.error||'保存失败');btn.disabled=false;btn.textContent='保存并应用';return;}
     CFG=d.config||CFG;
-    if(m){MODEL=m;localStorage.setItem('ai_dev_model',MODEL);}
-    await loadModels();
+    // 逐站点保存模型启用/优先级
+    for(const p of PRESETS){
+      const ms=SITE_MODELS[p.id];if(!ms||!ms.length)continue;
+      const models=ms.map(m=>({name:m.name,enabled:!!m.enabled,priority:m.priority!=null?m.priority:1}));
+      const sp={id:p.id,models};
+      const top=models.filter(m=>m.enabled).sort((a,b)=>a.priority-b.priority)[0];
+      if(top)sp.model=top.name;
+      const r=await (await api('/api/ext/aidev/presets/save',{method:'POST',body:JSON.stringify(sp)})).json();
+      if(r.presets)PRESETS=r.presets;
+    }
+    fillSiteSelectors();
     setErr('已保存并应用',true);toast('设置已保存');
     setTimeout(closeSettings,500);
   }catch(e){setErr('请求失败: '+e.message);}
@@ -686,18 +831,38 @@ async function saveSettings(){
 }
 $('#settingsBtn').addEventListener('click',openSettings);
 $('#setCancel').addEventListener('click',closeSettings);
-$('#setFetchModels').addEventListener('click',fetchSetModels);
 $('#setSave').addEventListener('click',saveSettings);
 $('#settingsModal').addEventListener('click',e=>{if(e.target.id==='settingsModal')closeSettings();});
 
-/* ---- AI 站点预设: 顶栏一键切换 + 设置里管理 ---- */
-let PRESETS=[], ACTIVE_PRESET='';
+/* 增加站点对话框 */
+function openAddSite(){$('#newSiteUrl').value='';$('#newSiteKey').value='';$('#newSiteName').value='';$('#addSiteErr').textContent='';$('#addSiteModal').classList.add('show');setTimeout(()=>$('#newSiteUrl').focus(),50);}
+function closeAddSite(){$('#addSiteModal').classList.remove('show');}
+$('#addSiteBtn').addEventListener('click',openAddSite);
+$('#addSiteCancel').addEventListener('click',closeAddSite);
+$('#addSiteModal').addEventListener('click',e=>{if(e.target.id==='addSiteModal')closeAddSite();});
+$('#addSiteOk').addEventListener('click',async()=>{
+  const base=$('#newSiteUrl').value.trim(), key=$('#newSiteKey').value.trim(), name=$('#newSiteName').value.trim();
+  const err=$('#addSiteErr');err.textContent='';
+  if(!base){err.textContent='请填写站点地址 (base_url)';return;}
+  if(!key){err.textContent='请填写 API 密钥';return;}
+  const payload={id:'',name:name||base,base_url:base,api_key:key};
+  const btn=$('#addSiteOk');btn.disabled=true;btn.textContent='保存中…';
+  try{
+    const before=new Set(PRESETS.map(x=>x.id));
+    const d=await (await api('/api/ext/aidev/presets/save',{method:'POST',body:JSON.stringify(payload)})).json();
+    PRESETS=d.presets||PRESETS;
+    const saved=PRESETS.find(x=>!before.has(x.id))||PRESETS[PRESETS.length-1];
+    if(saved)SITE_MODELS[saved.id]=[];
+    fillSiteSelectors();renderSites();closeAddSite();setErr('站点已添加，点该站点「获取模型」继续配置',true);toast('站点已添加');
+  }catch(e){err.textContent='保存失败: '+e.message;}
+  btn.disabled=false;btn.textContent='确定';
+});
+
+/* ---- AI 站点: 顶栏一键切换 ---- */
 function fillSiteSelectors(){
   const head=$('#siteSel');
   head.innerHTML='<option value="">默认配置</option>'+PRESETS.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
   head.value=ACTIVE_PRESET||'';
-  const mng=$('#presetSel');
-  mng.innerHTML='<option value="">— 新站点 —</option>'+PRESETS.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
 }
 async function loadPresets(){
   try{
@@ -717,44 +882,6 @@ async function applyPreset(id){
   toast('已切换到站点：'+(p?p.name:id));
 }
 $('#siteSel').addEventListener('change',e=>{const id=e.target.value;if(id)applyPreset(id);else fillSiteSelectors();});
-/* 设置弹窗内的站点管理 */
-function fillPresetEditor(id){
-  const p=PRESETS.find(x=>x.id===id);
-  if(!p){$('#presetName').value='';return;}
-  $('#presetName').value=p.name||'';
-  $('#setBaseUrl').value=p.base_url||'';
-  fillSetModels(p.model?[p.model]:[],p.model);
-  $('#setReasoning').value=p.reasoning_effort||'';
-  $('#setApiKey').value='';
-  $('#setApiKey').placeholder=p.api_key_set?'该站点已配置密钥 (留空表示不修改)':'sk-...';
-}
-$('#presetSel').addEventListener('change',e=>fillPresetEditor(e.target.value));
-$('#presetApply').addEventListener('click',async()=>{
-  const id=$('#presetSel').value;if(!id){setErr('请先选择一个站点');return;}
-  await applyPreset(id);setErr('已切换并应用该站点',true);
-});
-$('#presetSave').addEventListener('click',async()=>{
-  const name=$('#presetName').value.trim();
-  const base=$('#setBaseUrl').value.trim(), key=$('#setApiKey').value.trim(), m=$('#setModel').value, re=$('#setReasoning').value;
-  if(!name){setErr('请填写站点名称');return;}
-  if(!base){setErr('请填写接口地址 (base_url)');return;}
-  const payload={id:$('#presetSel').value||'',name,base_url:base,model:m,reasoning_effort:re};
-  if(key)payload.api_key=key;
-  const btn=$('#presetSave');btn.disabled=true;
-  try{
-    const d=await (await api('/api/ext/aidev/presets/save',{method:'POST',body:JSON.stringify(payload)})).json();
-    PRESETS=d.presets||PRESETS;fillSiteSelectors();
-    const saved=PRESETS.find(x=>x.name===name);if(saved)$('#presetSel').value=saved.id;
-    setErr('站点已保存，可在顶栏随时切换',true);toast('站点已保存');
-  }catch(e){setErr('保存失败: '+e.message);}
-  btn.disabled=false;
-});
-$('#presetDel').addEventListener('click',async()=>{
-  const id=$('#presetSel').value;if(!id){setErr('请先选择要删除的站点');return;}
-  const d=await (await api('/api/ext/aidev/presets/delete',{method:'POST',body:JSON.stringify({id})})).json();
-  PRESETS=d.presets||[];ACTIVE_PRESET=d.active_id||'';fillSiteSelectors();
-  $('#presetSel').value='';fillPresetEditor('');setErr('站点已删除',true);
-});
 
 /* ---- 手机端抽屉: 侧栏 / 实时调用 ---- */
 function closeDrawers(){$('.sidebar').classList.remove('open');$('.activity').classList.remove('open');$('#drawerBack').classList.remove('show');}

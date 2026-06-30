@@ -47,8 +47,11 @@ def _extract_reasoning(msg: dict) -> str:
     return ''
 
 
-async def _chat_completion(session: aiohttp.ClientSession, messages: list, model: str) -> dict:
-    url = aiconfig.base_url() + '/chat/completions'
+async def _chat_completion(session: aiohttp.ClientSession, messages: list, model: str, endpoint: dict = None) -> dict:
+    ep = endpoint or {}
+    base = (ep.get('base_url') or aiconfig.base_url()).rstrip('/')
+    key = ep.get('api_key') or aiconfig.api_key()
+    url = base + '/chat/completions'
     payload = {
         'model': model,
         'messages': messages,
@@ -60,7 +63,7 @@ async def _chat_completion(session: aiohttp.ClientSession, messages: list, model
     if effort:
         payload['reasoning_effort'] = effort
     headers = {
-        'Authorization': f'Bearer {aiconfig.api_key()}',
+        'Authorization': f'Bearer {key}',
         'Content-Type': 'application/json',
     }
     timeout = aiohttp.ClientTimeout(total=aiconfig.request_timeout())
@@ -81,6 +84,34 @@ async def _chat_completion(session: aiohttp.ClientSession, messages: list, model
                 continue
             raise OpenAIError(f'HTTP {resp.status}: {text[:500]}')
     raise OpenAIError('模型调用失败')
+
+
+async def probe_endpoint(base_url: str, api_key: str, model: str, timeout_s: int = 15) -> dict:
+    """用一条「你好」探测某端点+模型是否可用。返回 {ok, status, error}。
+
+    注意: 部分中转站可能禁止/限制此类可用性轮询 (会消耗额度或触发风控), 仅在用户开启时调用。
+    """
+    url = (base_url or '').rstrip('/') + '/chat/completions'
+    headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+    payload = {'model': model, 'messages': [{'role': 'user', 'content': '你好'}], 'max_tokens': 1}
+    timeout = aiohttp.ClientTimeout(total=timeout_s)
+    try:
+        async with aiohttp.ClientSession() as s:
+            for attempt in range(2):
+                async with s.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+                    text = await resp.text()
+                    if resp.status == 200:
+                        return {'ok': True, 'status': 200, 'error': ''}
+                    # 个别模型不支持 max_tokens=1, 去掉后重试一次
+                    if attempt == 0 and resp.status == 400 and 'max_tokens' in text.lower():
+                        payload.pop('max_tokens', None)
+                        continue
+                    return {'ok': False, 'status': resp.status, 'error': f'HTTP {resp.status}: {text[:200]}'}
+    except asyncio.TimeoutError:
+        return {'ok': False, 'status': 0, 'error': '超时'}
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'status': 0, 'error': str(e)}
+    return {'ok': False, 'status': 0, 'error': '探测失败'}
 
 
 def _build_user_content(user_text: str, images: list):
@@ -124,15 +155,39 @@ async def run_agent(store, session_id: str, user_text: str, model: str = '', ima
 
     store.add_event('user', {'content': user_text, 'images': images, 'model': model}, session_id)
 
+    # 故障转移链: 第一个为当前模型; 开启「自动切换」后追加其它已启用模型 (按优先级)。
+    chain = aiconfig.failover_chain(model)
+    if aiconfig.health_check() and len(chain) > 1:
+        # 「可用性轮询」: 发送前用「你好」探测, 跳过不可用的端点 (全部不可用则保留原链照常尝试)。
+        healthy = []
+        for ep in chain:
+            r = await probe_endpoint(ep['base_url'], ep['api_key'], ep['model'])
+            if r.get('ok'):
+                healthy.append(ep)
+            else:
+                store.add_event('info', {'message': f"可用性轮询: {ep['label']}/{ep['model']} 不可用 ({r.get('error', '')})，已跳过"}, session_id)
+        if healthy:
+            chain = healthy
+
     max_iter = aiconfig.max_iterations()
     final_text = ''
+    cur = 0
     async with aiohttp.ClientSession() as session:
         for iteration in range(1, max_iter + 1):
-            try:
-                resp = await _chat_completion(session, messages, model)
-            except (OpenAIError, asyncio.TimeoutError, aiohttp.ClientError) as e:
-                store.add_event('error', {'message': f'模型调用失败: {e}'}, session_id)
-                return {'ok': False, 'message': str(e), 'iterations': iteration}
+            resp = None
+            while True:
+                ep = chain[cur]
+                try:
+                    resp = await _chat_completion(session, messages, ep['model'], ep)
+                    break
+                except (OpenAIError, asyncio.TimeoutError, aiohttp.ClientError) as e:
+                    if cur + 1 < len(chain):
+                        nxt = chain[cur + 1]
+                        store.add_event('info', {'message': f"模型 {ep['label']}/{ep['model']} 调用失败 ({e})，自动切换到 {nxt['label']}/{nxt['model']}"}, session_id)
+                        cur += 1
+                        continue
+                    store.add_event('error', {'message': f'模型调用失败: {e}'}, session_id)
+                    return {'ok': False, 'message': str(e), 'iterations': iteration}
 
             choice = (resp.get('choices') or [{}])[0]
             msg = choice.get('message') or {}
@@ -159,7 +214,7 @@ async def run_agent(store, session_id: str, user_text: str, model: str = '', ima
                     'reasoning': reasoning,
                     'iteration': iteration,
                     'usage': usage,
-                    'model': resp.get('model', model),
+                    'model': resp.get('model') or chain[cur]['model'],
                 }, session_id)
                 break
 
