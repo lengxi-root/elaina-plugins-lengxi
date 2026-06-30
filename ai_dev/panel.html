@@ -509,28 +509,9 @@ input,textarea,select{font-family:inherit}
     </div>
 
     <div class="set-row" style="margin-top:14px">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/></svg>普通对话 / 中转站（附加功能）</div>
-      <div class="set-top" style="margin-top:10px">
-        <div class="set-col">
-          <label class="switch-row"><input type="checkbox" id="setRelayEnabled"><span class="sw"></span>
-            <span class="sw-text"><b>作为 OpenAI 中转站对外提供</b><small>开启后其它设备/插件可用「中转密钥」通过本框架地址调用，等同普通 OpenAI 接口（透明转发，支持多模态/文生图）。</small></span></label>
-          <label class="switch-row"><input type="checkbox" id="setRelayFailover"><span class="sw"></span>
-            <span class="sw-text"><b>中转转发启用故障转移</b><small>中转请求失败时按优先级自动切换到其它已启用模型；关闭则只用当前站点。</small></span></label>
-          <div class="set-hint" style="margin-top:6px">调用地址(base_url)：<code id="relayUrl" style="background:var(--bg2);padding:2px 6px;border-radius:6px;font-size:12px;word-break:break-all"></code></div>
-        </div>
-        <div class="set-col">
-          <div class="set-row" style="margin-bottom:12px">
-            <div class="set-label">中转密钥（多个用逗号/换行分隔）</div>
-            <textarea class="set-input" id="setRelayKeys" rows="2" placeholder="sk-mykey1, sk-mykey2" spellcheck="false" style="resize:vertical"></textarea>
-            <div class="set-hint">外部调用方在 Authorization: Bearer 里填其一。留空则中转不可用。</div>
-          </div>
-          <div class="set-row" style="margin-bottom:0">
-            <div class="set-label">普通对话系统提示词（可选）</div>
-            <textarea class="set-input" id="setChatPrompt" rows="2" placeholder="留空使用内置通用助手提示" spellcheck="false" style="resize:vertical"></textarea>
-            <div class="set-hint">仅面板「普通对话」模式使用；开发模式不受影响。</div>
-          </div>
-        </div>
-      </div>
+      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>普通对话系统提示词（可选）</div>
+      <textarea class="set-input" id="setChatPrompt" rows="2" placeholder="留空使用内置通用助手提示" spellcheck="false" style="resize:vertical;margin-top:8px"></textarea>
+      <div class="set-hint">仅输入框左侧切到「普通对话」模式时使用（无开发工具）；开发模式不受影响。</div>
     </div>
 
     <div class="set-err" id="setErr"></div>
@@ -749,11 +730,7 @@ function openSettings(){
   $('#setMaxIter').value=(CFG.max_iterations!=null?CFG.max_iterations:50);
   $('#setAutoSwitch').checked=!!CFG.auto_switch;
   $('#setHealthCheck').checked=!!CFG.health_check;
-  $('#setRelayEnabled').checked=!!CFG.relay_enabled;
-  $('#setRelayFailover').checked=!!CFG.relay_use_failover;
-  $('#setRelayKeys').value=CFG.relay_keys||'';
   $('#setChatPrompt').value=CFG.chat_system_prompt||'';
-  try{$('#relayUrl').textContent=location.origin+'/api/ext/aidev/v1';}catch(e){$('#relayUrl').textContent='/api/ext/aidev/v1';}
   SITE_MODELS={};
   PRESETS.forEach(p=>{SITE_MODELS[p.id]=(p.models||[]).map(m=>({name:m.name,enabled:m.enabled!==false,priority:(m.priority!=null?m.priority:1),status:(m.status==='ok'||m.status==='err')?m.status:'',checked_at:m.checked_at||0}));});
   renderSites();
@@ -893,8 +870,7 @@ async function saveSettings(){
   const btn=$('#setSave');btn.disabled=true;btn.textContent='保存中…';setErr('');
   try{
     const payload={reasoning_effort:re,auto_switch:$('#setAutoSwitch').checked,health_check:$('#setHealthCheck').checked,
-      relay_enabled:$('#setRelayEnabled').checked,relay_use_failover:$('#setRelayFailover').checked,
-      relay_keys:$('#setRelayKeys').value,chat_system_prompt:$('#setChatPrompt').value};
+      chat_system_prompt:$('#setChatPrompt').value};
     if(miRaw!==''){const mi=parseInt(miRaw,10);if(isNaN(mi)||mi<1){setErr('工具调用上限需为 ≥1 的整数');btn.disabled=false;btn.textContent='保存并应用';return;}payload.max_iterations=mi;}
     const d=await (await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify(payload)})).json();
     if(!d.success){setErr(d.error||'保存失败');btn.disabled=false;btn.textContent='保存并应用';return;}

@@ -23,19 +23,12 @@ DEFAULTS = {
     'health_check': False,
     # 普通对话模式 (无开发工具) 的系统提示词, 为空则用内置通用助手提示
     'chat_system_prompt': '',
-    # ---- 中转站: 把本插件作为 OpenAI 兼容中转, 供其它设备/插件调用 ----
-    'relay_enabled': False,
-    # 中转密钥 (Bearer), 多个用逗号/换行分隔; 外部调用需带其一
-    'relay_keys': '',
-    # 中转转发时是否启用故障转移链 (按优先级自动切换), 关则只用当前站点
-    'relay_use_failover': False,
 }
 
 # 允许面板写入并持久化的字段
 _WRITABLE = ('base_url', 'api_key', 'model', 'temperature', 'max_iterations',
              'request_timeout', 'system_prompt', 'enabled', 'reasoning_effort', 'history_limit',
-             'auto_switch', 'health_check', 'chat_system_prompt',
-             'relay_enabled', 'relay_keys', 'relay_use_failover')
+             'auto_switch', 'health_check', 'chat_system_prompt')
 
 # 子模块位于 ai_dev/app/, data 目录在插件根 ai_dev/data/
 _OVERRIDE_FILE = os.path.join(
@@ -319,34 +312,6 @@ def chat_system_prompt() -> str:
     return str(get('chat_system_prompt') or '').strip() or CHAT_SYSTEM_PROMPT
 
 
-def relay_enabled() -> bool:
-    """是否把本插件作为 OpenAI 兼容中转站对外提供服务。"""
-    return bool(get('relay_enabled'))
-
-
-def relay_use_failover() -> bool:
-    """中转转发时是否启用故障转移链。"""
-    return bool(get('relay_use_failover'))
-
-
-def relay_keys() -> list:
-    """返回中转密钥列表 (按逗号/换行/空格分隔, 去空去重)。"""
-    raw = str(get('relay_keys') or '')
-    out, seen = [], set()
-    for k in raw.replace('\n', ',').replace(' ', ',').split(','):
-        k = k.strip()
-        if k and k not in seen:
-            seen.add(k)
-            out.append(k)
-    return out
-
-
-def relay_key_valid(key: str) -> bool:
-    """校验外部请求携带的中转密钥是否匹配 (未配置任何密钥时拒绝, 避免裸奔)。"""
-    keys = relay_keys()
-    return bool(keys) and str(key or '').strip() in keys
-
-
 def is_configured() -> bool:
     return bool(api_key())
 
@@ -366,9 +331,6 @@ def public_config() -> dict:
         'auto_switch': auto_switch(),
         'health_check': health_check(),
         'chat_system_prompt': str(get('chat_system_prompt') or ''),
-        'relay_enabled': relay_enabled(),
-        'relay_use_failover': relay_use_failover(),
-        'relay_keys': str(get('relay_keys') or ''),
         'api_key_set': is_configured(),
     }
 

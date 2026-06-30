@@ -55,10 +55,10 @@ async def _set_config(request: web.Request):
     body = await _json(request)
     updates = {}
     for k in ('base_url', 'model', 'temperature', 'max_iterations', 'history_limit', 'system_prompt',
-              'reasoning_effort', 'chat_system_prompt', 'relay_keys'):
+              'reasoning_effort', 'chat_system_prompt'):
         if k in body:
             updates[k] = body[k]
-    for k in ('auto_switch', 'health_check', 'relay_enabled', 'relay_use_failover'):
+    for k in ('auto_switch', 'health_check'):
         if k in body:
             updates[k] = bool(body[k])
     # api_key: 仅当显式提供且非空白时才更新; null 清除

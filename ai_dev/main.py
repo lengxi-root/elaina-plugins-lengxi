@@ -16,7 +16,6 @@ from core.plugin.web_pages import register_page, unregister_page
 
 from .app import aiconfig
 from .app import agent as agentmod
-from .app import relay
 from .app import webpanel
 from .app.store import AIStore
 
@@ -63,8 +62,6 @@ async def init():
     )
     # 注册插件自定义路由 (热重载即时生效, 卸载时由框架自动清理)
     webpanel.register_routes()
-    # 注册中转站对外路由 (附加功能, 独立模块)
-    relay.register_routes()
     log.info('AI 开发助手插件已加载')
 
 
