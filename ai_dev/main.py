@@ -22,7 +22,7 @@ from .app.store import AIStore
 __plugin_meta__ = {
     'name': 'AI 开发助手',
     'author': '冷曦',
-    'description': '接入 OpenAI 让 AI 自主编写/修改框架插件并提供亮色 Web 面板',
+    'description': '接入 OpenAI 让 AI 自主编写/修改框架插件',
     'version': '1.0.0',
 }
 
