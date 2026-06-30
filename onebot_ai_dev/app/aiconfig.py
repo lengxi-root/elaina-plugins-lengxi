@@ -88,7 +88,10 @@ _PRESET_FIELDS = ('base_url', 'model', 'reasoning_effort')
 
 
 def _norm_models(models) -> list:
-    """规整站点的模型列表: [{name, enabled, priority}], 去重、补默认值。"""
+    """规整站点的模型列表: [{name, enabled, priority, status, checked_at}], 去重、补默认值。
+
+    status: ''(未检测) / 'ok'(可用) / 'err'(不可用), 由面板「检测/一键检测」写入并持久保存;
+    checked_at: 最近一次检测的时间戳 (秒), 用于面板展示「上次检测时间」。"""
     out, seen = [], set()
     if not isinstance(models, list):
         return out
@@ -105,7 +108,15 @@ def _norm_models(models) -> list:
             pr = int(m.get('priority', i + 1))
         except (TypeError, ValueError):
             pr = i + 1
-        out.append({'name': name, 'enabled': bool(m.get('enabled', True)), 'priority': pr})
+        st = str(m.get('status') or '').strip()
+        if st not in ('ok', 'err'):
+            st = ''
+        try:
+            ca = int(m.get('checked_at') or 0)
+        except (TypeError, ValueError):
+            ca = 0
+        out.append({'name': name, 'enabled': bool(m.get('enabled', True)),
+                    'priority': pr, 'status': st, 'checked_at': ca})
     return out
 
 

@@ -718,7 +718,7 @@ function openSettings(){
   $('#setAutoSwitch').checked=!!CFG.auto_switch;
   $('#setHealthCheck').checked=!!CFG.health_check;
   SITE_MODELS={};
-  PRESETS.forEach(p=>{SITE_MODELS[p.id]=(p.models||[]).map(m=>({name:m.name,enabled:m.enabled!==false,priority:(m.priority!=null?m.priority:1),status:''}));});
+  PRESETS.forEach(p=>{SITE_MODELS[p.id]=(p.models||[]).map(m=>({name:m.name,enabled:m.enabled!==false,priority:(m.priority!=null?m.priority:1),status:(m.status==='ok'||m.status==='err')?m.status:'',checked_at:m.checked_at||0}));});
   renderSites();
   setErr('');
   $('#settingsModal').classList.add('show');
@@ -738,6 +738,7 @@ function renderSites(){
         <div class="site-info"><b>${esc(p.name||'未命名站点')}${active}</b><span>${esc(p.base_url||'')||'（未填地址）'}</span></div>
         <div class="site-acts">
           <button class="btn-ghost btn-sm" data-act="fetch" type="button">${ic('refresh',13)} 获取模型</button>
+          <button class="btn-ghost btn-sm" data-act="detectall" type="button">一键检测</button>
           <button class="btn-ghost btn-sm" data-act="apply" type="button">切换</button>
           <button class="btn-ghost btn-sm" data-act="del" type="button">删除</button>
         </div>
@@ -747,8 +748,9 @@ function renderSites(){
   }).join('');
 }
 function modelRowHtml(pid,m){
-  const st=m.status==='ok'?'<span class="mstat ok" title="可用">✓</span>'
-    :m.status==='err'?'<span class="mstat err" title="不可用">✗</span>'
+  const tt=m.checked_at?(' · 检测于 '+new Date(m.checked_at*1000).toLocaleString('zh-CN',{hour12:false})):'';
+  const st=m.status==='ok'?'<span class="mstat ok" title="可用'+tt+'">✓</span>'
+    :m.status==='err'?'<span class="mstat err" title="不可用'+tt+'">✗</span>'
     :m.status==='wait'?'<span class="mstat wait" title="检测中">…</span>':'<span class="mstat"></span>';
   return `<div class="mrow" data-model="${esc(m.name)}">
     <label class="mchk"><input type="checkbox" ${m.enabled?'checked':''} data-k="enabled">
@@ -768,6 +770,7 @@ $('#siteList').addEventListener('click',async e=>{
   const actBtn=e.target.closest('[data-act]');if(!actBtn)return;
   const act=actBtn.getAttribute('data-act');
   if(act==='fetch')return fetchSiteModels(pid,actBtn);
+  if(act==='detectall')return detectAllModels(pid,actBtn);
   if(act==='del')return delSite(pid);
   if(act==='apply'){await applyPreset(pid);renderSites();setErr('已切换并应用该站点',true);return;}
   if(act==='test'){const row=e.target.closest('.mrow');return testModel(pid,row.getAttribute('data-model'));}
@@ -795,17 +798,50 @@ async function fetchSiteModels(pid,btn){
     }else setErr(d.error||'未获取到模型');
   }catch(e){setErr('请求失败: '+e.message);}
 }
+/* 把某站点模型的 启用/优先级/检测状态 立即落盘 (检测结果持久保存)。 */
+async function persistSiteModels(pid){
+  const ms=SITE_MODELS[pid];if(!ms||!ms.length)return;
+  const models=ms.map(m=>({name:m.name,enabled:!!m.enabled,priority:m.priority!=null?m.priority:1,
+    status:(m.status==='ok'||m.status==='err')?m.status:'',checked_at:m.checked_at||0}));
+  try{const r=await (await api('/api/ext/aidev/presets/save',{method:'POST',body:JSON.stringify({id:pid,models})})).json();
+    if(r.presets)PRESETS=r.presets;}catch(e){}
+}
 async function testModel(pid,name){
   const m=siteModel(pid,name);if(!m)return;
   m.status='wait';renderSites();
   try{
     const d=await (await api('/api/ext/aidev/availability',{method:'POST',body:JSON.stringify({preset_id:pid,models:[name]})})).json();
     const r=(d.results||[])[0];
-    m.status=(r&&r.ok)?'ok':'err';
+    m.status=(r&&r.ok)?'ok':'err';m.checked_at=Math.floor(Date.now()/1000);
     if(d.success&&r&&!r.ok)setErr(name+'：'+(r.error||'不可用'));
     else if(!d.success)setErr(d.error||'检测失败');
+    await persistSiteModels(pid);
   }catch(e){m.status='err';setErr('请求失败: '+e.message);}
   renderSites();
+}
+async function detectAllModels(pid,btn){
+  const p=PRESETS.find(x=>x.id===pid);if(!p)return;
+  if(!(SITE_MODELS[pid]||[]).length){await fetchSiteModels(pid,btn);}
+  const ms=SITE_MODELS[pid]||[];
+  if(!ms.length){setErr('该站点暂无模型可检测');return;}
+  btn.disabled=true;const old=btn.innerHTML;btn.innerHTML='检测中…';setErr('');
+  ms.forEach(m=>m.status='wait');renderSites();
+  try{
+    const names=ms.map(m=>m.name);
+    const d=await (await api('/api/ext/aidev/availability',{method:'POST',body:JSON.stringify({preset_id:pid,models:names})})).json();
+    if(!d.success){setErr(d.error||'检测失败');ms.forEach(m=>m.status='');renderSites();}
+    else{
+      const map={};(d.results||[]).forEach(r=>{map[r.model]=r;});
+      const now=Math.floor(Date.now()/1000);let ok=0,prio=1;
+      ms.forEach(m=>{const r=map[m.name];const good=!!(r&&r.ok);
+        m.status=good?'ok':'err';m.enabled=good;m.checked_at=now;if(good)m.priority=prio++;else m.priority=999;});
+      ok=ms.filter(m=>m.status==='ok').length;
+      await persistSiteModels(pid);
+      renderSites();
+      setErr('一键检测完成：'+ok+'/'+ms.length+' 个可用，已自动勾选、按检测顺序设优先级并保存',true);
+    }
+  }catch(e){setErr('请求失败: '+e.message);ms.forEach(m=>m.status='');renderSites();}
+  btn.disabled=false;btn.innerHTML=old;
 }
 async function delSite(pid){
   const p=PRESETS.find(x=>x.id===pid);
@@ -827,7 +863,8 @@ async function saveSettings(){
     // 逐站点保存模型启用/优先级
     for(const p of PRESETS){
       const ms=SITE_MODELS[p.id];if(!ms||!ms.length)continue;
-      const models=ms.map(m=>({name:m.name,enabled:!!m.enabled,priority:m.priority!=null?m.priority:1}));
+      const models=ms.map(m=>({name:m.name,enabled:!!m.enabled,priority:m.priority!=null?m.priority:1,
+        status:(m.status==='ok'||m.status==='err')?m.status:'',checked_at:m.checked_at||0}));
       const sp={id:p.id,models};
       const top=models.filter(m=>m.enabled).sort((a,b)=>a.priority-b.priority)[0];
       if(top)sp.model=top.name;
