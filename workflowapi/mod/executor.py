@@ -290,6 +290,32 @@ def _safe_expr(expr):
 # ==================== API 调用 ====================
 
 
+def _render_json_body(body, base, store):
+    """渲染 JSON 请求体, 保证变量值被安全地放入 JSON。
+
+    关键: 先把模板按 JSON 结构解析, 再对结构内的字符串叶子渲染 ——
+    这样变量值里出现的引号/反斜杠/换行等会由序列化器正确转义, 不会破坏 JSON。
+    若模板本身不是合法 JSON (如往数值位插变量 {"id":{user_id}}), 退回先渲染再解析。
+    """
+    if isinstance(body, dict | list):
+        return render(body, base, store)
+    if isinstance(body, str):
+        try:
+            structure = json.loads(body)
+        except Exception:
+            structure = None
+        if structure is not None:
+            return render(structure, base, store)
+        rendered = render(body, base, store)
+        if isinstance(rendered, str):
+            try:
+                return json.loads(rendered)
+            except Exception:
+                return rendered
+        return rendered
+    return body
+
+
 async def run_api(request, base, store):
     """执行一次 HTTP 请求, 返回 {status, text, json, bytes, error}。"""
     url = render(request.get('url', ''), base, store)
@@ -304,18 +330,13 @@ async def run_api(request, base, store):
     body_type = request.get('body_type', 'json')
     body = request.get('body', '')
     if method in ('POST', 'PUT', 'PATCH', 'DELETE') and body not in ('', None):
-        rendered = render(body, base, store)
         if body_type == 'json':
-            payload = rendered
-            if isinstance(rendered, str):
-                try:
-                    payload = json.loads(rendered)
-                except Exception:
-                    payload = rendered
-            kwargs['json'] = payload
+            kwargs['json'] = _render_json_body(body, base, store)
         elif body_type == 'form':
+            rendered = render(body, base, store)
             kwargs['data'] = {str(k): str(v) for k, v in rendered.items()} if isinstance(rendered, dict) else rendered
         else:
+            rendered = render(body, base, store)
             kwargs['data'] = rendered if isinstance(rendered, str | bytes) else json.dumps(rendered, ensure_ascii=False)
 
     try:

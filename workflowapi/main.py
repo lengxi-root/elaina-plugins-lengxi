@@ -24,7 +24,7 @@ __plugin_meta__ = {
     'name': '工作流API',
     'author': 'ElainaBot',
     'description': 'JSON 驱动的可视化工作流/API 插件: 正则存 JSON、自动热更新、可视化自定义任意 API 回复',
-    'version': '1.0.1',
+    'version': '1.0.2',
 }
 
 log = get_logger(PLUGIN, '工作流API')
