@@ -48,7 +48,8 @@ def _extract_reasoning(msg: dict) -> str:
     return ''
 
 
-async def _chat_completion(session: aiohttp.ClientSession, messages: list, model: str, endpoint: dict = None) -> dict:
+async def _chat_completion(session: aiohttp.ClientSession, messages: list, model: str,
+                          endpoint: dict = None, use_tools: bool = True) -> dict:
     ep = endpoint or {}
     base = (ep.get('base_url') or aiconfig.base_url()).rstrip('/')
     key = ep.get('api_key') or aiconfig.api_key()
@@ -56,10 +57,11 @@ async def _chat_completion(session: aiohttp.ClientSession, messages: list, model
     payload = {
         'model': model,
         'messages': messages,
-        'tools': toolmod.TOOLS_SCHEMA,
-        'tool_choice': 'auto',
         'temperature': aiconfig.temperature(),
     }
+    if use_tools:
+        payload['tools'] = toolmod.TOOLS_SCHEMA
+        payload['tool_choice'] = 'auto'
     effort = aiconfig.reasoning_effort()
     if effort:
         payload['reasoning_effort'] = effort
@@ -137,9 +139,11 @@ def _build_messages(history: list, user_content, model_prompt: str) -> list:
     return messages
 
 
-async def run_agent(store, session_id: str, user_text: str, model: str = '', images: list = None) -> dict:
+async def run_agent(store, session_id: str, user_text: str, model: str = '', images: list = None,
+                    mode: str = 'dev') -> dict:
     """执行一轮多步 Agent 对话。返回 {ok, message, iterations}。
 
+    mode: 'dev' = 开发助手 (带工具); 'chat' = 普通对话 (无工具, 通用助手提示)。
     过程中向 store 写入事件: user / assistant / tool_call / tool_result / error / info
     """
     if not aiconfig.is_configured():
@@ -148,11 +152,13 @@ async def run_agent(store, session_id: str, user_text: str, model: str = '', ima
 
     images = images or []
     model = model or aiconfig.model()
+    chat_mode = (mode == 'chat')
+    use_tools = not chat_mode
     final_reasoning = ''
     history = store.get_messages(session_id)
-    sys_override = aiconfig.system_prompt()
+    sys_prompt = aiconfig.chat_system_prompt() if chat_mode else aiconfig.system_prompt()
     user_content = _build_user_content(user_text, images)
-    messages = _build_messages([m for m in history if m.get('role') != 'system'], user_content, sys_override)
+    messages = _build_messages([m for m in history if m.get('role') != 'system'], user_content, sys_prompt)
 
     store.add_event('user', {'content': user_text, 'images': images, 'model': model}, session_id)
 
@@ -179,7 +185,7 @@ async def run_agent(store, session_id: str, user_text: str, model: str = '', ima
             while True:
                 ep = chain[cur]
                 try:
-                    resp = await _chat_completion(session, messages, ep['model'], ep)
+                    resp = await _chat_completion(session, messages, ep['model'], ep, use_tools)
                     break
                 except (OpenAIError, asyncio.TimeoutError, aiohttp.ClientError) as e:
                     if cur + 1 < len(chain):

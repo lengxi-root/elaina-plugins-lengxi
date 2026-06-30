@@ -185,6 +185,9 @@ input,textarea,select{font-family:inherit}
 .composer .box:focus-within{border-color:var(--brand);box-shadow:0 0 0 4px var(--brand-soft);background:var(--card)}
 .composer textarea{flex:1;border:none;background:none;resize:none;font-size:14.5px;line-height:1.6;max-height:160px;color:var(--ink)}
 .composer textarea:focus{outline:none}
+.composer .chat-mode{flex:0 0 auto;align-self:stretch;border:1px solid var(--line);background:var(--card);border-radius:10px;
+  font-size:12.5px;font-weight:600;color:var(--ink2);padding:0 8px;cursor:pointer;outline:none}
+.composer .chat-mode:focus{border-color:var(--brand)}
 .send{width:42px;height:42px;border-radius:12px;flex:0 0 42px;background:linear-gradient(135deg,var(--brand),var(--brand2));
   color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;transition:.2s;box-shadow:0 6px 14px color-mix(in srgb,var(--brand) 35%,transparent)}
 .send:hover{transform:translateY(-1px)}
@@ -431,10 +434,14 @@ input,textarea,select{font-family:inherit}
         <div class="box">
           <button class="attach" id="attachBtn" title="添加图片（也可直接粘贴/拖拽）"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
           <input type="file" id="fileInput" accept="image/*" multiple hidden>
+          <select id="chatMode" class="chat-mode" title="对话模式：开发=带工具改插件；普通=当普通 AI 聊天">
+            <option value="dev">开发</option>
+            <option value="chat">普通对话</option>
+          </select>
           <textarea id="input" rows="1" placeholder="对 AI 说点什么… 例如：写一个 ID 命令插件，返回我的 QQ 号"></textarea>
           <button class="send" id="sendBtn" title="发送"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
         </div>
-        <div class="hint">Enter 发送 · Shift+Enter 换行 · 可粘贴/拖拽图片（需选用支持视觉的模型）· AI 可读写文件、热重载插件、运行测试</div>
+        <div class="hint">Enter 发送 · Shift+Enter 换行 · 可粘贴/拖拽图片（需视觉模型）· 左侧可切「开发（改插件）/普通对话」模式</div>
       </div>
     </div>
 
@@ -499,6 +506,31 @@ input,textarea,select{font-family:inherit}
       </div>
       <div class="site-list" id="siteList"></div>
       <div class="set-hint">每个站点点「获取模型」拉取列表后，逐个设置是否启用、优先级（数字小者优先）与检测可用性。改动点「保存并应用」生效。</div>
+    </div>
+
+    <div class="set-row" style="margin-top:14px">
+      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/></svg>普通对话 / 中转站（附加功能）</div>
+      <div class="set-top" style="margin-top:10px">
+        <div class="set-col">
+          <label class="switch-row"><input type="checkbox" id="setRelayEnabled"><span class="sw"></span>
+            <span class="sw-text"><b>作为 OpenAI 中转站对外提供</b><small>开启后其它设备/插件可用「中转密钥」通过本框架地址调用，等同普通 OpenAI 接口（透明转发，支持多模态/文生图）。</small></span></label>
+          <label class="switch-row"><input type="checkbox" id="setRelayFailover"><span class="sw"></span>
+            <span class="sw-text"><b>中转转发启用故障转移</b><small>中转请求失败时按优先级自动切换到其它已启用模型；关闭则只用当前站点。</small></span></label>
+          <div class="set-hint" style="margin-top:6px">调用地址(base_url)：<code id="relayUrl" style="background:var(--bg2);padding:2px 6px;border-radius:6px;font-size:12px;word-break:break-all"></code></div>
+        </div>
+        <div class="set-col">
+          <div class="set-row" style="margin-bottom:12px">
+            <div class="set-label">中转密钥（多个用逗号/换行分隔）</div>
+            <textarea class="set-input" id="setRelayKeys" rows="2" placeholder="sk-mykey1, sk-mykey2" spellcheck="false" style="resize:vertical"></textarea>
+            <div class="set-hint">外部调用方在 Authorization: Bearer 里填其一。留空则中转不可用。</div>
+          </div>
+          <div class="set-row" style="margin-bottom:0">
+            <div class="set-label">普通对话系统提示词（可选）</div>
+            <textarea class="set-input" id="setChatPrompt" rows="2" placeholder="留空使用内置通用助手提示" spellcheck="false" style="resize:vertical"></textarea>
+            <div class="set-hint">仅面板「普通对话」模式使用；开发模式不受影响。</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="set-err" id="setErr"></div>
@@ -717,6 +749,11 @@ function openSettings(){
   $('#setMaxIter').value=(CFG.max_iterations!=null?CFG.max_iterations:50);
   $('#setAutoSwitch').checked=!!CFG.auto_switch;
   $('#setHealthCheck').checked=!!CFG.health_check;
+  $('#setRelayEnabled').checked=!!CFG.relay_enabled;
+  $('#setRelayFailover').checked=!!CFG.relay_use_failover;
+  $('#setRelayKeys').value=CFG.relay_keys||'';
+  $('#setChatPrompt').value=CFG.chat_system_prompt||'';
+  try{$('#relayUrl').textContent=location.origin+'/api/ext/aidev/v1';}catch(e){$('#relayUrl').textContent='/api/ext/aidev/v1';}
   SITE_MODELS={};
   PRESETS.forEach(p=>{SITE_MODELS[p.id]=(p.models||[]).map(m=>({name:m.name,enabled:m.enabled!==false,priority:(m.priority!=null?m.priority:1),status:(m.status==='ok'||m.status==='err')?m.status:'',checked_at:m.checked_at||0}));});
   renderSites();
@@ -855,7 +892,9 @@ async function saveSettings(){
   const re=$('#setReasoning').value, miRaw=$('#setMaxIter').value.trim();
   const btn=$('#setSave');btn.disabled=true;btn.textContent='保存中…';setErr('');
   try{
-    const payload={reasoning_effort:re,auto_switch:$('#setAutoSwitch').checked,health_check:$('#setHealthCheck').checked};
+    const payload={reasoning_effort:re,auto_switch:$('#setAutoSwitch').checked,health_check:$('#setHealthCheck').checked,
+      relay_enabled:$('#setRelayEnabled').checked,relay_use_failover:$('#setRelayFailover').checked,
+      relay_keys:$('#setRelayKeys').value,chat_system_prompt:$('#setChatPrompt').value};
     if(miRaw!==''){const mi=parseInt(miRaw,10);if(isNaN(mi)||mi<1){setErr('工具调用上限需为 ≥1 的整数');btn.disabled=false;btn.textContent='保存并应用';return;}payload.max_iterations=mi;}
     const d=await (await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify(payload)})).json();
     if(!d.success){setErr(d.error||'保存失败');btn.disabled=false;btn.textContent='保存并应用';return;}
@@ -966,7 +1005,10 @@ $('#newChat').addEventListener('click',async()=>{
   if(d.success){SID=d.session.id;localStorage.setItem('ai_dev_sid',SID);loadSessions();closeDrawers();$('#input').focus();}
 });
 
+function modeKey(){return 'ai_dev_mode_'+(SID||'');}
+function syncModeSelector(){const sel=$('#chatMode');if(sel)sel.value=localStorage.getItem(modeKey())||'dev';}
 async function loadHistory(){
+  syncModeSelector();
   const d=await (await api('/api/ext/aidev/history?session_id='+SID)).json();
   renderHistory(d.messages||[],d.events||[]);
   const cur=(await (await api('/api/ext/aidev/sessions')).json()).sessions.find(s=>s.id===SID);
@@ -1132,7 +1174,7 @@ async function send(){
   liveTurn={stepsWrap:turn.stepsWrap,stepsBody:turn.stepsBody,cnt:turn.cnt,thinkWrap:turn.thinkWrap,thinkBody:turn.thinkBody,turn,startIdx:evbuf.length};
   $('#chatMeta').textContent='AI 运行中…';
   try{
-    const r=await api('/api/ext/aidev/chat',{method:'POST',body:JSON.stringify({session_id:SID,message:text,model:MODEL,images:imgs})});
+    const r=await api('/api/ext/aidev/chat',{method:'POST',body:JSON.stringify({session_id:SID,message:text,model:MODEL,images:imgs,mode:($('#chatMode').value||'dev')})});
     const d=await r.json();
     finishAiTurn(turn,d);
     loadSessions(false,true);

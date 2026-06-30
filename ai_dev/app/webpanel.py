@@ -54,10 +54,11 @@ async def _set_config(request: web.Request):
     """保存面板配置, 立即生效。api_key 空字符串=不修改, null=清除覆盖回退默认。"""
     body = await _json(request)
     updates = {}
-    for k in ('base_url', 'model', 'temperature', 'max_iterations', 'history_limit', 'system_prompt', 'reasoning_effort'):
+    for k in ('base_url', 'model', 'temperature', 'max_iterations', 'history_limit', 'system_prompt',
+              'reasoning_effort', 'chat_system_prompt', 'relay_keys'):
         if k in body:
             updates[k] = body[k]
-    for k in ('auto_switch', 'health_check'):
+    for k in ('auto_switch', 'health_check', 'relay_enabled', 'relay_use_failover'):
         if k in body:
             updates[k] = bool(body[k])
     # api_key: 仅当显式提供且非空白时才更新; null 清除
@@ -175,12 +176,13 @@ async def _post_chat(request: web.Request):
     message = str(body.get('message', '')).strip()
     model = str(body.get('model', '') or '')
     sid = str(body.get('session_id', '') or '')
+    mode = 'chat' if str(body.get('mode', '') or '') == 'chat' else 'dev'
     raw_images = body.get('images') or []
     images = [u for u in raw_images if isinstance(u, str) and u.startswith('data:image')][:8] if isinstance(raw_images, list) else []
     if not message and not images:
         return web.json_response({'success': False, 'error': '消息为空'}, status=400)
     sess = _store().ensure_session(sid)
-    result = await agentmod.run_agent(_store(), sess['id'], message, model, images=images)
+    result = await agentmod.run_agent(_store(), sess['id'], message, model, images=images, mode=mode)
     return web.json_response({
         'success': result.get('ok', False),
         'session_id': sess['id'],

@@ -21,12 +21,21 @@ DEFAULTS = {
     'auto_switch': False,
     # 发送/检测时用一条「你好」探测模型可用性 (部分中转站可能禁止, 默认关)
     'health_check': False,
+    # 普通对话模式 (无开发工具) 的系统提示词, 为空则用内置通用助手提示
+    'chat_system_prompt': '',
+    # ---- 中转站: 把本插件作为 OpenAI 兼容中转, 供其它设备/插件调用 ----
+    'relay_enabled': False,
+    # 中转密钥 (Bearer), 多个用逗号/换行分隔; 外部调用需带其一
+    'relay_keys': '',
+    # 中转转发时是否启用故障转移链 (按优先级自动切换), 关则只用当前站点
+    'relay_use_failover': False,
 }
 
 # 允许面板写入并持久化的字段
 _WRITABLE = ('base_url', 'api_key', 'model', 'temperature', 'max_iterations',
              'request_timeout', 'system_prompt', 'enabled', 'reasoning_effort', 'history_limit',
-             'auto_switch', 'health_check')
+             'auto_switch', 'health_check', 'chat_system_prompt',
+             'relay_enabled', 'relay_keys', 'relay_use_failover')
 
 # 子模块位于 ai_dev/app/, data 目录在插件根 ai_dev/data/
 _OVERRIDE_FILE = os.path.join(
@@ -302,6 +311,42 @@ def health_check() -> bool:
     return bool(get('health_check'))
 
 
+CHAT_SYSTEM_PROMPT = '你是一个有用、友好的 AI 助手。请用简洁、准确的中文回答用户的问题。'
+
+
+def chat_system_prompt() -> str:
+    """普通对话模式的系统提示词, 为空回退内置通用助手提示。"""
+    return str(get('chat_system_prompt') or '').strip() or CHAT_SYSTEM_PROMPT
+
+
+def relay_enabled() -> bool:
+    """是否把本插件作为 OpenAI 兼容中转站对外提供服务。"""
+    return bool(get('relay_enabled'))
+
+
+def relay_use_failover() -> bool:
+    """中转转发时是否启用故障转移链。"""
+    return bool(get('relay_use_failover'))
+
+
+def relay_keys() -> list:
+    """返回中转密钥列表 (按逗号/换行/空格分隔, 去空去重)。"""
+    raw = str(get('relay_keys') or '')
+    out, seen = [], set()
+    for k in raw.replace('\n', ',').replace(' ', ',').split(','):
+        k = k.strip()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
+
+
+def relay_key_valid(key: str) -> bool:
+    """校验外部请求携带的中转密钥是否匹配 (未配置任何密钥时拒绝, 避免裸奔)。"""
+    keys = relay_keys()
+    return bool(keys) and str(key or '').strip() in keys
+
+
 def is_configured() -> bool:
     return bool(api_key())
 
@@ -320,15 +365,20 @@ def public_config() -> dict:
         'reasoning_effort': reasoning_effort(),
         'auto_switch': auto_switch(),
         'health_check': health_check(),
+        'chat_system_prompt': str(get('chat_system_prompt') or ''),
+        'relay_enabled': relay_enabled(),
+        'relay_use_failover': relay_use_failover(),
+        'relay_keys': str(get('relay_keys') or ''),
         'api_key_set': is_configured(),
     }
 
 
-def failover_chain(current_model: str = '') -> list:
+def failover_chain(current_model: str = '', force: bool = False) -> list:
     """构造故障转移端点链: [{base_url, api_key, model, label, preset_id}]。
 
-    第一个永远是当前手动选择的端点+模型 (行为不变)。开启 auto_switch 后, 再按各
-    站点 models 的 priority 升序追加其余「已启用」模型 (跳过与当前完全相同的端点+模型)。
+    第一个永远是当前手动选择的端点+模型 (行为不变)。开启 auto_switch (或 force=True,
+    供中转站独立开关用) 后, 再按各站点 models 的 priority 升序追加其余「已启用」模型
+    (跳过与当前完全相同的端点+模型)。
     """
     cur_base = base_url()
     cur = {
@@ -338,7 +388,7 @@ def failover_chain(current_model: str = '') -> list:
         'label': '当前',
         'preset_id': _load_presets_raw().get('active_id', ''),
     }
-    if not auto_switch():
+    if not (auto_switch() or force):
         return [cur]
     chain = [cur]
     seen = {(cur['base_url'], cur['model'])}
