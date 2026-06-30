@@ -17,11 +17,18 @@ DEFAULTS = {
     'system_prompt': '',
     'reasoning_effort': '',
     'history_limit': 50,
+    # 调用失败时按优先级自动切换到下一个可用模型 (故障转移)
+    'auto_switch': False,
+    # 发送/检测时用一条「你好」探测模型可用性 (部分中转站可能禁止, 默认关)
+    'health_check': False,
+    # 普通对话模式 (无开发工具) 的系统提示词, 为空则用内置通用助手提示
+    'chat_system_prompt': '',
 }
 
 # 允许面板写入并持久化的字段
 _WRITABLE = ('base_url', 'api_key', 'model', 'temperature', 'max_iterations',
-             'request_timeout', 'system_prompt', 'enabled', 'reasoning_effort', 'history_limit')
+             'request_timeout', 'system_prompt', 'enabled', 'reasoning_effort', 'history_limit',
+             'auto_switch', 'health_check', 'chat_system_prompt')
 
 # 子模块位于 ai_dev/app/, data 目录在插件根 ai_dev/data/
 _OVERRIDE_FILE = os.path.join(
@@ -76,9 +83,43 @@ def set_runtime(updates: dict) -> dict:
 
 
 # ---- 多站点预设: 每个站点保存一套 base_url/api_key/model/reasoning_effort, 可随时一键切换 ----
+# 此外每个站点可保存一组 models: [{name, enabled, priority}], 用于「自动切换模型」的故障转移链。
 _PRESETS_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'ai_presets.json')
 _PRESET_FIELDS = ('base_url', 'model', 'reasoning_effort')
+
+
+def _norm_models(models) -> list:
+    """规整站点的模型列表: [{name, enabled, priority, status, checked_at}], 去重、补默认值。
+
+    status: ''(未检测) / 'ok'(可用) / 'err'(不可用), 由面板「检测/一键检测」写入并持久保存;
+    checked_at: 最近一次检测的时间戳 (秒), 用于面板展示「上次检测时间」。"""
+    out, seen = [], set()
+    if not isinstance(models, list):
+        return out
+    for i, m in enumerate(models):
+        if isinstance(m, str):
+            m = {'name': m}
+        if not isinstance(m, dict):
+            continue
+        name = str(m.get('name') or '').strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        try:
+            pr = int(m.get('priority', i + 1))
+        except (TypeError, ValueError):
+            pr = i + 1
+        st = str(m.get('status') or '').strip()
+        if st not in ('ok', 'err'):
+            st = ''
+        try:
+            ca = int(m.get('checked_at') or 0)
+        except (TypeError, ValueError):
+            ca = 0
+        out.append({'name': name, 'enabled': bool(m.get('enabled', True)),
+                    'priority': pr, 'status': st, 'checked_at': ca})
+    return out
 
 
 def _load_presets_raw() -> dict:
@@ -111,6 +152,7 @@ def list_presets() -> dict:
         'model': p.get('model', ''),
         'reasoning_effort': p.get('reasoning_effort', ''),
         'api_key_set': bool(p.get('api_key')),
+        'models': _norm_models(p.get('models')),
     } for p in raw['presets'] if p.get('id')]
     return {'active_id': raw.get('active_id', ''), 'presets': presets}
 
@@ -129,6 +171,8 @@ def save_preset(p: dict) -> dict:
         for k in _PRESET_FIELDS:
             if k in p:
                 item[k] = str(p.get(k) or '').strip()
+        if 'models' in p:
+            item['models'] = _norm_models(p.get('models'))
         if 'api_key' in p:
             ak = p['api_key']
             if ak is None:
@@ -137,6 +181,16 @@ def save_preset(p: dict) -> dict:
                 item['api_key'] = ak.strip()
         _save_presets_raw(raw)
         return list_presets()
+
+
+def preset_endpoint(pid: str) -> dict:
+    """按站点 id 解析其 base_url/api_key (供面板探活用), 缺失则回退当前生效配置。"""
+    raw = _load_presets_raw()
+    item = next((x for x in raw['presets'] if x.get('id') == pid), None) if pid else None
+    return {
+        'base_url': str((item or {}).get('base_url') or '').rstrip('/') or base_url(),
+        'api_key': (item or {}).get('api_key') or api_key(),
+    }
 
 
 def delete_preset(pid: str) -> dict:
@@ -240,6 +294,24 @@ def reasoning_effort() -> str:
     return v if v in ('minimal', 'low', 'medium', 'high') else ''
 
 
+def auto_switch() -> bool:
+    """调用失败时是否按优先级自动切换到下一个模型。"""
+    return bool(get('auto_switch'))
+
+
+def health_check() -> bool:
+    """发送/检测时是否用「你好」探测模型可用性。"""
+    return bool(get('health_check'))
+
+
+CHAT_SYSTEM_PROMPT = '你是一个有用、友好的 AI 助手。请用简洁、准确的中文回答用户的问题。'
+
+
+def chat_system_prompt() -> str:
+    """普通对话模式的系统提示词, 为空回退内置通用助手提示。"""
+    return str(get('chat_system_prompt') or '').strip() or CHAT_SYSTEM_PROMPT
+
+
 def is_configured() -> bool:
     return bool(api_key())
 
@@ -256,5 +328,50 @@ def public_config() -> dict:
         'request_timeout': request_timeout(),
         'system_prompt': system_prompt(),
         'reasoning_effort': reasoning_effort(),
+        'auto_switch': auto_switch(),
+        'health_check': health_check(),
+        'chat_system_prompt': str(get('chat_system_prompt') or ''),
         'api_key_set': is_configured(),
     }
+
+
+def failover_chain(current_model: str = '', force: bool = False) -> list:
+    """构造故障转移端点链: [{base_url, api_key, model, label, preset_id}]。
+
+    第一个永远是当前手动选择的端点+模型 (行为不变)。开启 auto_switch (或 force=True,
+    供中转站独立开关用) 后, 再按各站点 models 的 priority 升序追加其余「已启用」模型
+    (跳过与当前完全相同的端点+模型)。
+    """
+    cur_base = base_url()
+    cur = {
+        'base_url': cur_base,
+        'api_key': api_key(),
+        'model': str(current_model or model()),
+        'label': '当前',
+        'preset_id': _load_presets_raw().get('active_id', ''),
+    }
+    if not (auto_switch() or force):
+        return [cur]
+    chain = [cur]
+    seen = {(cur['base_url'], cur['model'])}
+    raw = _load_presets_raw()
+    entries = []
+    for p in raw['presets']:
+        for m in _norm_models(p.get('models')):
+            if m.get('enabled'):
+                entries.append((m['priority'], p, m['name']))
+    entries.sort(key=lambda x: x[0])
+    for _pr, p, name in entries:
+        ep_base = str(p.get('base_url') or '').rstrip('/') or cur_base
+        key = (ep_base, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        chain.append({
+            'base_url': ep_base,
+            'api_key': p.get('api_key') or cur['api_key'],
+            'model': name,
+            'label': p.get('name') or '未命名站点',
+            'preset_id': p.get('id', ''),
+        })
+    return chain

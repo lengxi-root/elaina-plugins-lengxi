@@ -15,12 +15,16 @@
   --amber:#f59e0b; --amber-soft:color-mix(in srgb,var(--amber) 14%,transparent);
   --blue:#3b82f6; --blue-soft:color-mix(in srgb,var(--blue) 12%,transparent);
   --radius:14px; --radius-sm:9px;
+  /* 全局界面缩放: 默认 90% (相当于未缩放时按 90% 显示, 比 100% 更紧凑) */
+  --ui-scale:.9;
   --shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.05); --shadow-lg:0 12px 36px rgba(15,23,42,.12);
   --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
+/* 默认按 90% 缩放整体界面; 在 iframe 内 vh 相对 iframe 视口, 缩放后仍铺满 */
+html{zoom:var(--ui-scale)}
 body{font-family:var(--font);color:var(--ink);background:
   radial-gradient(1100px 560px at 100% -10%,color-mix(in srgb,var(--brand) 9%,transparent) 0%,transparent 55%),
   var(--bg);
@@ -54,7 +58,7 @@ input,textarea,select{font-family:inherit}
 .login-err{color:var(--red);font-size:13px;margin-top:12px;min-height:18px;text-align:center}
 
 /* ===== App layout ===== */
-#app{display:none;height:100vh;flex-direction:column}
+#app{display:none;height:calc(100vh / var(--ui-scale));flex-direction:column;max-width:100%;overflow-x:hidden}
 .topbar{height:62px;flex:0 0 62px;display:flex;align-items:center;gap:14px;padding:0 20px;
   background:color-mix(in srgb,var(--card) 82%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);z-index:10}
 .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:16px}
@@ -118,7 +122,7 @@ input,textarea,select{font-family:inherit}
   color:var(--ink2);transition:.15s;cursor:pointer}
 .chip:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
 
-.msg{display:flex;gap:12px;width:100%;max-width:880px;margin:0 auto;animation:fade .3s}
+.msg{display:flex;gap:12px;width:100%;max-width:none;margin:0;animation:fade .3s}
 @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .msg .av{width:36px;height:36px;border-radius:11px;flex:0 0 36px;display:flex;align-items:center;justify-content:center;
   font-size:17px;font-weight:600}
@@ -176,16 +180,20 @@ input,textarea,select{font-family:inherit}
 .answer:empty{display:none}
 
 .composer{padding:12px 14px;border-top:1px solid var(--line2)}
-.composer .box{display:flex;gap:10px;align-items:flex-end;background:var(--bg2);border:1.5px solid var(--line);
-  border-radius:16px;padding:10px 10px 10px 16px;transition:.2s}
+.composer .box{display:flex;gap:8px;align-items:flex-end;background:var(--bg2);border:1.5px solid var(--line);
+  border-radius:16px;padding:6px 8px;transition:.2s;cursor:text}
 .composer .box:focus-within{border-color:var(--brand);box-shadow:0 0 0 4px var(--brand-soft);background:var(--card)}
-.composer textarea{flex:1;border:none;background:none;resize:none;font-size:14.5px;line-height:1.6;max-height:160px;color:var(--ink)}
+.composer textarea{flex:1;min-width:0;align-self:stretch;border:none;background:none;resize:none;font-size:14.5px;
+  line-height:1.45;min-height:40px;max-height:160px;padding:9px 6px;color:var(--ink)}
 .composer textarea:focus{outline:none}
-.send{width:42px;height:42px;border-radius:12px;flex:0 0 42px;background:linear-gradient(135deg,var(--brand),var(--brand2));
+.composer .chat-mode{flex:0 0 auto;align-self:flex-end;height:40px;border:1px solid var(--line);background:var(--card);border-radius:10px;
+  font-size:12.5px;font-weight:600;color:var(--ink2);padding:0 8px;cursor:pointer;outline:none}
+.composer .chat-mode:focus{border-color:var(--brand)}
+.send{width:40px;height:40px;border-radius:12px;flex:0 0 40px;align-self:flex-end;background:linear-gradient(135deg,var(--brand),var(--brand2));
   color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;transition:.2s;box-shadow:0 6px 14px color-mix(in srgb,var(--brand) 35%,transparent)}
 .send:hover{transform:translateY(-1px)}
 .send:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.attach{width:34px;height:34px;flex:0 0 34px;border-radius:10px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:.15s}
+.attach{width:40px;height:40px;flex:0 0 40px;align-self:flex-end;border-radius:10px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:.15s}
 .attach:hover{background:var(--brand-soft);color:var(--brand)}
 .composer.drag .box{border-color:var(--brand);background:var(--brand-soft)}
 .composer .thumbs{display:flex;flex-wrap:wrap;gap:8px;padding:0 4px 8px}
@@ -194,7 +202,7 @@ input,textarea,select{font-family:inherit}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .thumb .rm{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:12px;line-height:18px;text-align:center}
 .bubble .imgs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
-.bubble .imgs img{max-width:160px;max-height:160px;border-radius:10px;border:1px solid var(--line);cursor:pointer;display:block}
+.bubble .imgs img{max-width:min(160px,100%);max-height:160px;height:auto;border-radius:10px;border:1px solid var(--line);cursor:pointer;display:block}
 .composer .hint{font-size:11px;color:var(--muted);margin-top:7px;padding-left:4px}
 
 /* activity */
@@ -279,6 +287,61 @@ input,textarea,select{font-family:inherit}
 .preset-bar{display:flex;gap:8px;align-items:center}
 .preset-bar select{flex:1;min-width:0;height:38px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg2);padding:0 10px;font-size:13px;color:var(--ink)}
 .preset-bar .btn-ghost{flex:0 0 auto;padding:0 12px;height:38px}
+
+/* 自定义下拉 (与 set-input 统一外观, 替代原生 select 丑样式) */
+.set-select{width:100%;height:44px;border:1.5px solid var(--line);border-radius:12px;padding:0 38px 0 14px;
+  font-size:14px;background:var(--bg2);color:var(--ink);appearance:none;-webkit-appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a8a99' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat:no-repeat;background-position:right 13px center;transition:.2s}
+.set-select:focus{outline:none;border-color:var(--brand);background-color:var(--card);box-shadow:0 0 0 4px var(--brand-soft)}
+
+/* 开关 (toggle) */
+.switch-row{display:flex;align-items:flex-start;gap:11px;cursor:pointer;margin-bottom:12px}
+.switch-row input{display:none}
+.switch-row .sw{flex:0 0 auto;width:40px;height:23px;border-radius:99px;background:var(--line2,var(--line));position:relative;transition:.2s;margin-top:1px}
+.switch-row .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s}
+.switch-row input:checked + .sw{background:var(--brand)}
+.switch-row input:checked + .sw::after{transform:translateX(17px)}
+.switch-row .sw-text{display:flex;flex-direction:column;gap:2px}
+.switch-row .sw-text b{font-size:13.5px;color:var(--ink)}
+.switch-row .sw-text small{font-size:11.5px;color:var(--muted);line-height:1.4}
+.set-warn{font-size:11.5px;color:var(--amber,#c98a00);background:color-mix(in srgb,var(--amber,#f0a500) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--amber,#f0a500) 35%,transparent);border-radius:10px;padding:8px 11px;margin-top:4px;line-height:1.5}
+.btn-sm{height:32px;padding:0 12px;font-size:12.5px;border-radius:9px}
+
+/* 设置弹窗: 宽屏横向布局 (上方两栏 + 下方站点全宽) */
+.modal-card.wide{width:860px;max-width:95vw}
+.set-top{display:grid;grid-template-columns:1.05fr 1fr;gap:8px 28px;align-items:start;margin-bottom:6px}
+.set-col{min-width:0}
+.set-col .switch-row:last-of-type{margin-bottom:8px}
+
+/* 站点卡片与模型行 */
+.site-list{display:flex;flex-direction:column;gap:10px}
+.site-empty{font-size:12.5px;color:var(--muted);padding:10px 2px}
+.site-card{border:1.5px solid var(--line);border-radius:13px;background:var(--bg2);padding:12px 13px}
+.site-head{display:flex;align-items:center;gap:8px}
+.site-info{flex:1;min-width:0}
+.site-info b{font-size:13.5px;color:var(--ink);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.site-info span{font-size:11px;color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.site-info .badge-active{display:inline-block;font-size:10px;color:var(--brand);border:1px solid var(--brand);border-radius:6px;padding:0 5px;margin-left:6px;vertical-align:1px}
+.site-acts{flex:0 0 auto;display:flex;gap:6px}
+.site-models{margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:6px}
+.site-models .mhint{grid-column:1/-1;font-size:11.5px;color:var(--muted)}
+.mrow{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:9px;background:var(--card);border:1px solid var(--line)}
+.mrow .mchk{flex:0 0 auto;display:flex;align-items:center;cursor:pointer}
+.mrow .mchk input{display:none}
+.mrow .mchk .cbx{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line2,var(--line));display:flex;align-items:center;justify-content:center;transition:.15s}
+.mrow .mchk .cbx svg{width:12px;height:12px;stroke:#fff;opacity:0}
+.mrow .mchk input:checked + .cbx{background:var(--brand);border-color:var(--brand)}
+.mrow .mchk input:checked + .cbx svg{opacity:1}
+.mrow .mname{flex:1;min-width:0;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .mprio{flex:0 0 auto;width:44px;height:28px;border:1.5px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--ink);font-size:12px;padding:0 4px;text-align:center}
+.mrow .mprio:focus{outline:none;border-color:var(--brand)}
+.mrow .mtest{flex:0 0 auto;height:28px;padding:0 8px;font-size:11.5px;border-radius:8px;border:1.5px solid var(--line);background:var(--bg2);color:var(--ink2);white-space:nowrap;transition:.15s}
+.mrow .mtest:hover{color:var(--brand);border-color:var(--brand)}
+.mrow .mstat{flex:0 0 auto;font-size:13px;min-width:14px;text-align:center}
+.mstat.ok{color:var(--green)}.mstat.err{color:var(--red)}.mstat.wait{color:var(--muted)}
+@media(max-width:680px){.set-top{grid-template-columns:1fr;gap:2px}}
 
 @media(max-width:1180px){.activity{width:270px;flex-basis:270px}}
 @media(max-width:1020px){
@@ -372,10 +435,14 @@ input,textarea,select{font-family:inherit}
         <div class="box">
           <button class="attach" id="attachBtn" title="添加图片（也可直接粘贴/拖拽）"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
           <input type="file" id="fileInput" accept="image/*" multiple hidden>
+          <select id="chatMode" class="chat-mode" title="对话模式：插件开发=带工具改插件；普通对话=当普通 AI 聊天">
+            <option value="dev">插件开发</option>
+            <option value="chat">普通对话</option>
+          </select>
           <textarea id="input" rows="1" placeholder="对 AI 说点什么… 例如：写一个 ID 命令插件，返回我的 QQ 号"></textarea>
           <button class="send" id="sendBtn" title="发送"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
         </div>
-        <div class="hint">Enter 发送 · Shift+Enter 换行 · 可粘贴/拖拽图片（需选用支持视觉的模型）· AI 可读写文件、热重载插件、运行测试</div>
+        <div class="hint">Enter 发送 · Shift+Enter 换行 · 可粘贴/拖拽图片（需视觉模型）· 左侧可切「插件开发 / 普通对话」模式</div>
       </div>
     </div>
 
@@ -401,58 +468,82 @@ input,textarea,select{font-family:inherit}
 
 <!-- Settings modal -->
 <div class="modal" id="settingsModal">
-  <div class="modal-card">
+  <div class="modal-card wide">
     <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>AI 设置</h2>
-    <div class="sub">管理多个 AI 站点（接口地址/密钥/模型），随时一键切换。密钥仅保存在服务器本地。</div>
-    <div class="set-row preset-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/></svg>AI 站点 (预设)</div>
-      <div class="preset-bar">
-        <select id="presetSel"><option value="">— 新站点 —</option></select>
-        <button class="btn-ghost" id="presetApply" type="button">切换</button>
-        <button class="btn-ghost" id="presetDel" type="button">删除</button>
+    <div class="sub">管理多个 AI 站点与模型；可在调用失败时按优先级自动切换，并可轮询模型可用性。密钥仅保存在服务器本地。</div>
+
+    <div class="set-top">
+      <div class="set-col">
+        <label class="switch-row"><input type="checkbox" id="setAutoSwitch"><span class="sw"></span>
+          <span class="sw-text"><b>自动切换模型（故障转移）</b><small>调用失败（5xx/429/超时等）时，按下方优先级自动切换到下一个已启用的模型重试。</small></span></label>
+        <label class="switch-row"><input type="checkbox" id="setHealthCheck"><span class="sw"></span>
+          <span class="sw-text"><b>轮询模型可用性</b><small>发送前用一条「你好」探测各模型是否可用，自动跳过不可用的。</small></span></label>
+        <div class="set-warn">⚠️ 某些中转站可能禁止/限制轮询模型可用性（会消耗额度或触发风控），请谨慎使用。</div>
       </div>
-      <input class="set-input" id="presetName" placeholder="站点名称，如「OpenAI 官方」「中转 A」" spellcheck="false" autocomplete="off" style="margin-top:8px">
-      <div class="set-hint">选择一个站点会把下面字段填好；填好地址/密钥/模型后点「存为站点」保存或更新。「切换」会立即应用该站点。</div>
-    </div>
-    <div class="set-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>接口地址 (base_url)</div>
-      <input class="set-input" id="setBaseUrl" placeholder="https://api.openai.com/v1" spellcheck="false" autocomplete="off">
-      <div class="set-hint">需为 OpenAI 兼容接口，通常以 /v1 结尾。</div>
-    </div>
-    <div class="set-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/></svg>API 密钥 (api_key)</div>
-      <input class="set-input" id="setApiKey" type="password" placeholder="留空表示不修改已保存的密钥" spellcheck="false" autocomplete="off">
-      <div class="set-hint">将以 Bearer 方式调用上游；留空不会清除现有密钥。</div>
-    </div>
-    <div class="set-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>模型 (model)</div>
-      <div class="set-modelrow">
-        <select id="setModel"></select>
-        <button class="btn-ghost" id="setFetchModels" type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>获取模型</button>
+      <div class="set-col">
+        <div class="set-row" style="margin-bottom:14px">
+          <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>深度思考 (reasoning_effort)</div>
+          <select id="setReasoning" class="set-select">
+            <option value="">默认 (跟随模型)</option>
+            <option value="minimal">minimal — 最少思考</option>
+            <option value="low">low — 低</option>
+            <option value="medium">medium — 中</option>
+            <option value="high">high — 高 (思考最充分)</option>
+          </select>
+          <div class="set-hint">仅推理模型 (如 gpt-5.x / o 系列) 生效；普通模型忽略此项。</div>
+        </div>
+        <div class="set-row" style="margin-bottom:0">
+          <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>工具调用上限 (max_iterations)</div>
+          <input class="set-input" id="setMaxIter" type="number" min="1" step="1" placeholder="50" spellcheck="false" autocomplete="off">
+          <div class="set-hint">单次回复内连续调用工具的最大次数，达到后强制结束本回合。默认 50。</div>
+        </div>
       </div>
-      <div class="set-hint">点「获取模型」用上面填写的地址/密钥拉取列表。</div>
     </div>
-    <div class="set-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>深度思考 (reasoning_effort)</div>
-      <select id="setReasoning">
-        <option value="">默认 (跟随模型)</option>
-        <option value="minimal">minimal — 最少思考</option>
-        <option value="low">low — 低</option>
-        <option value="medium">medium — 中</option>
-        <option value="high">high — 高 (思考最充分)</option>
-      </select>
-      <div class="set-hint">仅推理模型 (如 gpt-5.x / o 系列) 生效；普通模型忽略此项。思考过程会显示在回复气泡的「思考过程」里。</div>
+
+    <div class="set-row" style="margin-top:14px">
+      <div class="set-label" style="justify-content:space-between">
+        <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/></svg>AI 站点与模型</span>
+        <button class="btn-ghost btn-sm" id="addSiteBtn" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>增加站点</button>
+      </div>
+      <div class="site-list" id="siteList"></div>
+      <div class="set-hint">每个站点点「获取模型」拉取列表后，逐个设置是否启用、优先级（数字小者优先）与检测可用性。改动点「保存并应用」生效。</div>
     </div>
-    <div class="set-row">
-      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>工具调用上限 (max_iterations)</div>
-      <input class="set-input" id="setMaxIter" type="number" min="1" step="1" placeholder="50" spellcheck="false" autocomplete="off">
-      <div class="set-hint">AI 单次回复内连续调用工具的最大次数 (迭代步数)，达到后会强制结束本回合 (提示「已达到最大迭代步数」，可能打断未完成的任务)。默认 50，可按需调大。</div>
+
+    <div class="set-row" style="margin-top:14px">
+      <div class="set-label"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>普通对话系统提示词（可选）</div>
+      <textarea class="set-input" id="setChatPrompt" rows="2" placeholder="留空使用内置通用助手提示" spellcheck="false" style="resize:vertical;margin-top:8px"></textarea>
+      <div class="set-hint">仅输入框左侧切到「普通对话」模式时使用（无开发工具）；开发模式不受影响。</div>
     </div>
+
     <div class="set-err" id="setErr"></div>
     <div class="modal-actions">
       <button class="btn-primary" id="setSave" type="button">保存并应用</button>
-      <button class="btn-ghost" id="presetSave" type="button">存为站点</button>
       <button class="btn-ghost" id="setCancel" type="button">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 增加站点 dialog -->
+<div class="modal" id="addSiteModal">
+  <div class="modal-card" style="width:420px">
+    <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/></svg>增加站点</h2>
+    <div class="sub" id="addSiteSub">填写站点地址与密钥，保存后即新增一个 AI 站点。</div>
+    <div class="set-row">
+      <div class="set-label">站点地址 (base_url)</div>
+      <input class="set-input" id="newSiteUrl" placeholder="https://api.openai.com/v1" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="set-row">
+      <div class="set-label">API 密钥 (api_key)</div>
+      <input class="set-input" id="newSiteKey" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
+    </div>
+    <div class="set-row">
+      <div class="set-label">站点名称（可选）</div>
+      <input class="set-input" id="newSiteName" placeholder="如「中转 A」，留空则用地址" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="set-err" id="addSiteErr"></div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="addSiteOk" type="button">确定</button>
+      <button class="btn-ghost" id="addSiteCancel" type="button">取消</button>
     </div>
   </div>
 </div>
@@ -467,6 +558,9 @@ let SID=localStorage.getItem('ai_dev_sid')||'';
 let MODEL=localStorage.getItem('ai_dev_model')||'';
 let CFG={};
 let FILTER='all', evbuf=[], sending=false, es=null, liveTurn=null;
+let SESSIONS=[];   // 侧栏会话列表缓存, 切换会话时避免重复请求
+let HIST_CACHE={}; // 已渲染的会话历史 HTML 缓存 {sid: innerHTML}, 实现切换瞬时显示
+let RENDER_TARGET=null; // 批量渲染历史时的目标容器 (DocumentFragment), 避免逐条 reflow
 
 function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600);}
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
@@ -630,51 +724,173 @@ async function loadModels(){
 }
 $('#modelSel').addEventListener('change',e=>{MODEL=e.target.value;localStorage.setItem('ai_dev_model',MODEL);$('#chatModel').textContent=MODEL;});
 
-/* ---- settings: 自定义 base_url / api_key + 自动获取模型 ---- */
+/* ---- settings: 站点与模型管理 + 故障转移/可用性轮询 ---- */
+let PRESETS=[], ACTIVE_PRESET='';
+let SITE_MODELS={};   // {presetId: [{name,enabled,priority,status}]}  (设置弹窗内的工作副本)
+const CHK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
 function setErr(msg,ok){const el=$('#setErr');el.textContent=msg||'';el.classList.toggle('ok',!!ok);}
 function openSettings(){
-  $('#setBaseUrl').value=CFG.base_url||'';
-  $('#setApiKey').value='';
-  $('#setApiKey').placeholder=CFG.api_key_set?'已配置 (留空表示不修改)':'sk-...';
   $('#setReasoning').value=CFG.reasoning_effort||'';
   $('#setMaxIter').value=(CFG.max_iterations!=null?CFG.max_iterations:50);
-  fillSetModels(MODEL?[MODEL]:[],MODEL);
-  if($('#presetSel')){$('#presetSel').value=ACTIVE_PRESET||'';
-    const ap=PRESETS.find(x=>x.id===ACTIVE_PRESET);$('#presetName').value=ap?ap.name:'';}
+  $('#setAutoSwitch').checked=!!CFG.auto_switch;
+  $('#setHealthCheck').checked=!!CFG.health_check;
+  $('#setChatPrompt').value=CFG.chat_system_prompt||'';
+  SITE_MODELS={};
+  PRESETS.forEach(p=>{SITE_MODELS[p.id]=(p.models||[]).map(m=>({name:m.name,enabled:m.enabled!==false,priority:(m.priority!=null?m.priority:1),status:(m.status==='ok'||m.status==='err')?m.status:'',checked_at:m.checked_at||0}));});
+  renderSites();
   setErr('');
   $('#settingsModal').classList.add('show');
 }
 function closeSettings(){$('#settingsModal').classList.remove('show');}
-function fillSetModels(list,selected){
-  const sel=$('#setModel');sel.innerHTML='';
-  const arr=(list&&list.length)?list:[selected||MODEL||'gpt-4.1-nano'];
-  arr.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o);});
-  if(selected&&arr.includes(selected))sel.value=selected;
+
+function renderSites(){
+  const box=$('#siteList');
+  if(!PRESETS.length){box.innerHTML='<div class="site-empty">还没有站点。点右上「增加站点」添加一个 AI 站点（地址 + 密钥）。</div>';return;}
+  box.innerHTML=PRESETS.map(p=>{
+    const ms=SITE_MODELS[p.id]||[];
+    const active=p.id===ACTIVE_PRESET?'<span class="badge-active">使用中</span>':'';
+    const rows=ms.length?ms.map(m=>modelRowHtml(p.id,m)).join('')
+      :'<div class="mhint">尚未获取模型，点「获取模型」拉取该站点的可用模型列表。</div>';
+    return `<div class="site-card" data-id="${esc(p.id)}">
+      <div class="site-head">
+        <div class="site-info"><b>${esc(p.name||'未命名站点')}${active}</b><span>${esc(p.base_url||'')||'（未填地址）'}</span></div>
+        <div class="site-acts">
+          <button class="btn-ghost btn-sm" data-act="fetch" type="button">${ic('refresh',13)} 获取模型</button>
+          <button class="btn-ghost btn-sm" data-act="detectall" type="button">一键检测</button>
+          <button class="btn-ghost btn-sm" data-act="apply" type="button">切换</button>
+          <button class="btn-ghost btn-sm" data-act="del" type="button">删除</button>
+        </div>
+      </div>
+      <div class="site-models">${rows}</div>
+    </div>`;
+  }).join('');
 }
-async function fetchSetModels(){
-  const base=$('#setBaseUrl').value.trim(), key=$('#setApiKey').value.trim();
-  const btn=$('#setFetchModels');btn.disabled=true;btn.innerHTML=ic('refresh',15)+' 获取中…';setErr('');
+function modelRowHtml(pid,m){
+  const tt=m.checked_at?(' · 检测于 '+new Date(m.checked_at*1000).toLocaleString('zh-CN',{hour12:false})):'';
+  const st=m.status==='ok'?'<span class="mstat ok" title="可用'+tt+'">✓</span>'
+    :m.status==='err'?'<span class="mstat err" title="不可用'+tt+'">✗</span>'
+    :m.status==='wait'?'<span class="mstat wait" title="检测中">…</span>':'<span class="mstat"></span>';
+  return `<div class="mrow" data-model="${esc(m.name)}">
+    <label class="mchk"><input type="checkbox" ${m.enabled?'checked':''} data-k="enabled">
+      <span class="cbx">${CHK}</span></label>
+    <span class="mname" title="${esc(m.name)}">${esc(m.name)}</span>
+    <input class="mprio" type="number" min="0" step="1" value="${m.priority!=null?m.priority:1}" data-k="priority" title="优先级：数字小者优先">
+    <button class="mtest" data-act="test" type="button">检测</button>
+    ${st}
+  </div>`;
+}
+function siteModel(pid,name){return (SITE_MODELS[pid]||[]).find(x=>x.name===name);}
+
+/* 站点列表交互 (事件委托) */
+$('#siteList').addEventListener('click',async e=>{
+  const card=e.target.closest('.site-card');if(!card)return;
+  const pid=card.getAttribute('data-id');
+  const actBtn=e.target.closest('[data-act]');if(!actBtn)return;
+  const act=actBtn.getAttribute('data-act');
+  if(act==='fetch')return fetchSiteModels(pid,actBtn);
+  if(act==='detectall')return detectAllModels(pid,actBtn);
+  if(act==='del')return delSite(pid);
+  if(act==='apply'){await applyPreset(pid);renderSites();setErr('已切换并应用该站点',true);return;}
+  if(act==='test'){const row=e.target.closest('.mrow');return testModel(pid,row.getAttribute('data-model'));}
+});
+$('#siteList').addEventListener('change',e=>{
+  const card=e.target.closest('.site-card');if(!card)return;
+  const pid=card.getAttribute('data-id');const row=e.target.closest('.mrow');if(!row)return;
+  const m=siteModel(pid,row.getAttribute('data-model'));if(!m)return;
+  const k=e.target.getAttribute('data-k');
+  if(k==='enabled')m.enabled=e.target.checked;
+  else if(k==='priority'){const v=parseInt(e.target.value,10);m.priority=isNaN(v)?1:v;}
+});
+
+async function fetchSiteModels(pid,btn){
+  const p=PRESETS.find(x=>x.id===pid);if(!p)return;
+  btn.disabled=true;const old=btn.innerHTML;btn.innerHTML=ic('refresh',13)+' 获取中…';setErr('');
   try{
-    const qs=new URLSearchParams();if(base)qs.set('base_url',base);if(key)qs.set('api_key',key);
-    const d=await (await api('/api/ext/aidev/models'+(qs.toString()?'?'+qs.toString():''))).json();
-    if(d.success&&d.models&&d.models.length){fillSetModels(d.models,$('#setModel').value||MODEL);setErr('获取到 '+d.models.length+' 个模型',true);}
-    else setErr(d.error||'未获取到模型');
+    const qs=new URLSearchParams();if(p.base_url)qs.set('base_url',p.base_url);qs.set('preset_id',pid);
+    const d=await (await api('/api/ext/aidev/models?'+qs.toString())).json();
+    if(d.success&&d.models&&d.models.length){
+      const prev=SITE_MODELS[pid]||[];
+      SITE_MODELS[pid]=d.models.map((name,i)=>{const o=prev.find(x=>x.name===name);
+        return o?{...o,status:o.status||''}:{name,enabled:false,priority:i+1,status:''};});
+      renderSites();setErr('「'+(p.name||'站点')+'」获取到 '+d.models.length+' 个模型',true);
+    }else setErr(d.error||'未获取到模型');
   }catch(e){setErr('请求失败: '+e.message);}
-  btn.disabled=false;btn.innerHTML=ic('refresh',15)+' 获取模型';
 }
+/* 把某站点模型的 启用/优先级/检测状态 立即落盘 (检测结果持久保存)。 */
+async function persistSiteModels(pid){
+  const ms=SITE_MODELS[pid];if(!ms||!ms.length)return;
+  const models=ms.map(m=>({name:m.name,enabled:!!m.enabled,priority:m.priority!=null?m.priority:1,
+    status:(m.status==='ok'||m.status==='err')?m.status:'',checked_at:m.checked_at||0}));
+  try{const r=await (await api('/api/ext/aidev/presets/save',{method:'POST',body:JSON.stringify({id:pid,models})})).json();
+    if(r.presets)PRESETS=r.presets;}catch(e){}
+}
+async function testModel(pid,name){
+  const m=siteModel(pid,name);if(!m)return;
+  m.status='wait';renderSites();
+  try{
+    const d=await (await api('/api/ext/aidev/availability',{method:'POST',body:JSON.stringify({preset_id:pid,models:[name]})})).json();
+    const r=(d.results||[])[0];
+    m.status=(r&&r.ok)?'ok':'err';m.checked_at=Math.floor(Date.now()/1000);
+    if(d.success&&r&&!r.ok)setErr(name+'：'+(r.error||'不可用'));
+    else if(!d.success)setErr(d.error||'检测失败');
+    await persistSiteModels(pid);
+  }catch(e){m.status='err';setErr('请求失败: '+e.message);}
+  renderSites();
+}
+async function detectAllModels(pid,btn){
+  const p=PRESETS.find(x=>x.id===pid);if(!p)return;
+  if(!(SITE_MODELS[pid]||[]).length){await fetchSiteModels(pid,btn);}
+  const ms=SITE_MODELS[pid]||[];
+  if(!ms.length){setErr('该站点暂无模型可检测');return;}
+  btn.disabled=true;const old=btn.innerHTML;btn.innerHTML='检测中…';setErr('');
+  ms.forEach(m=>m.status='wait');renderSites();
+  try{
+    const names=ms.map(m=>m.name);
+    const d=await (await api('/api/ext/aidev/availability',{method:'POST',body:JSON.stringify({preset_id:pid,models:names})})).json();
+    if(!d.success){setErr(d.error||'检测失败');ms.forEach(m=>m.status='');renderSites();}
+    else{
+      const map={};(d.results||[]).forEach(r=>{map[r.model]=r;});
+      const now=Math.floor(Date.now()/1000);let ok=0,prio=1;
+      ms.forEach(m=>{const r=map[m.name];const good=!!(r&&r.ok);
+        m.status=good?'ok':'err';m.enabled=good;m.checked_at=now;if(good)m.priority=prio++;else m.priority=999;});
+      ok=ms.filter(m=>m.status==='ok').length;
+      await persistSiteModels(pid);
+      renderSites();
+      setErr('一键检测完成：'+ok+'/'+ms.length+' 个可用，已自动勾选、按检测顺序设优先级并保存',true);
+    }
+  }catch(e){setErr('请求失败: '+e.message);ms.forEach(m=>m.status='');renderSites();}
+  btn.disabled=false;btn.innerHTML=old;
+}
+async function delSite(pid){
+  const p=PRESETS.find(x=>x.id===pid);
+  if(!confirm('确定删除站点「'+(p?p.name:'')+'」？'))return;
+  const d=await (await api('/api/ext/aidev/presets/delete',{method:'POST',body:JSON.stringify({id:pid})})).json();
+  PRESETS=d.presets||[];ACTIVE_PRESET=d.active_id||'';delete SITE_MODELS[pid];
+  fillSiteSelectors();renderSites();setErr('站点已删除',true);
+}
+
 async function saveSettings(){
-  const base=$('#setBaseUrl').value.trim(), key=$('#setApiKey').value.trim(), m=$('#setModel').value, re=$('#setReasoning').value;
-  const miRaw=$('#setMaxIter').value.trim();
+  const re=$('#setReasoning').value, miRaw=$('#setMaxIter').value.trim();
   const btn=$('#setSave');btn.disabled=true;btn.textContent='保存中…';setErr('');
   try{
-    const payload={base_url:base,model:m,reasoning_effort:re};
+    const payload={reasoning_effort:re,auto_switch:$('#setAutoSwitch').checked,health_check:$('#setHealthCheck').checked,
+      chat_system_prompt:$('#setChatPrompt').value};
     if(miRaw!==''){const mi=parseInt(miRaw,10);if(isNaN(mi)||mi<1){setErr('工具调用上限需为 ≥1 的整数');btn.disabled=false;btn.textContent='保存并应用';return;}payload.max_iterations=mi;}
-    if(key)payload.api_key=key;          // 留空不修改已保存密钥
     const d=await (await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify(payload)})).json();
     if(!d.success){setErr(d.error||'保存失败');btn.disabled=false;btn.textContent='保存并应用';return;}
     CFG=d.config||CFG;
-    if(m){MODEL=m;localStorage.setItem('ai_dev_model',MODEL);}
-    await loadModels();
+    // 逐站点保存模型启用/优先级
+    for(const p of PRESETS){
+      const ms=SITE_MODELS[p.id];if(!ms||!ms.length)continue;
+      const models=ms.map(m=>({name:m.name,enabled:!!m.enabled,priority:m.priority!=null?m.priority:1,
+        status:(m.status==='ok'||m.status==='err')?m.status:'',checked_at:m.checked_at||0}));
+      const sp={id:p.id,models};
+      const top=models.filter(m=>m.enabled).sort((a,b)=>a.priority-b.priority)[0];
+      if(top)sp.model=top.name;
+      const r=await (await api('/api/ext/aidev/presets/save',{method:'POST',body:JSON.stringify(sp)})).json();
+      if(r.presets)PRESETS=r.presets;
+    }
+    fillSiteSelectors();
     setErr('已保存并应用',true);toast('设置已保存');
     setTimeout(closeSettings,500);
   }catch(e){setErr('请求失败: '+e.message);}
@@ -682,18 +898,38 @@ async function saveSettings(){
 }
 $('#settingsBtn').addEventListener('click',openSettings);
 $('#setCancel').addEventListener('click',closeSettings);
-$('#setFetchModels').addEventListener('click',fetchSetModels);
 $('#setSave').addEventListener('click',saveSettings);
 $('#settingsModal').addEventListener('click',e=>{if(e.target.id==='settingsModal')closeSettings();});
 
-/* ---- AI 站点预设: 顶栏一键切换 + 设置里管理 ---- */
-let PRESETS=[], ACTIVE_PRESET='';
+/* 增加站点对话框 */
+function openAddSite(){$('#newSiteUrl').value='';$('#newSiteKey').value='';$('#newSiteName').value='';$('#addSiteErr').textContent='';$('#addSiteModal').classList.add('show');setTimeout(()=>$('#newSiteUrl').focus(),50);}
+function closeAddSite(){$('#addSiteModal').classList.remove('show');}
+$('#addSiteBtn').addEventListener('click',openAddSite);
+$('#addSiteCancel').addEventListener('click',closeAddSite);
+$('#addSiteModal').addEventListener('click',e=>{if(e.target.id==='addSiteModal')closeAddSite();});
+$('#addSiteOk').addEventListener('click',async()=>{
+  const base=$('#newSiteUrl').value.trim(), key=$('#newSiteKey').value.trim(), name=$('#newSiteName').value.trim();
+  const err=$('#addSiteErr');err.textContent='';
+  if(!base){err.textContent='请填写站点地址 (base_url)';return;}
+  if(!key){err.textContent='请填写 API 密钥';return;}
+  const payload={id:'',name:name||base,base_url:base,api_key:key};
+  const btn=$('#addSiteOk');btn.disabled=true;btn.textContent='保存中…';
+  try{
+    const before=new Set(PRESETS.map(x=>x.id));
+    const d=await (await api('/api/ext/aidev/presets/save',{method:'POST',body:JSON.stringify(payload)})).json();
+    PRESETS=d.presets||PRESETS;
+    const saved=PRESETS.find(x=>!before.has(x.id))||PRESETS[PRESETS.length-1];
+    if(saved)SITE_MODELS[saved.id]=[];
+    fillSiteSelectors();renderSites();closeAddSite();setErr('站点已添加，点该站点「获取模型」继续配置',true);toast('站点已添加');
+  }catch(e){err.textContent='保存失败: '+e.message;}
+  btn.disabled=false;btn.textContent='确定';
+});
+
+/* ---- AI 站点: 顶栏一键切换 ---- */
 function fillSiteSelectors(){
   const head=$('#siteSel');
   head.innerHTML='<option value="">默认配置</option>'+PRESETS.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
   head.value=ACTIVE_PRESET||'';
-  const mng=$('#presetSel');
-  mng.innerHTML='<option value="">— 新站点 —</option>'+PRESETS.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
 }
 async function loadPresets(){
   try{
@@ -713,44 +949,6 @@ async function applyPreset(id){
   toast('已切换到站点：'+(p?p.name:id));
 }
 $('#siteSel').addEventListener('change',e=>{const id=e.target.value;if(id)applyPreset(id);else fillSiteSelectors();});
-/* 设置弹窗内的站点管理 */
-function fillPresetEditor(id){
-  const p=PRESETS.find(x=>x.id===id);
-  if(!p){$('#presetName').value='';return;}
-  $('#presetName').value=p.name||'';
-  $('#setBaseUrl').value=p.base_url||'';
-  fillSetModels(p.model?[p.model]:[],p.model);
-  $('#setReasoning').value=p.reasoning_effort||'';
-  $('#setApiKey').value='';
-  $('#setApiKey').placeholder=p.api_key_set?'该站点已配置密钥 (留空表示不修改)':'sk-...';
-}
-$('#presetSel').addEventListener('change',e=>fillPresetEditor(e.target.value));
-$('#presetApply').addEventListener('click',async()=>{
-  const id=$('#presetSel').value;if(!id){setErr('请先选择一个站点');return;}
-  await applyPreset(id);setErr('已切换并应用该站点',true);
-});
-$('#presetSave').addEventListener('click',async()=>{
-  const name=$('#presetName').value.trim();
-  const base=$('#setBaseUrl').value.trim(), key=$('#setApiKey').value.trim(), m=$('#setModel').value, re=$('#setReasoning').value;
-  if(!name){setErr('请填写站点名称');return;}
-  if(!base){setErr('请填写接口地址 (base_url)');return;}
-  const payload={id:$('#presetSel').value||'',name,base_url:base,model:m,reasoning_effort:re};
-  if(key)payload.api_key=key;
-  const btn=$('#presetSave');btn.disabled=true;
-  try{
-    const d=await (await api('/api/ext/aidev/presets/save',{method:'POST',body:JSON.stringify(payload)})).json();
-    PRESETS=d.presets||PRESETS;fillSiteSelectors();
-    const saved=PRESETS.find(x=>x.name===name);if(saved)$('#presetSel').value=saved.id;
-    setErr('站点已保存，可在顶栏随时切换',true);toast('站点已保存');
-  }catch(e){setErr('保存失败: '+e.message);}
-  btn.disabled=false;
-});
-$('#presetDel').addEventListener('click',async()=>{
-  const id=$('#presetSel').value;if(!id){setErr('请先选择要删除的站点');return;}
-  const d=await (await api('/api/ext/aidev/presets/delete',{method:'POST',body:JSON.stringify({id})})).json();
-  PRESETS=d.presets||[];ACTIVE_PRESET=d.active_id||'';fillSiteSelectors();
-  $('#presetSel').value='';fillPresetEditor('');setErr('站点已删除',true);
-});
 
 /* ---- 手机端抽屉: 侧栏 / 实时调用 ---- */
 function closeDrawers(){$('.sidebar').classList.remove('open');$('.activity').classList.remove('open');$('#drawerBack').classList.remove('show');}
@@ -762,23 +960,36 @@ $('#drawerBack').addEventListener('click',closeDrawers);
 /* ---- sessions ---- */
 async function loadSessions(pick,keepView){
   const d=await (await api('/api/ext/aidev/sessions')).json();
+  SESSIONS=(d.sessions||[]).filter(s=>!s.id.startsWith('qq_'));
+  if(pick&&!SID&&SESSIONS.length)SID=SESSIONS[0].id;
+  renderSessionList();
+  if(keepView)return;            // 发送完成后只刷新侧栏列表, 保留当前实时气泡 (思考过程/工具时间线不被历史视图覆盖)
+  if(SID)loadHistory();else renderWelcome();
+}
+/* 只用缓存重建侧栏 DOM, 不发请求 */
+function renderSessionList(){
   const box=$('#sessions');box.innerHTML='';
-  const list=(d.sessions||[]).filter(s=>!s.id.startsWith('qq_'));
-  if(pick&&!SID&&list.length)SID=list[0].id;
-  if(!list.length){box.innerHTML='<div class="act-empty" style="font-size:12px">点击上方「新建对话」开始</div>';}
-  list.forEach(s=>{
+  if(!SESSIONS.length){box.innerHTML='<div class="act-empty" style="font-size:12px">点击上方「新建对话」开始</div>';return;}
+  SESSIONS.forEach(s=>{
     const el=document.createElement('div');el.className='sess'+(s.id===SID?' active':'');
+    el.dataset.id=s.id;
     el.innerHTML=`<div class="si">${ic('chat',16)}</div><div class="meta"><b>${esc(s.title||'新对话')}</b><span>${s.message_count} 条消息</span></div><button class="del" title="删除">${ic('trash',15)}</button>`;
     el.addEventListener('click',()=>selectSession(s.id));
     el.querySelector('.del').addEventListener('click',ev=>{ev.stopPropagation();delSession(s.id);});
     box.appendChild(el);
   });
-  if(keepView)return;            // 发送完成后只刷新侧栏列表, 保留当前实时气泡 (思考过程/工具时间线不被历史视图覆盖)
-  if(SID)loadHistory();else renderWelcome();
 }
-async function selectSession(id){SID=id;localStorage.setItem('ai_dev_sid',id);loadSessions();closeDrawers();}
+/* 切换会话: 只更新高亮 + 拉历史, 不再重新请求整个会话列表 */
+async function selectSession(id){
+  if(id===SID){closeDrawers();return;}
+  SID=id;localStorage.setItem('ai_dev_sid',id);
+  $$('#sessions .sess').forEach(el=>el.classList.toggle('active',el.dataset.id===id));
+  closeDrawers();
+  loadHistory();
+}
 async function delSession(id){
   await api('/api/ext/aidev/sessions/delete',{method:'POST',body:JSON.stringify({session_id:id})});
+  delete HIST_CACHE[id];
   if(id===SID){SID='';localStorage.removeItem('ai_dev_sid');}
   loadSessions(true);
 }
@@ -787,15 +998,24 @@ $('#newChat').addEventListener('click',async()=>{
   if(d.success){SID=d.session.id;localStorage.setItem('ai_dev_sid',SID);loadSessions();closeDrawers();$('#input').focus();}
 });
 
+function modeKey(){return 'ai_dev_mode_'+(SID||'');}
+function syncModeSelector(){const sel=$('#chatMode');if(sel)sel.value=localStorage.getItem(modeKey())||'dev';}
 async function loadHistory(){
-  const d=await (await api('/api/ext/aidev/history?session_id='+SID)).json();
+  syncModeSelector();
+  const cur=SESSIONS.find(s=>s.id===SID);
+  if(cur)$('#chatTitle').textContent=cur.title||'对话';
+  const sid=SID;
+  // 有缓存则瞬时显示, 再后台静默刷新; 无缓存才显示占位
+  if(HIST_CACHE[sid]!==undefined){$('#messages').innerHTML=HIST_CACHE[sid];scrollChat();}
+  else $('#messages').innerHTML='<div class="act-empty">加载中…</div>';
+  const d=await (await api('/api/ext/aidev/history?session_id='+sid)).json();
+  if(sid!==SID)return;   // 期间又切换了, 丢弃过期结果
   renderHistory(d.messages||[],d.events||[]);
-  const cur=(await (await api('/api/ext/aidev/sessions')).json()).sessions.find(s=>s.id===SID);
-  $('#chatTitle').textContent=cur?cur.title:'对话';
 }
 /* 刷新后重建对话: 优先用会话事件流还原每个回合的内联工具调用/思考时间线 */
 function renderHistory(msgs,events){
-  const box=$('#messages');box.innerHTML='';
+  const frag=document.createDocumentFragment();
+  RENDER_TARGET=frag;
   events=events||[];
   const hasConv=events.some(e=>e.type==='user'||e.type==='assistant'||e.type==='error');
   if(hasConv){
@@ -811,12 +1031,15 @@ function renderHistory(msgs,events){
     if(tools.length||reason.join('').trim())addAiTurnFromHistory('',tools,reason.join('\n\n'),true);
   }else if(msgs.length){
     msgs.forEach(m=>addMsg(m.role==='user'?'user':'ai',m.content,false));
-  }else{renderWelcome();return;}
+  }else{RENDER_TARGET=null;renderWelcome();return;}
+  RENDER_TARGET=null;
+  const box=$('#messages');box.innerHTML='';box.appendChild(frag);
+  HIST_CACHE[SID]=box.innerHTML;   // 缓存渲染结果, 下次切回瞬时显示
   scrollChat();
 }
 /* 静态渲染一个已完成的 AI 回合 (含可折叠的工具调用时间线 + 思考过程) */
 function addAiTurnFromHistory(content,toolEvents,reasonText,ok){
-  const box=$('#messages');if(box.querySelector('.welcome'))box.innerHTML='';
+  const box=RENDER_TARGET||$('#messages');if(box.querySelector&&box.querySelector('.welcome'))box.innerHTML='';
   const rows=buildRows(toolEvents||[]).filter(r=>r.kind==='tool');
   const el=document.createElement('div');el.className='msg ai';el.style.animation='none';
   let thinkHtml='';
@@ -830,12 +1053,10 @@ function addAiTurnFromHistory(content,toolEvents,reasonText,ok){
   el.innerHTML=`<div class="av">AI</div><div class="bubble">${thinkHtml}${stepsHtml}<div class="answer">${ansHtml}</div></div>`;
   box.appendChild(el);
   if(rows.length){
-    const sw=el.querySelector('.tsteps'),body=el.querySelector('.tsteps-body');
+    const body=el.querySelector('.tsteps-body');
     rows.forEach(r=>body.appendChild(rowEl(r)));
-    sw.querySelector('.tsteps-head').addEventListener('click',()=>sw.classList.toggle('collapsed'));
   }
-  if(thinkHtml){const tw=el.querySelector('.think');tw.querySelector('.think-head').addEventListener('click',()=>tw.classList.toggle('collapsed'));}
-  return el;
+  return el;   // 折叠交互改用 #messages 上的事件委托
 }
 function renderWelcome(){
   $('#chatTitle').textContent='新对话';
@@ -858,12 +1079,12 @@ function imgsHtml(images){
   return `<div class="imgs">${images.map(u=>`<img src="${esc(u)}" onclick="window.open(this.src)">`).join('')}</div>`;
 }
 function addMsg(role,content,anim,images){
-  const w=$('#welcome'); const box=$('#messages');
-  if(box.querySelector('.welcome'))box.innerHTML='';
+  const box=RENDER_TARGET||$('#messages');
+  if(box.querySelector&&box.querySelector('.welcome'))box.innerHTML='';
   const el=document.createElement('div');el.className='msg '+role;if(!anim)el.style.animation='none';
   const inner=role==='ai'?render(content):imgsHtml(images)+esc(content).replace(/\n/g,'<br>');
   el.innerHTML=`<div class="av">${role==='user'?'我':'AI'}</div><div class="bubble">${inner}</div>`;
-  box.appendChild(el);scrollChat();return el;
+  box.appendChild(el);if(!RENDER_TARGET)scrollChat();return el;
 }
 /* 开启一次 AI 回合: 气泡内含「工具调用时间线 + 思考点 + 答案」 */
 function startAiTurn(){
@@ -875,9 +1096,7 @@ function startAiTurn(){
     `<div class="typing"><i></i><i></i><i></i></div><div class="answer"></div></div>`;
   box.appendChild(el);scrollChat();
   const stepsWrap=el.querySelector('.tsteps');
-  stepsWrap.querySelector('.tsteps-head').addEventListener('click',()=>stepsWrap.classList.toggle('collapsed'));
   const thinkWrap=el.querySelector('.think');
-  thinkWrap.querySelector('.think-head').addEventListener('click',()=>thinkWrap.classList.toggle('collapsed'));
   return {el,stepsWrap,stepsBody:el.querySelector('.tsteps-body'),cnt:el.querySelector('.cnt'),thinkWrap,thinkBody:el.querySelector('.think-body'),typing:el.querySelector('.typing'),answer:el.querySelector('.answer')};
 }
 function setThink(turn,text){
@@ -912,10 +1131,17 @@ function renderLiveSteps(){
   scrollChat();
 }
 function scrollChat(){const m=$('#messages');m.scrollTop=m.scrollHeight;}
+/* 折叠/展开「思考过程」「工具调用」时间线: 事件委托, 兼容缓存还原的 DOM */
+$('#messages').addEventListener('click',e=>{
+  const th=e.target.closest('.tsteps-head');if(th){th.parentElement.classList.toggle('collapsed');return;}
+  const kh=e.target.closest('.think-head');if(kh){kh.parentElement.classList.toggle('collapsed');return;}
+});
 
 const inp=$('#input');
-function autoGrow(){inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,160)+'px';}
+function autoGrow(){inp.style.height='auto';inp.style.height=Math.min(Math.max(inp.scrollHeight,40),160)+'px';}
 inp.addEventListener('input',autoGrow);
+/* 点击输入框空白区域(气泡上半段)也聚焦文本框 */
+document.querySelector('.composer .box').addEventListener('mousedown',e=>{if(e.target.closest('button,select,input,textarea,.thumb'))return;e.preventDefault();inp.focus();});
 inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 $('#sendBtn').addEventListener('click',send);
 
@@ -953,9 +1179,10 @@ async function send(){
   liveTurn={stepsWrap:turn.stepsWrap,stepsBody:turn.stepsBody,cnt:turn.cnt,thinkWrap:turn.thinkWrap,thinkBody:turn.thinkBody,turn,startIdx:evbuf.length};
   $('#chatMeta').textContent='AI 运行中…';
   try{
-    const r=await api('/api/ext/aidev/chat',{method:'POST',body:JSON.stringify({session_id:SID,message:text,model:MODEL,images:imgs})});
+    const r=await api('/api/ext/aidev/chat',{method:'POST',body:JSON.stringify({session_id:SID,message:text,model:MODEL,images:imgs,mode:($('#chatMode').value||'dev')})});
     const d=await r.json();
     finishAiTurn(turn,d);
+    delete HIST_CACHE[SID];   // 本会话内容已变, 失效缓存, 下次切回重拉
     loadSessions(false,true);
   }catch(e){finishAiTurn(turn,{success:false,message:'网络错误: '+e});}
   sending=false;liveTurn=null;$('#sendBtn').disabled=false;inp.focus();
