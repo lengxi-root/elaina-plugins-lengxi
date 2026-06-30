@@ -559,6 +559,8 @@ let MODEL=localStorage.getItem('ai_dev_model')||'';
 let CFG={};
 let FILTER='all', evbuf=[], sending=false, es=null, liveTurn=null;
 let SESSIONS=[];   // 侧栏会话列表缓存, 切换会话时避免重复请求
+let HIST_CACHE={}; // 已渲染的会话历史 HTML 缓存 {sid: innerHTML}, 实现切换瞬时显示
+let RENDER_TARGET=null; // 批量渲染历史时的目标容器 (DocumentFragment), 避免逐条 reflow
 
 function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600);}
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
@@ -987,6 +989,7 @@ async function selectSession(id){
 }
 async function delSession(id){
   await api('/api/ext/aidev/sessions/delete',{method:'POST',body:JSON.stringify({session_id:id})});
+  delete HIST_CACHE[id];
   if(id===SID){SID='';localStorage.removeItem('ai_dev_sid');}
   loadSessions(true);
 }
@@ -1001,13 +1004,18 @@ async function loadHistory(){
   syncModeSelector();
   const cur=SESSIONS.find(s=>s.id===SID);
   if(cur)$('#chatTitle').textContent=cur.title||'对话';
-  $('#messages').innerHTML='<div class="act-empty">加载中…</div>';
-  const d=await (await api('/api/ext/aidev/history?session_id='+SID)).json();
+  const sid=SID;
+  // 有缓存则瞬时显示, 再后台静默刷新; 无缓存才显示占位
+  if(HIST_CACHE[sid]!==undefined){$('#messages').innerHTML=HIST_CACHE[sid];scrollChat();}
+  else $('#messages').innerHTML='<div class="act-empty">加载中…</div>';
+  const d=await (await api('/api/ext/aidev/history?session_id='+sid)).json();
+  if(sid!==SID)return;   // 期间又切换了, 丢弃过期结果
   renderHistory(d.messages||[],d.events||[]);
 }
 /* 刷新后重建对话: 优先用会话事件流还原每个回合的内联工具调用/思考时间线 */
 function renderHistory(msgs,events){
-  const box=$('#messages');box.innerHTML='';
+  const frag=document.createDocumentFragment();
+  RENDER_TARGET=frag;
   events=events||[];
   const hasConv=events.some(e=>e.type==='user'||e.type==='assistant'||e.type==='error');
   if(hasConv){
@@ -1023,12 +1031,15 @@ function renderHistory(msgs,events){
     if(tools.length||reason.join('').trim())addAiTurnFromHistory('',tools,reason.join('\n\n'),true);
   }else if(msgs.length){
     msgs.forEach(m=>addMsg(m.role==='user'?'user':'ai',m.content,false));
-  }else{renderWelcome();return;}
+  }else{RENDER_TARGET=null;renderWelcome();return;}
+  RENDER_TARGET=null;
+  const box=$('#messages');box.innerHTML='';box.appendChild(frag);
+  HIST_CACHE[SID]=box.innerHTML;   // 缓存渲染结果, 下次切回瞬时显示
   scrollChat();
 }
 /* 静态渲染一个已完成的 AI 回合 (含可折叠的工具调用时间线 + 思考过程) */
 function addAiTurnFromHistory(content,toolEvents,reasonText,ok){
-  const box=$('#messages');if(box.querySelector('.welcome'))box.innerHTML='';
+  const box=RENDER_TARGET||$('#messages');if(box.querySelector&&box.querySelector('.welcome'))box.innerHTML='';
   const rows=buildRows(toolEvents||[]).filter(r=>r.kind==='tool');
   const el=document.createElement('div');el.className='msg ai';el.style.animation='none';
   let thinkHtml='';
@@ -1042,12 +1053,10 @@ function addAiTurnFromHistory(content,toolEvents,reasonText,ok){
   el.innerHTML=`<div class="av">AI</div><div class="bubble">${thinkHtml}${stepsHtml}<div class="answer">${ansHtml}</div></div>`;
   box.appendChild(el);
   if(rows.length){
-    const sw=el.querySelector('.tsteps'),body=el.querySelector('.tsteps-body');
+    const body=el.querySelector('.tsteps-body');
     rows.forEach(r=>body.appendChild(rowEl(r)));
-    sw.querySelector('.tsteps-head').addEventListener('click',()=>sw.classList.toggle('collapsed'));
   }
-  if(thinkHtml){const tw=el.querySelector('.think');tw.querySelector('.think-head').addEventListener('click',()=>tw.classList.toggle('collapsed'));}
-  return el;
+  return el;   // 折叠交互改用 #messages 上的事件委托
 }
 function renderWelcome(){
   $('#chatTitle').textContent='新对话';
@@ -1070,12 +1079,12 @@ function imgsHtml(images){
   return `<div class="imgs">${images.map(u=>`<img src="${esc(u)}" onclick="window.open(this.src)">`).join('')}</div>`;
 }
 function addMsg(role,content,anim,images){
-  const w=$('#welcome'); const box=$('#messages');
-  if(box.querySelector('.welcome'))box.innerHTML='';
+  const box=RENDER_TARGET||$('#messages');
+  if(box.querySelector&&box.querySelector('.welcome'))box.innerHTML='';
   const el=document.createElement('div');el.className='msg '+role;if(!anim)el.style.animation='none';
   const inner=role==='ai'?render(content):imgsHtml(images)+esc(content).replace(/\n/g,'<br>');
   el.innerHTML=`<div class="av">${role==='user'?'我':'AI'}</div><div class="bubble">${inner}</div>`;
-  box.appendChild(el);scrollChat();return el;
+  box.appendChild(el);if(!RENDER_TARGET)scrollChat();return el;
 }
 /* 开启一次 AI 回合: 气泡内含「工具调用时间线 + 思考点 + 答案」 */
 function startAiTurn(){
@@ -1087,9 +1096,7 @@ function startAiTurn(){
     `<div class="typing"><i></i><i></i><i></i></div><div class="answer"></div></div>`;
   box.appendChild(el);scrollChat();
   const stepsWrap=el.querySelector('.tsteps');
-  stepsWrap.querySelector('.tsteps-head').addEventListener('click',()=>stepsWrap.classList.toggle('collapsed'));
   const thinkWrap=el.querySelector('.think');
-  thinkWrap.querySelector('.think-head').addEventListener('click',()=>thinkWrap.classList.toggle('collapsed'));
   return {el,stepsWrap,stepsBody:el.querySelector('.tsteps-body'),cnt:el.querySelector('.cnt'),thinkWrap,thinkBody:el.querySelector('.think-body'),typing:el.querySelector('.typing'),answer:el.querySelector('.answer')};
 }
 function setThink(turn,text){
@@ -1124,6 +1131,11 @@ function renderLiveSteps(){
   scrollChat();
 }
 function scrollChat(){const m=$('#messages');m.scrollTop=m.scrollHeight;}
+/* 折叠/展开「思考过程」「工具调用」时间线: 事件委托, 兼容缓存还原的 DOM */
+$('#messages').addEventListener('click',e=>{
+  const th=e.target.closest('.tsteps-head');if(th){th.parentElement.classList.toggle('collapsed');return;}
+  const kh=e.target.closest('.think-head');if(kh){kh.parentElement.classList.toggle('collapsed');return;}
+});
 
 const inp=$('#input');
 function autoGrow(){inp.style.height='auto';inp.style.height=Math.min(Math.max(inp.scrollHeight,40),160)+'px';}
@@ -1170,6 +1182,7 @@ async function send(){
     const r=await api('/api/ext/aidev/chat',{method:'POST',body:JSON.stringify({session_id:SID,message:text,model:MODEL,images:imgs,mode:($('#chatMode').value||'dev')})});
     const d=await r.json();
     finishAiTurn(turn,d);
+    delete HIST_CACHE[SID];   // 本会话内容已变, 失效缓存, 下次切回重拉
     loadSessions(false,true);
   }catch(e){finishAiTurn(turn,{success:false,message:'网络错误: '+e});}
   sending=false;liveTurn=null;$('#sendBtn').disabled=false;inp.focus();
