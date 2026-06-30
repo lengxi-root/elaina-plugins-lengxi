@@ -558,6 +558,7 @@ let SID=localStorage.getItem('ai_dev_sid')||'';
 let MODEL=localStorage.getItem('ai_dev_model')||'';
 let CFG={};
 let FILTER='all', evbuf=[], sending=false, es=null, liveTurn=null;
+let SESSIONS=[];   // 侧栏会话列表缓存, 切换会话时避免重复请求
 
 function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600);}
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
@@ -957,21 +958,33 @@ $('#drawerBack').addEventListener('click',closeDrawers);
 /* ---- sessions ---- */
 async function loadSessions(pick,keepView){
   const d=await (await api('/api/ext/aidev/sessions')).json();
+  SESSIONS=(d.sessions||[]).filter(s=>!s.id.startsWith('qq_'));
+  if(pick&&!SID&&SESSIONS.length)SID=SESSIONS[0].id;
+  renderSessionList();
+  if(keepView)return;            // 发送完成后只刷新侧栏列表, 保留当前实时气泡 (思考过程/工具时间线不被历史视图覆盖)
+  if(SID)loadHistory();else renderWelcome();
+}
+/* 只用缓存重建侧栏 DOM, 不发请求 */
+function renderSessionList(){
   const box=$('#sessions');box.innerHTML='';
-  const list=(d.sessions||[]).filter(s=>!s.id.startsWith('qq_'));
-  if(pick&&!SID&&list.length)SID=list[0].id;
-  if(!list.length){box.innerHTML='<div class="act-empty" style="font-size:12px">点击上方「新建对话」开始</div>';}
-  list.forEach(s=>{
+  if(!SESSIONS.length){box.innerHTML='<div class="act-empty" style="font-size:12px">点击上方「新建对话」开始</div>';return;}
+  SESSIONS.forEach(s=>{
     const el=document.createElement('div');el.className='sess'+(s.id===SID?' active':'');
+    el.dataset.id=s.id;
     el.innerHTML=`<div class="si">${ic('chat',16)}</div><div class="meta"><b>${esc(s.title||'新对话')}</b><span>${s.message_count} 条消息</span></div><button class="del" title="删除">${ic('trash',15)}</button>`;
     el.addEventListener('click',()=>selectSession(s.id));
     el.querySelector('.del').addEventListener('click',ev=>{ev.stopPropagation();delSession(s.id);});
     box.appendChild(el);
   });
-  if(keepView)return;            // 发送完成后只刷新侧栏列表, 保留当前实时气泡 (思考过程/工具时间线不被历史视图覆盖)
-  if(SID)loadHistory();else renderWelcome();
 }
-async function selectSession(id){SID=id;localStorage.setItem('ai_dev_sid',id);loadSessions();closeDrawers();}
+/* 切换会话: 只更新高亮 + 拉历史, 不再重新请求整个会话列表 */
+async function selectSession(id){
+  if(id===SID){closeDrawers();return;}
+  SID=id;localStorage.setItem('ai_dev_sid',id);
+  $$('#sessions .sess').forEach(el=>el.classList.toggle('active',el.dataset.id===id));
+  closeDrawers();
+  loadHistory();
+}
 async function delSession(id){
   await api('/api/ext/aidev/sessions/delete',{method:'POST',body:JSON.stringify({session_id:id})});
   if(id===SID){SID='';localStorage.removeItem('ai_dev_sid');}
@@ -986,10 +999,11 @@ function modeKey(){return 'ai_dev_mode_'+(SID||'');}
 function syncModeSelector(){const sel=$('#chatMode');if(sel)sel.value=localStorage.getItem(modeKey())||'dev';}
 async function loadHistory(){
   syncModeSelector();
+  const cur=SESSIONS.find(s=>s.id===SID);
+  if(cur)$('#chatTitle').textContent=cur.title||'对话';
+  $('#messages').innerHTML='<div class="act-empty">加载中…</div>';
   const d=await (await api('/api/ext/aidev/history?session_id='+SID)).json();
   renderHistory(d.messages||[],d.events||[]);
-  const cur=(await (await api('/api/ext/aidev/sessions')).json()).sessions.find(s=>s.id===SID);
-  $('#chatTitle').textContent=cur?cur.title:'对话';
 }
 /* 刷新后重建对话: 优先用会话事件流还原每个回合的内联工具调用/思考时间线 */
 function renderHistory(msgs,events){
