@@ -77,6 +77,26 @@ def is_bot_owner(event) -> bool:
     return bool(uid) and uid in owner_ids()
 
 
+# ---- 插件配置 schema ----
+
+def read_app_schema(app_dir: str) -> dict:
+    """读取 app 的 _conf_schema.json (缺失/出错返回 {})。"""
+    import json
+    import os
+    if not app_dir:
+        return {}
+    path = os.path.join(app_dir, "_conf_schema.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        log.warning(f"[astrbot基座] 读取配置 schema 失败: {e}")
+        return {}
+
+
 # ---- 基座配置项 ----
 
 def command_prefix(name: str) -> str:

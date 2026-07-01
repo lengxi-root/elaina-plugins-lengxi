@@ -539,20 +539,10 @@ def _app_dir_of(spec: PluginSpec):
 
 def _load_app_config(spec: PluginSpec) -> AstrBotConfig:
     """app 的 _conf_schema.json 默认值 + 基座 apps.<name> 覆盖。"""
-    import json
-    import os
     config = AstrBotConfig()
-    try:
-        app_dir = _app_dir_of(spec)
-        schema_path = os.path.join(app_dir, "_conf_schema.json") if app_dir else ""
-        if schema_path and os.path.isfile(schema_path):
-            with open(schema_path, encoding="utf-8") as f:
-                schema = json.load(f)
-            for key, meta in schema.items():
-                if isinstance(meta, dict) and "default" in meta:
-                    config[key] = meta["default"]
-    except Exception as e:
-        log.warning(f"[astrbot基座] 读取 [{spec.name}] 配置 schema 失败: {e}")
+    for key, meta in state.read_app_schema(_app_dir_of(spec)).items():
+        if isinstance(meta, dict) and "default" in meta:
+            config[key] = meta["default"]
     apps_cfg = state._CONFIG.get("apps", {}) or {}
     # 优先用 app 目录名 (稳定), 兼容用显示名作 key
     overrides = apps_cfg.get(spec.app_name) or apps_cfg.get(spec.name) or {}

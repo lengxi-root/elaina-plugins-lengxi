@@ -2,22 +2,17 @@
 
 让 **ElainaBot-Onebot** 直接运行 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 框架的插件。
 
-> ⚠️ **本插件是 OneBot 版**：消息收发走 OneBot v11 协议（`send_group_msg` + 消息段），
-> 只能装在 **ElainaBot-Onebot（OneBot 框架）** 上使用。
-> 本仓库其余插件多为 **v2 官机框架** 版，二者收发层不同，不要混装。
-
----
+> ⚠️ **OneBot 版**：收发走 OneBot v11（`send_group_msg` + 消息段），只能装在 **ElainaBot-Onebot** 上；勿与本仓库的 v2 官机框架插件混装。
 
 ## 它做什么
 
-在本插件目录的 `apps/<插件名>/` 下放一个 AstrBot 插件（含 `main.py`），基座会在加载期：
+把 AstrBot 插件放进 `apps/<插件名>/`（含 `main.py`），基座加载期会：
 
 1. 注入 `astrbot` 兼容层（`astrbot.api.*`、`filter` 装饰器、消息组件、`Star`/`Context`/`event` 等）；
-2. 扫描并 `import` 各插件，实例化 `Star` 子类、调用 `initialize()`；
-3. 把插件的 `@filter.command` / `@filter.command_group` / `@filter.regex` /
-   `@filter.event_message_type` 注册成框架 handler；
-4. 把 AstrBot 的消息组件（`Plain`/`Image`/`At`/`Reply`/`Node`/`Record` 等）翻译成 OneBot 消息段发送；
-5. `html_render()` / `text_to_image()` 用本地 jinja2 + 无头 Chrome 出图，返回本地图片。
+2. 扫描 `import` 各插件，实例化 `Star` 并调用 `initialize()`；
+3. 把 `@filter.command` / `command_group` / `regex` / `event_message_type` 注册成框架 handler；
+4. 把消息组件（`Plain`/`Image`/`At`/`Reply`/`Node`/`Record` 等）翻译成 OneBot 消息段发送；
+5. `html_render()` / `text_to_image()` 用 jinja2 + 无头 Chrome 出图。
 
 ## 目录结构
 

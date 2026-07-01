@@ -20,6 +20,8 @@ from collections import deque
 
 from core.base.logger import PLUGIN, get_logger
 
+from ..runtime import state
+
 log = get_logger(PLUGIN, "astrbot基座")
 
 _WEB_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -289,13 +291,8 @@ def _registered_commands() -> list[dict]:
 def _app_config_schema(app_name: str) -> list[dict]:
     """读 app 的 _conf_schema.json, 叠加 config.json 的 apps.<name> 覆盖值。"""
     safe = _safe(app_name)
-    schema_path = os.path.join(_APPS_DIR, safe, "_conf_schema.json")
-    if not os.path.isfile(schema_path):
-        return []
-    try:
-        with open(schema_path, encoding="utf-8") as f:
-            schema = json.load(f)
-    except Exception:
+    schema = state.read_app_schema(os.path.join(_APPS_DIR, safe))
+    if not schema:
         return []
     overrides = (_read_config().get("apps", {}) or {}).get(safe, {}) or {}
     fields = []

@@ -21,7 +21,7 @@ from .runtime.shim import install as install_shim
 
 __plugin_meta__ = {
     "name": "AstrBot 基座",
-    "author": "Devin",
+    "author": "冷曦",
     "description": "AstrBot 插件适配器: 直接运行 AstrBot 框架插件",
     "version": "1.0.0",
 }
