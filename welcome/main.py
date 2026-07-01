@@ -1,33 +1,20 @@
-"""群成员入群欢迎 — 不活跃群提取 + 群成员入群自动推送模板
+"""群成员入群欢迎 — 召回模式 + 欢迎模式 双模式入群自动推送
 
 功能概览:
-  指令 (均仅主人可用):
-    提取群列表            从框架群成员表 (groups_users) 中提取「N 天内无人发言」的群,
-                          存入插件自带的 SQLite 群列表 (pending_groups)。
-    开启群成员入群监控     开启回复模板 (有新成员入群时按模板推送)。
-    关闭群成员入群监控     关闭回复模板。
-    设置测试群 <群号>      设置测试群; 该群不论是否在群列表中, 入群时都会推送模板。
-    测试发送模板           在当前会话被动回复 (event.reply) 已设置的模板。
+  两种工作模式 (各自独立模板/按钮):
+    召回模式 (all_groups_mode=0):
+      从框架群成员表中提取「N 天内无人发言」的群存入群列表,
+      仅群列表中的群 (或测试群) 有新成员入群时推送 recall_template。
 
-  指令 (群管理员/群主可用, 仅全群模式下生效):
-    关闭欢迎              群管理员或群主关闭本群的入群欢迎推送。
-    开启欢迎              群管理员或群主重新开启本群的入群欢迎推送。
+    欢迎模式 (all_groups_mode=1):
+      任何群有人入群都推送 welcome_template, 支持黑名单/白名单过滤。
+      每群每日上限 (daily_group_limit), 不同群独立计数。
+      支持合并用户欢迎 (merge_welcome + merge_template)。
 
-  群成员入群事件 (GROUP_MEMBER_ADD):
-    开启监控后, 当群列表中的群 (或测试群) 有新成员加入时, 自动按模板推送一次。
-    若开启「全群模式」(all_groups_mode), 则忽略群列表, 任何群有人入群都推送;
-    此时可配合「每日上限」(daily_limit) 限制每天最多发送次数 (0=无限制)。
-    无论发送成功或失败:
-      - 普通模式下把该群从群列表 (pending_groups) 中移除;
-      - 把该群 id + 完整响应 (成功/失败) 记录到另一张表 (sent_records)。
-
-  Web 面板:
-    注册侧边栏页面「群成员入群欢迎」, 模板设置、开关、测试群、提取、测试发送、
-    群列表与发送记录都可在面板上操作和查看。
-
-  说明:
-    - 群列表与发送记录使用 SQLite 存储 (data/groupmonitor.db)。
-    - 推送模板跟随机器人默认 markdown 设置 (message.use_markdown), 仅去掉自动后缀 (skip_suffix=True)。
+  Web 面板 (侧边栏导航, 各模式页面自含设置):
+    召回模式: 模板/按钮、不活跃阈值、群列表管理
+    欢迎模式: 模板/按钮、合并、名单模式、每群上限、黑/白名单
+    延迟队列 / 发送记录
 """
 
 import asyncio
@@ -47,8 +34,8 @@ from core.plugin.web_pages import register_page, register_route, unregister_page
 __plugin_meta__ = {
     'name': '群成员入群欢迎',
     'author': 'ElainaBot',
-    'description': '群成员入群自动欢迎推送, 支持模板、全群模式、白名单、每日上限, 含 Web 面板',
-    'version': '1.2.0',
+    'description': '群成员入群自动欢迎推送, 支持召回模式/欢迎模式、黑白名单、每日上限, 含 Web 面板',
+    'version': '1.4.0',
     'github': 'https://github.com/ElainaCore/Elaina-plugins',
     'license': 'MIT',
 }
@@ -77,14 +64,21 @@ PAGE_SIZE = 1000            # 群列表 / 发送记录分页每页条数
 _DEFAULT_CONFIG = {
     'monitor_enabled': '0',
     'test_group': '',
-    'template': DEFAULT_TEMPLATE,
     'inactive_days': str(DEFAULT_INACTIVE_DAYS),
-    'reply_delay': '0',        # 入群延迟回复秒数; 0=立即, 1-300=延迟
-    'buttons': '[]',           # 入群模板按钮 (框架原生按钮行 JSON)
-    'all_groups_mode': '0',    # 不管群列表, 任何群有人入群都推送
-    'daily_limit': '0',        # all_groups_mode 下每天发送上限; 0=无限制
-    'merge_welcome': '0',      # 合并用户欢迎: 延迟期间同群多人入群合并为一条消息
-    'merge_template': '欢迎 {user_ids} 加入本群！',  # 合并模板; {user_ids} 替换为多个 <@uid>
+    'reply_delay': '0',
+    'all_groups_mode': '0',
+    'list_mode': 'blacklist',
+    # 召回模式独立模板/按钮
+    'recall_template': DEFAULT_TEMPLATE,
+    'recall_buttons': '[]',
+    # 欢迎模式独立模板/按钮
+    'welcome_template': DEFAULT_TEMPLATE,
+    'welcome_buttons': '[]',
+    # 欢迎模式: 每群每日上限
+    'daily_group_limit': '0',
+    # 欢迎模式: 合并用户欢迎
+    'merge_welcome': '0',
+    'merge_template': '欢迎 {user_ids} 加入本群！',
 }
 
 _ICON = (
@@ -134,6 +128,12 @@ def _ensure_db() -> sqlite3.Connection:
                 group_id    TEXT PRIMARY KEY,
                 disabled_by TEXT DEFAULT '',
                 added_at    TEXT DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS daily_group_counts (
+                group_id TEXT NOT NULL,
+                date     TEXT NOT NULL,
+                count    INTEGER DEFAULT 0,
+                PRIMARY KEY (group_id, date)
             );
             """
         )
@@ -342,44 +342,47 @@ async def _count_disabled() -> int:
         return _ensure_db().execute('SELECT COUNT(*) AS c FROM disabled_groups').fetchone()['c']
 
 
-# ---- daily counter (all_groups_mode 下的每日计数) ----
+# ---- 每群每日计数 (欢迎模式下按群独立计数) ----
 
-async def _daily_sent_count() -> int:
-    """获取今天已发送次数 (仅 all_groups_mode 使用)。"""
+async def _daily_group_count(group_id: str) -> int:
     today = datetime.now().strftime('%Y-%m-%d')
-    stored_date = await _get_cfg('daily_sent_date', '')
-    if stored_date != today:
-        return 0
-    try:
-        return int(await _get_cfg('daily_sent_count', '0'))
-    except (TypeError, ValueError):
-        return 0
+    async with _conn_lock:
+        row = _ensure_db().execute(
+            'SELECT count FROM daily_group_counts WHERE group_id=? AND date=?',
+            (group_id, today),
+        ).fetchone()
+    return row['count'] if row else 0
 
 
-async def _increment_daily_sent() -> None:
-    """今日发送计数 +1; 跨日自动重置。"""
+async def _increment_daily_group(group_id: str) -> None:
     today = datetime.now().strftime('%Y-%m-%d')
-    stored_date = await _get_cfg('daily_sent_date', '')
-    if stored_date != today:
-        await _set_cfg('daily_sent_date', today)
-        await _set_cfg('daily_sent_count', '1')
-    else:
-        try:
-            count = int(await _get_cfg('daily_sent_count', '0'))
-        except (TypeError, ValueError):
-            count = 0
-        await _set_cfg('daily_sent_count', str(count + 1))
+    async with _conn_lock:
+        _ensure_db().execute(
+            'INSERT INTO daily_group_counts (group_id, date, count) VALUES (?, ?, 1) '
+            'ON CONFLICT(group_id, date) DO UPDATE SET count=count+1',
+            (group_id, today),
+        )
+        _ensure_db().commit()
 
 
-async def _check_daily_limit() -> bool:
-    """检查是否已达每日上限; 返回 True 表示可以继续发送。"""
+async def _check_daily_group_limit(group_id: str) -> bool:
     try:
-        limit = int(await _get_cfg('daily_limit', '0'))
+        limit = int(await _get_cfg('daily_group_limit', '0'))
     except (TypeError, ValueError):
         limit = 0
     if limit <= 0:
-        return True  # 0=无限制
-    return await _daily_sent_count() < limit
+        return True
+    return await _daily_group_count(group_id) < limit
+
+
+async def _daily_total_count() -> int:
+    today = datetime.now().strftime('%Y-%m-%d')
+    async with _conn_lock:
+        row = _ensure_db().execute(
+            'SELECT COALESCE(SUM(count), 0) AS total FROM daily_group_counts WHERE date=?',
+            (today,),
+        ).fetchone()
+    return row['total'] if row else 0
 
 
 # ==================== 框架数据访问 ====================
@@ -726,8 +729,11 @@ async def cmd_set_test_group(event, match):
 @handler(r'^测试发送模板$', name='测试发送模板', desc='在当前会话被动回复已设置模板', owner_only=True)
 async def cmd_test_send(event, match):
     cfg = await _all_cfg()
-    content = _render(cfg.get('template', DEFAULT_TEMPLATE), event.group_id, event.user_id)
-    buttons = _build_button_rows(cfg.get('buttons', '[]'))
+    is_welcome = cfg.get('all_groups_mode', '0') == '1'
+    tpl_key = 'welcome_template' if is_welcome else 'recall_template'
+    btn_key = 'welcome_buttons' if is_welcome else 'recall_buttons'
+    content = _render(cfg.get(tpl_key, DEFAULT_TEMPLATE), event.group_id, event.user_id)
+    buttons = _build_button_rows(cfg.get(btn_key, '[]'))
     data = await event.reply(content, buttons=buttons, skip_suffix=True)
     status = 'success' if data else 'failed'
     await _add_record(event.chat_id or event.group_id or '', status, data, 'test')
@@ -745,7 +751,7 @@ async def cmd_test_merge_send(event, match):
         return await event.reply(f'⚠️ 未能从群 {gid} 获取到成员列表')
     merge_tpl = cfg.get('merge_template', '欢迎 {user_ids} 加入本群！')
     content = _render_merged(merge_tpl, gid, user_ids)
-    buttons = _build_button_rows(cfg.get('buttons', '[]'))
+    buttons = _build_button_rows(cfg.get('welcome_buttons', '[]'))
     data = await event.reply(content, buttons=buttons, skip_suffix=True)
     status = 'success' if data else 'failed'
     await _add_record(event.chat_id or gid, status, data, 'test_merge')
@@ -762,12 +768,20 @@ async def cmd_disable_welcome(event, match):
     if not gid:
         return
     if await _get_cfg('all_groups_mode', '0') != '1':
-        return await event.reply('⚠️ 当前未开启全群模式, 无需关闭')
-    ok = await _add_disabled(gid, event.user_id or '')
-    if ok:
-        await event.reply('✅ 已关闭本群入群欢迎')
+        return await event.reply('⚠️ 当前未开启欢迎模式 (全群模式), 无需关闭')
+    list_mode = await _get_cfg('list_mode', 'blacklist')
+    if list_mode == 'blacklist':
+        ok = await _add_disabled(gid, event.user_id or '')
+        if ok:
+            await event.reply('✅ 已将本群加入黑名单, 不再推送入群欢迎')
+        else:
+            await event.reply('ℹ️ 本群已在黑名单中')
     else:
-        await event.reply('ℹ️ 本群入群欢迎已处于关闭状态')
+        ok = await _remove_whitelist(gid)
+        if ok:
+            await event.reply('✅ 已将本群从白名单移除, 不再推送入群欢迎')
+        else:
+            await event.reply('ℹ️ 本群不在白名单中')
 
 
 @handler(r'^开启欢迎$', name='开启欢迎', desc='群管理/群主重新开启本群入群欢迎')
@@ -779,12 +793,20 @@ async def cmd_enable_welcome(event, match):
     if not gid:
         return
     if await _get_cfg('all_groups_mode', '0') != '1':
-        return await event.reply('⚠️ 当前未开启全群模式, 无需操作')
-    ok = await _remove_disabled(gid)
-    if ok:
-        await event.reply('✅ 已重新开启本群入群欢迎')
+        return await event.reply('⚠️ 当前未开启欢迎模式 (全群模式), 无需操作')
+    list_mode = await _get_cfg('list_mode', 'blacklist')
+    if list_mode == 'blacklist':
+        ok = await _remove_disabled(gid)
+        if ok:
+            await event.reply('✅ 已将本群从黑名单移除, 恢复入群欢迎')
+        else:
+            await event.reply('ℹ️ 本群未在黑名单中')
     else:
-        await event.reply('ℹ️ 本群入群欢迎未被关闭')
+        ok = await _add_whitelist(gid)
+        if ok:
+            await event.reply('✅ 已将本群加入白名单, 恢复入群欢迎')
+        else:
+            await event.reply('ℹ️ 本群已在白名单中')
 
 
 # ==================== 群成员入群事件 ==
@@ -804,34 +826,40 @@ async def on_member_add(event, match):
     in_pending = await _is_pending(gid)
 
     if all_groups:
-        # 全群模式: 检查是否被群管理/群主关闭
-        if await _is_disabled(gid):
-            return
-        # 全群模式: 检查白名单 (白名单为空则不限制; 有白名单则仅白名单群触发)
-        wl_count = await _count_whitelist()
-        if wl_count > 0 and not await _is_whitelisted(gid):
-            return
-        # 检查每日发送上限
-        if not await _check_daily_limit():
+        # 欢迎模式: 根据名单模式过滤
+        list_mode = cfg.get('list_mode', 'blacklist')
+        if list_mode == 'whitelist':
+            if not await _is_whitelisted(gid):
+                return
+        else:
+            if await _is_disabled(gid):
+                return
+        if not await _check_daily_group_limit(gid):
             return
     else:
-        # 普通模式: 仅群列表/测试群
+        # 召回模式: 仅群列表/测试群
         if not in_pending and gid != test_group:
             return
 
-    merge_welcome = cfg.get('merge_welcome', '0') == '1'
+    # 根据模式选择模板和按钮
+    if all_groups:
+        tpl = cfg.get('welcome_template', DEFAULT_TEMPLATE)
+        btns_raw = cfg.get('welcome_buttons', '[]')
+    else:
+        tpl = cfg.get('recall_template', DEFAULT_TEMPLATE)
+        btns_raw = cfg.get('recall_buttons', '[]')
+
+    merge_welcome = all_groups and cfg.get('merge_welcome', '0') == '1'
     merge_template = cfg.get('merge_template', '欢迎 {user_ids} 加入本群！')
-    content = _render(cfg.get('template', DEFAULT_TEMPLATE), gid, event.user_id)
-    buttons = _build_button_rows(cfg.get('buttons', '[]'))
+    content = _render(tpl, gid, event.user_id)
+    buttons = _build_button_rows(btns_raw)
     delay = _clamp_delay(cfg.get('reply_delay', '0'))
 
-    # 普通模式下派发即从群列表移除, 避免延迟期间同群再次入群导致重复推送
     if in_pending and not all_groups:
         await _remove_pending(gid)
 
-    # 全群模式下递增每日计数
     if all_groups:
-        await _increment_daily_sent()
+        await _increment_daily_group(gid)
 
     if delay > 0:
         # 合并模式: 同群延迟期间多人入群只发一条消息
@@ -882,13 +910,16 @@ async def api_status(request):
         'data': {
             'monitor_enabled': cfg.get('monitor_enabled') == '1',
             'test_group': cfg.get('test_group', ''),
-            'template': cfg.get('template', DEFAULT_TEMPLATE),
             'inactive_days': int(cfg.get('inactive_days', DEFAULT_INACTIVE_DAYS) or DEFAULT_INACTIVE_DAYS),
             'reply_delay': _clamp_delay(cfg.get('reply_delay', '0')),
-            'buttons': _parse_buttons(cfg.get('buttons', '[]')),
             'all_groups_mode': cfg.get('all_groups_mode', '0') == '1',
-            'daily_limit': int(cfg.get('daily_limit', '0') or '0'),
-            'daily_sent_count': await _daily_sent_count(),
+            'list_mode': cfg.get('list_mode', 'blacklist'),
+            'recall_template': cfg.get('recall_template', DEFAULT_TEMPLATE),
+            'recall_buttons': _parse_buttons(cfg.get('recall_buttons', '[]')),
+            'welcome_template': cfg.get('welcome_template', DEFAULT_TEMPLATE),
+            'welcome_buttons': _parse_buttons(cfg.get('welcome_buttons', '[]')),
+            'daily_group_limit': int(cfg.get('daily_group_limit', '0') or '0'),
+            'daily_total_count': await _daily_total_count(),
             'merge_welcome': cfg.get('merge_welcome', '0') == '1',
             'merge_template': cfg.get('merge_template', '欢迎 {user_ids} 加入本群！'),
             'whitelist_count': await _count_whitelist(),
@@ -914,8 +945,20 @@ async def api_config(request):
         await _set_cfg('monitor_enabled', '1' if body['monitor_enabled'] else '0')
     if 'test_group' in body:
         await _set_cfg('test_group', str(body['test_group'] or '').strip())
-    if 'template' in body:
-        await _set_cfg('template', str(body['template'] or ''))
+    if 'recall_template' in body:
+        await _set_cfg('recall_template', str(body['recall_template'] or ''))
+    if 'recall_buttons' in body:
+        rows = body['recall_buttons']
+        if not isinstance(rows, list):
+            return _json({'success': False, 'message': 'recall_buttons 必须为 JSON 数组'}, status=400)
+        await _set_cfg('recall_buttons', json.dumps(rows, ensure_ascii=False))
+    if 'welcome_template' in body:
+        await _set_cfg('welcome_template', str(body['welcome_template'] or ''))
+    if 'welcome_buttons' in body:
+        rows = body['welcome_buttons']
+        if not isinstance(rows, list):
+            return _json({'success': False, 'message': 'welcome_buttons 必须为 JSON 数组'}, status=400)
+        await _set_cfg('welcome_buttons', json.dumps(rows, ensure_ascii=False))
     if 'reply_delay' in body:
         try:
             delay = int(body['reply_delay'])
@@ -924,11 +967,6 @@ async def api_config(request):
         if not (0 <= delay <= MAX_REPLY_DELAY):
             return _json({'success': False, 'message': f'reply_delay 取值范围 0-{MAX_REPLY_DELAY} 秒'}, status=400)
         await _set_cfg('reply_delay', str(delay))
-    if 'buttons' in body:
-        rows = body['buttons']
-        if not isinstance(rows, list):
-            return _json({'success': False, 'message': 'buttons 必须为 JSON 数组'}, status=400)
-        await _set_cfg('buttons', json.dumps(rows, ensure_ascii=False))
     if 'inactive_days' in body:
         try:
             days = max(1, int(body['inactive_days']))
@@ -937,16 +975,21 @@ async def api_config(request):
         await _set_cfg('inactive_days', str(days))
     if 'all_groups_mode' in body:
         await _set_cfg('all_groups_mode', '1' if body['all_groups_mode'] else '0')
-    if 'daily_limit' in body:
+    if 'daily_group_limit' in body:
         try:
-            dl = max(0, int(body['daily_limit']))
+            dl = max(0, int(body['daily_group_limit']))
         except (TypeError, ValueError):
-            return _json({'success': False, 'message': 'daily_limit 必须为非负整数'}, status=400)
-        await _set_cfg('daily_limit', str(dl))
+            return _json({'success': False, 'message': 'daily_group_limit 必须为非负整数'}, status=400)
+        await _set_cfg('daily_group_limit', str(dl))
     if 'merge_welcome' in body:
         await _set_cfg('merge_welcome', '1' if body['merge_welcome'] else '0')
     if 'merge_template' in body:
         await _set_cfg('merge_template', str(body['merge_template'] or ''))
+    if 'list_mode' in body:
+        lm = str(body['list_mode'] or 'blacklist').strip()
+        if lm not in ('blacklist', 'whitelist'):
+            return _json({'success': False, 'message': 'list_mode 只能为 blacklist 或 whitelist'}, status=400)
+        await _set_cfg('list_mode', lm)
     return _json({'success': True, 'message': '已保存'})
 
 
@@ -964,8 +1007,19 @@ async def api_test_send(request):
     gid = str(body.get('group_id') or cfg.get('test_group') or '').strip()
     if not gid:
         return _json({'success': False, 'message': '请先设置测试群或传入 group_id'}, status=400)
-    content = _render(cfg.get('template', DEFAULT_TEMPLATE), gid, '')
-    buttons = _build_button_rows(cfg.get('buttons', '[]'))
+    mode = str(body.get('mode', '')).strip()
+    if mode == 'welcome':
+        tpl = cfg.get('welcome_template', DEFAULT_TEMPLATE)
+        btns = cfg.get('welcome_buttons', '[]')
+    elif mode == 'recall':
+        tpl = cfg.get('recall_template', DEFAULT_TEMPLATE)
+        btns = cfg.get('recall_buttons', '[]')
+    else:
+        is_welcome = cfg.get('all_groups_mode', '0') == '1'
+        tpl = cfg.get('welcome_template' if is_welcome else 'recall_template', DEFAULT_TEMPLATE)
+        btns = cfg.get('welcome_buttons' if is_welcome else 'recall_buttons', '[]')
+    content = _render(tpl, gid, '')
+    buttons = _build_button_rows(btns)
     status, resp = await _push_via_sender(gid, content, buttons)
     await _add_record(gid, status, resp, 'test')
     return _json({'success': status == 'success', 'status': status, 'response': resp,
@@ -984,7 +1038,7 @@ async def api_test_merge_send(request):
         return _json({'success': False, 'message': f'未能从群 {gid} 获取到成员列表'}, status=400)
     merge_tpl = cfg.get('merge_template', '欢迎 {user_ids} 加入本群！')
     content = _render_merged(merge_tpl, gid, user_ids)
-    buttons = _build_button_rows(cfg.get('buttons', '[]'))
+    buttons = _build_button_rows(cfg.get('welcome_buttons', '[]'))
     status, resp = await _push_via_sender(gid, content, buttons)
     await _add_record(gid, status, resp, 'test_merge')
     return _json({'success': status == 'success', 'status': status, 'response': resp,
@@ -1076,6 +1130,16 @@ async def api_disabled(request):
     total = await _count_disabled()
     data = await _list_disabled(PAGE_SIZE, (page - 1) * PAGE_SIZE)
     return _json({'success': True, 'data': data, 'total': total, 'page': page, 'page_size': PAGE_SIZE})
+
+
+@register_route('POST', f'{_API}/disabled_add')
+async def api_disabled_add(request):
+    body = await _body(request)
+    gid = str(body.get('group_id') or '').strip()
+    if not gid:
+        return _json({'success': False, 'message': '请输入群号'}, status=400)
+    ok = await _add_disabled(gid, 'web_panel')
+    return _json({'success': True, 'message': '已添加' if ok else '该群已在黑名单中'})
 
 
 @register_route('POST', f'{_API}/disabled_delete')
