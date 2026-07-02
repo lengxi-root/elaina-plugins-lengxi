@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>娱乐插件配置</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg2:#f8f5ff; --bg3:#efe8ff; --bg-float:#ffffff;
+    --text:#3a2c4a; --text2:#665676; --text3:#a091b2;
+    --border:#e4d7f7; --border2:rgba(149,117,205,.14);
+    --accent:#9575cd; --accent-hover:#7e57c2; --accent-light:#c2b0e8;
+    --success:#34c98b; --danger:#f16a86; --warning:#f5a742; --info:#5bb8d4;
+    --radius:16px; --radius-sm:11px; --radius-lg:22px;
+    --sidebar-bg:#f3ecff;
+    --accent-soft:#ece4fb; --accent-line:#d3c4f2;
+    --success-soft:#e4faf1; --danger-soft:#fde5ea; --warning-soft:#fef2e0;
+    --shadow:0 1px 3px rgba(124,92,192,.08);
+    --shadow-md:0 4px 12px rgba(124,92,192,.10);
+    --shadow-lg:0 10px 28px rgba(124,92,192,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg2);color:var(--text);font-size:13px;line-height:1.5;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::-webkit-scrollbar{width:5px;height:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(149,117,205,.3);border-radius:3px}
+
+  /* layout */
+  .eb-page{height:100vh;display:flex;overflow:hidden}
+  .eb-sidebar{width:160px;background:var(--sidebar-bg);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .2s ease}
+  .eb-sidebar.collapsed{width:48px}
+  .eb-sidebar.collapsed .nav-label,.eb-sidebar.collapsed .side-title,.eb-sidebar.collapsed .collapse-label{display:none}
+  .eb-sidebar.collapsed .nav-item{justify-content:center;padding:9px 0}
+  .eb-sidebar.collapsed .side-brand{justify-content:center}
+  .eb-sidebar.collapsed .side-brand .logo{margin:0}
+
+  .side-header{padding:10px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+  .side-brand{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+  .logo{width:28px;height:28px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent),var(--accent-light));color:#fff;flex-shrink:0}
+  .logo svg{width:18px;height:18px}
+  .side-title{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .eb-nav{flex:1;overflow-y:auto;padding:6px}
+  .nav-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:11px;cursor:pointer;transition:all .12s;color:var(--text2);font-size:12px;margin-bottom:2px;font-weight:500;user-select:none}
+  .nav-item:hover{background:var(--accent-soft);color:var(--text)}
+  .nav-item.active{background:var(--accent-soft);color:var(--accent-hover);font-weight:600;border:1px solid var(--accent-line)}
+  .nav-item svg{width:16px;height:16px;flex-shrink:0;stroke-width:1.8}
+  .nav-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nav-divider{height:1px;background:var(--border);margin:5px 8px}
+
+  .side-footer{padding:8px;border-top:1px solid var(--border)}
+  .collapse-btn{width:100%;padding:6px 10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;color:var(--text3);font-size:11px}
+  .collapse-btn:hover{background:var(--bg3);color:var(--text2)}
+  .collapse-btn svg{width:13px;height:13px;transition:transform .2s}
+  .eb-sidebar.collapsed .collapse-btn svg{transform:rotate(180deg)}
+
+  /* main */
+  .eb-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+  .eb-header{padding:10px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg)}
+  .eb-header h1{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .header-right{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .eb-content{flex:1;overflow-y:auto;padding:18px 22px}
+  .menu-btn{display:none;width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;align-items:center;justify-content:center;flex-shrink:0}
+  .menu-btn svg{width:17px;height:17px}
+  .eb-overlay{display:none;position:fixed;inset:0;background:rgba(58,44,74,.35);z-index:40}
+
+  /* buttons */
+  .btn{padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:600;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .12s;text-decoration:none;white-space:nowrap}
+  .btn:hover:not(:disabled){border-color:var(--accent-line);background:var(--bg3);color:var(--text)}
+  .btn:active:not(:disabled){transform:translateY(1px)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn-pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn-pri:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover);color:#fff}
+  .btn-sm{padding:4px 8px;font-size:11px}
+  .btn svg{width:14px;height:14px}
+
+  .page{display:none;animation:fade .18s ease}
+  .page.on{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start;max-width:1080px;margin:0 auto}
+  .page .span2{grid-column:1/-1}
+  @media(max-width:900px){.page.on{grid-template-columns:1fr}}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* cards & grid */
+  .card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow);min-width:0}
+  .card-title{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:6px}
+  .card-title::before{content:'';width:3px;height:13px;border-radius:2px;background:var(--accent)}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+  /* field */
+  .field{margin-bottom:10px}
+  .field:last-child{margin-bottom:0}
+  .field label{display:block;font-weight:600;font-size:12px;margin-bottom:4px;color:var(--text)}
+  .field .hint{font-size:11px;color:var(--text3);margin-top:4px;line-height:1.4}
+  input[type=text],input[type=password],input[type=number],select{
+    background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
+    color:var(--text);font-size:12px;padding:8px 10px;outline:none;font-family:inherit;width:100%}
+  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .subgroup{border:1px dashed var(--border);border-radius:var(--radius-sm);padding:12px;margin-top:10px}
+  .subgroup.off{opacity:.45;pointer-events:none}
+  .subgroup-legend{font-size:11px;font-weight:700;color:var(--accent-hover);margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px}
+
+  /* toggle */
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);margin-bottom:8px}
+  .toggle-row:last-child{margin-bottom:0}
+  .toggle-info{flex:1;min-width:0}
+  .toggle-title{font-weight:600;font-size:13px;color:var(--text)}
+  .toggle-desc{font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px}
+  .toggle-switch{position:relative;width:36px;height:20px;cursor:pointer;flex-shrink:0}
+  .toggle-switch input{opacity:0;width:0;height:0}
+  .toggle-track{position:absolute;inset:0;background:#d9cbee;border-radius:10px;transition:background .2s}
+  .toggle-track::after{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+  .toggle-switch input:checked+.toggle-track{background:var(--accent)}
+  .toggle-switch input:checked+.toggle-track::after{transform:translateX(16px)}
+
+  .muted{color:var(--text3);font-size:11px}
+  .status-pill{font-size:11px;color:var(--text2);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:999px;padding:4px 10px;white-space:nowrap}
+
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(16px);background:var(--text);color:#fff;padding:8px 16px;border-radius:var(--radius);font-weight:600;font-size:12px;opacity:0;transition:.2s;z-index:99;pointer-events:none;box-shadow:var(--shadow-lg);max-width:90vw}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.err{background:var(--danger)}
+
+  @media(max-width:768px){
+    .menu-btn{display:flex}
+    .eb-sidebar{position:fixed;left:0;top:0;bottom:0;z-index:50;width:210px;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--shadow-lg)}
+    .eb-sidebar.open{transform:none}
+    .eb-sidebar .side-title,.eb-sidebar .nav-label,.eb-sidebar .collapse-label{display:inline}
+    .eb-sidebar .nav-item{justify-content:flex-start;padding:8px 12px}
+    .eb-overlay.show{display:block}
+    .eb-header{padding:10px 14px}
+    .eb-content{padding:12px}
+    .page.on{grid-template-columns:1fr}
+    .grid-2{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="eb-page">
+  <div class="eb-overlay" id="eb-overlay" onclick="closeNav()"></div>
+  <!-- sidebar -->
+  <div class="eb-sidebar" id="eb-sidebar">
+    <div class="side-header">
+      <div class="side-brand">
+        <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="11" x2="10" y2="11"/><line x1="8" y1="9" x2="8" y2="13"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="18" y1="10" x2="18.01" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.152A4 4 0 0 0 17.32 5z"/></svg></span>
+        <span class="side-title">娱乐插件</span>
+      </div>
+    </div>
+    <div class="eb-nav">
+      <div class="nav-item active" data-page="general" onclick="go('general')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="nav-label">常规设置</span>
+      </div>
+      <div class="nav-item" data-page="meme" onclick="go('meme')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        <span class="nav-label">表情包</span>
+      </div>
+      <div class="nav-item" data-page="music" onclick="go('music')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span class="nav-label">点歌</span>
+      </div>
+      <div class="nav-item" data-page="draw" onclick="go('draw')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+        <span class="nav-label">AI 绘画</span>
+      </div>
+    </div>
+    <div class="side-footer">
+      <button class="collapse-btn" onclick="document.getElementById('eb-sidebar').classList.toggle('collapsed')" title="收起">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+        <span class="collapse-label">收起</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- main -->
+  <div class="eb-main">
+    <div class="eb-header">
+      <button class="menu-btn" onclick="openNav()" title="菜单"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+      <h1 id="page-title">常规设置</h1>
+      <div class="header-right">
+        <span class="status-pill" id="pstatus">加载中…</span>
+        <button class="btn btn-sm" onclick="loadConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>重新加载</button>
+        <button class="btn btn-sm" onclick="reloadMeme()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>重载表情</button>
+        <button class="btn btn-pri btn-sm" onclick="saveConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>保存配置</button>
+      </div>
+    </div>
+    <div class="eb-content">
+
+      <!-- ========== 常规设置 ========== -->
+      <div class="page on" id="page-general">
+        <div class="card span2">
+          <div class="card-title">插件状态</div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-title">启用插件</div><div class="toggle-desc">关闭后娱乐插件的全部指令都不再响应</div></div>
+            <label class="toggle-switch"><input type="checkbox" id="enabled"><span class="toggle-track"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-title">调试模式</div><div class="toggle-desc">输出更详细的日志便于排查问题</div></div>
+            <label class="toggle-switch"><input type="checkbox" id="debug"><span class="toggle-track"></span></label>
+          </div>
+        </div>
+        <div class="card span2">
+          <div class="card-title">功能开关</div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-title">表情包 (meme)</div><div class="toggle-desc">表情包生成、斗图等功能</div></div>
+            <label class="toggle-switch"><input type="checkbox" id="enable_meme" onchange="syncDisabled()"><span class="toggle-track"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-title">点歌</div><div class="toggle-desc">在群内点歌并发送卡片/语音</div></div>
+            <label class="toggle-switch"><input type="checkbox" id="enable_music" onchange="syncDisabled()"><span class="toggle-track"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-title">AI 绘画</div><div class="toggle-desc">调用 AI 生图接口进行绘画</div></div>
+            <label class="toggle-switch"><input type="checkbox" id="enable_draw" onchange="syncDisabled()"><span class="toggle-track"></span></label>
+          </div>
+          <div class="muted" style="margin-top:8px">发送「娱乐菜单」查看全部指令；开关对应功能后请到左侧各页面配置详细参数。</div>
+        </div>
+      </div>
+
+      <!-- ========== 表情包 ========== -->
+      <div class="page" id="page-meme">
+        <div class="card span2">
+          <div class="card-title">表情包设置</div>
+          <div id="grp_meme">
+            <div class="grid-2">
+              <div class="field span2"><label>Meme API</label><input type="text" id="meme_api_url" placeholder="http://datukuai.top:2233"></div>
+              <div class="field"><label>Meme 前缀 <span class="hint">(仅生成表情需要)</span></label><input type="text" id="prefix" placeholder="留空 = 无需前缀"></div>
+              <div class="field"><label>图片大小限制</label>
+                <select id="max_file_size"><option value="5">5MB</option><option value="10">10MB</option><option value="20">20MB</option></select></div>
+            </div>
+            <div class="toggle-row" style="margin-top:10px">
+              <div class="toggle-info"><div class="toggle-title">主人保护</div><div class="toggle-desc">开启后针对主人的表情操作将反向执行</div></div>
+              <label class="toggle-switch"><input type="checkbox" id="enable_master_protect"><span class="toggle-track"></span></label>
+            </div>
+            <div class="field" style="margin-top:10px"><label>主人 QQ <span class="hint">(逗号分隔; 留空则用框架 owner.ids)</span></label><input type="text" id="owner_qqs" placeholder="123456,789012"></div>
+          </div>
+          <div class="muted" id="meme_off_hint" style="display:none;margin-top:8px">表情包功能已关闭，请在「常规设置」中开启后再配置。</div>
+        </div>
+      </div>
+
+      <!-- ========== 点歌 ========== -->
+      <div class="page" id="page-music">
+        <div class="card span2">
+          <div class="card-title">点歌设置</div>
+          <div id="grp_music">
+            <div class="field"><label>音乐 API</label><input type="text" id="music_api_url" placeholder="https://a.aa.cab"></div>
+            <div class="field"><label>哈基米语音 URL</label><input type="text" id="hajimi_url" placeholder="哈基米随机语音地址"><div class="hint">发送「哈基米」时随机播放的语音接口</div></div>
+          </div>
+          <div class="muted" id="music_off_hint" style="display:none;margin-top:8px">点歌功能已关闭，请在「常规设置」中开启后再配置。</div>
+        </div>
+      </div>
+
+      <!-- ========== AI 绘画 ========== -->
+      <div class="page" id="page-draw">
+        <div class="card span2">
+          <div class="card-title">AI 绘画设置</div>
+          <div id="grp_draw">
+            <div class="field"><label>使用接口 <span class="hint">(选择当前生效的接口，两套配置互不覆盖)</span></label>
+              <select id="draw_active">
+                <option value="i1">接口 1</option>
+                <option value="i2">接口 2</option>
+              </select></div>
+            <div class="subgroup">
+              <div class="subgroup-legend">接口 1（需自行配置）</div>
+              <div class="grid-2">
+                <div class="field"><label>接口类型</label>
+                  <select id="draw_i1_type">
+                    <option value="openai">OpenAI 标准（上传图片）</option>
+                    <option value="custom">自定义（图片 URL）</option>
+                  </select></div>
+                <div class="field"><label>模型</label><input type="text" id="draw_i1_model" placeholder="gpt-image-2"></div>
+                <div class="field"><label>API 域名 (baseURL)</label><input type="text" id="draw_i1_url" placeholder="http://你的服务地址:端口"></div>
+                <div class="field"><label>API 密钥 (Key)</label><input type="password" id="draw_i1_key" placeholder="Bearer Token" autocomplete="new-password"></div>
+              </div>
+            </div>
+            <div class="subgroup">
+              <div class="subgroup-legend">接口 2（需自行配置）</div>
+              <div class="grid-2">
+                <div class="field"><label>接口类型</label>
+                  <select id="draw_i2_type">
+                    <option value="openai">OpenAI 标准（上传图片）</option>
+                    <option value="custom">自定义（图片 URL）</option>
+                  </select></div>
+                <div class="field"><label>模型</label><input type="text" id="draw_i2_model" placeholder="gpt-image-2"></div>
+                <div class="field"><label>API 域名 (baseURL)</label><input type="text" id="draw_i2_url" placeholder="http://你的服务地址:端口"></div>
+                <div class="field"><label>API 密钥 (Key)</label><input type="password" id="draw_i2_key" placeholder="Bearer Token" autocomplete="new-password"></div>
+              </div>
+            </div>
+            <div class="hint" style="margin-top:8px">图片尺寸固定为「自动」。文生图调用 <code>{域名}/v1/images/generations</code>；图生图 OpenAI 标准走 multipart 上传、自定义走 JSON <code>images:[图片URL]</code>。</div>
+            <div class="subgroup">
+              <div class="subgroup-legend">预设关键词</div>
+              <div class="hint" style="margin-bottom:8px">配置「名字 + 提示词」。用户发送该名字并上传/引用一张图片，即用此提示词修改图片。</div>
+              <div id="preset_list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+              <button type="button" class="btn" onclick="addPreset()" style="margin-top:8px">+ 新增预设</button>
+            </div>
+          </div>
+          <div class="muted" id="draw_off_hint" style="display:none;margin-top:8px">AI 绘画功能已关闭，请在「常规设置」中开启后再配置。</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script>
+const API = '/api/ext/play';
+const TOKEN = new URLSearchParams(location.search).get('access_token')
+  || (window.parent !== window && new URLSearchParams(location.search).get('token')) || '';
+const PAGE_TITLES = {general:'常规设置',meme:'表情包',music:'点歌',draw:'AI 绘画'};
+const BOOL = ['enabled','enable_meme','enable_music','enable_draw','debug','enable_master_protect'];
+const TEXT = ['meme_api_url','prefix','owner_qqs','music_api_url','hajimi_url',
+  'draw_active','draw_i1_type','draw_i1_url','draw_i1_key','draw_i1_model',
+  'draw_i2_type','draw_i2_url','draw_i2_key','draw_i2_model'];
+
+function tk() { return TOKEN || localStorage.getItem('access_token') || ''; }
+function headers() { const h = { 'Content-Type': 'application/json' }; const t = tk(); if (t) h['Authorization'] = 'Bearer ' + t; return h; }
+function qs(u) { const t = tk(); return u + (t ? (u.includes('?') ? '&' : '?') + 'access_token=' + encodeURIComponent(t) : ''); }
+
+function go(page){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.page===page));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.getElementById('page-'+page).classList.add('on');
+  document.getElementById('page-title').textContent = PAGE_TITLES[page]||'';
+  closeNav();
+}
+function openNav(){ document.getElementById('eb-sidebar').classList.add('open'); document.getElementById('eb-overlay').classList.add('show'); }
+function closeNav(){ document.getElementById('eb-sidebar').classList.remove('open'); document.getElementById('eb-overlay').classList.remove('show'); }
+
+function toast(msg, err) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'show' + (err ? ' err' : '');
+  setTimeout(() => el.className = '', 2200);
+}
+
+async function api(path, opts) {
+  const r = await fetch(qs(API + path), Object.assign({ headers: headers() }, opts));
+  return r.json();
+}
+
+function syncDisabled() {
+  const memeOn = document.getElementById('enable_meme').checked;
+  const musicOn = document.getElementById('enable_music').checked;
+  const drawOn = document.getElementById('enable_draw').checked;
+  document.getElementById('grp_meme').style.display = memeOn ? '' : 'none';
+  document.getElementById('meme_off_hint').style.display = memeOn ? 'none' : '';
+  document.getElementById('grp_music').style.display = musicOn ? '' : 'none';
+  document.getElementById('music_off_hint').style.display = musicOn ? 'none' : '';
+  document.getElementById('grp_draw').style.display = drawOn ? '' : 'none';
+  document.getElementById('draw_off_hint').style.display = drawOn ? 'none' : '';
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderPresets(list) {
+  const box = document.getElementById('preset_list');
+  box.innerHTML = '';
+  (list || []).forEach(p => box.appendChild(presetCard(p.name, p.prompt, false)));
+}
+function presetCard(name, prompt, editing) {
+  const card = document.createElement('div');
+  card.className = 'preset-card';
+  card.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:10px';
+  card.dataset.name = name || '';
+  card.dataset.prompt = prompt || '';
+  renderCard(card, editing);
+  return card;
+}
+function renderCard(card, editing) {
+  const name = card.dataset.name, prompt = card.dataset.prompt;
+  if (editing) {
+    card.innerHTML =
+      '<div class="field"><label>关键词名字</label>'
+      + '<input type="text" class="p-name" placeholder="如：手办" value="' + esc(name) + '"></div>'
+      + '<div class="field" style="margin-top:6px"><label>提示词</label>'
+      + '<textarea class="p-prompt" rows="3" placeholder="该关键词对应的绘画/编辑提示词">' + esc(prompt) + '</textarea></div>'
+      + '<div style="margin-top:6px;display:flex;gap:6px">'
+      + '<button type="button" class="btn btn-pri btn-sm p-save">保存</button>'
+      + '<button type="button" class="btn btn-sm p-del">删除</button></div>';
+    card.querySelector('.p-save').onclick = () => {
+      card.dataset.name = card.querySelector('.p-name').value.trim();
+      card.dataset.prompt = card.querySelector('.p-prompt').value.trim();
+      if (!card.dataset.name || !card.dataset.prompt) { toast('名字和提示词都要填', true); return; }
+      renderCard(card, false);
+      savePresets();
+    };
+    card.querySelector('.p-del').onclick = () => { card.remove(); savePresets(); };
+  } else {
+    card.innerHTML =
+      '<div style="display:flex;align-items:center;gap:6px">'
+      + '<span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(name) + '">' + esc(name) + '</span>'
+      + '<button type="button" class="btn btn-sm p-edit">编辑</button>'
+      + '<button type="button" class="btn btn-sm p-del">删除</button></div>';
+    card.querySelector('.p-edit').onclick = () => renderCard(card, true);
+    card.querySelector('.p-del').onclick = () => { card.remove(); savePresets(); };
+  }
+}
+function addPreset() {
+  document.getElementById('preset_list').appendChild(presetCard('', '', true));
+}
+function collectPresets() {
+  const out = [];
+  document.querySelectorAll('#preset_list .preset-card').forEach(card => {
+    let name, prompt;
+    const ni = card.querySelector('.p-name');
+    if (ni) { name = ni.value.trim(); prompt = card.querySelector('.p-prompt').value.trim(); }
+    else { name = (card.dataset.name || '').trim(); prompt = (card.dataset.prompt || '').trim(); }
+    if (name && prompt) out.push({ name, prompt });
+  });
+  return out;
+}
+async function savePresets() {
+  const d = await api('/config', { method: 'POST', body: JSON.stringify({ draw_presets: collectPresets() }) });
+  if (d.success) { toast('预设已保存'); loadStatus(); } else toast(d.error || '保存失败', true);
+}
+
+async function loadConfig() {
+  const d = await api('/config');
+  if (!d.success) { toast('加载失败', true); return; }
+  const c = d.config;
+  BOOL.forEach(k => { const el = document.getElementById(k); if (el) el.checked = !!c[k]; });
+  TEXT.forEach(k => { const el = document.getElementById(k); if (el) el.value = c[k] || ''; });
+  document.getElementById('max_file_size').value = c.max_file_size || 10;
+  renderPresets(c.draw_presets || []);
+  syncDisabled();
+  loadStatus();
+}
+async function loadStatus() {
+  const d = await api('/status');
+  if (d.success) document.getElementById('pstatus').textContent =
+    '表情 ' + d.meme_count + ' · 预设 ' + d.preset_count + ' · 主人 ' + d.owner_count;
+}
+async function saveConfig() {
+  const body = {};
+  BOOL.forEach(k => { const el = document.getElementById(k); if (el) body[k] = el.checked; });
+  TEXT.forEach(k => { const el = document.getElementById(k); if (el) body[k] = el.value.trim(); });
+  body.max_file_size = parseInt(document.getElementById('max_file_size').value) || 10;
+  body.draw_presets = collectPresets();
+  const d = await api('/config', { method: 'POST', body: JSON.stringify(body) });
+  if (d.success) { toast('已保存'); loadConfig(); } else toast(d.error || '保存失败', true);
+}
+async function reloadMeme() {
+  const d = await api('/meme/reload', { method: 'POST' });
+  if (d.success) { toast('已重载 ' + d.meme_count + ' 个表情'); loadStatus(); } else toast('重载失败', true);
+}
+loadConfig();
+</script>
+</body>
+</html>

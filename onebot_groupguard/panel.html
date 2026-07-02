@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>群管配置</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg2:#f4f8ff; --bg3:#e8f0ff;
+    --text:#1e293b; --text2:#475569; --text3:#94a3b8;
+    --border:#d6e4ff; --border2:rgba(59,130,246,.14);
+    --accent:#3b82f6; --accent-hover:#2563eb; --accent-light:#60a5fa;
+    --success:#34c98b; --danger:#f16a86; --warning:#f5a742; --info:#5bb8d4;
+    --radius:16px; --radius-sm:11px; --radius-lg:22px;
+    --sidebar-bg:#eef4ff;
+    --accent-soft:#e6efff; --accent-line:#bcd4ff;
+    --shadow:0 1px 3px rgba(59,130,246,.08);
+    --shadow-md:0 4px 12px rgba(59,130,246,.10);
+    --shadow-lg:0 10px 28px rgba(59,130,246,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg2);color:var(--text);font-size:13px;line-height:1.5;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::-webkit-scrollbar{width:5px;height:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(59,130,246,.3);border-radius:3px}
+
+  /* layout */
+  .eb-page{height:100vh;display:flex;overflow:hidden}
+  .eb-sidebar{width:170px;background:var(--sidebar-bg);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .2s ease}
+  .eb-sidebar.collapsed{width:48px}
+  .eb-sidebar.collapsed .nav-label,.eb-sidebar.collapsed .side-title,.eb-sidebar.collapsed .collapse-label,.eb-sidebar.collapsed .side-foot-txt{display:none}
+  .eb-sidebar.collapsed .nav-item{justify-content:center;padding:9px 0}
+  .eb-sidebar.collapsed .side-brand{justify-content:center}
+
+  .side-header{padding:10px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+  .side-brand{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+  .logo{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent),var(--accent-light));color:#fff;flex-shrink:0;box-shadow:0 3px 8px rgba(59,130,246,.28)}
+  .logo svg{width:17px;height:17px;stroke-width:2}
+  .side-title{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .side-title small{display:block;font-size:10px;color:var(--text3);font-weight:500}
+
+  .eb-nav{flex:1;overflow-y:auto;padding:6px}
+  .nav-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;cursor:pointer;transition:all .12s;color:var(--text2);font-size:12px;margin-bottom:2px;font-weight:500;user-select:none}
+  .nav-item:hover{background:var(--accent-soft);color:var(--text)}
+  .nav-item.active{background:var(--accent-soft);color:var(--accent-hover);font-weight:600;border:1px solid var(--accent-line)}
+  .nav-item svg{width:16px;height:16px;flex-shrink:0;stroke-width:1.8}
+  .nav-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .side-footer{padding:8px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+  .side-foot-txt{font-size:10px;color:var(--text3);text-align:center}
+  .collapse-btn{width:100%;padding:6px 10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;color:var(--text3);font-size:11px}
+  .collapse-btn:hover{background:var(--bg3);color:var(--text2)}
+  .collapse-btn svg{width:13px;height:13px;transition:transform .2s}
+  .eb-sidebar.collapsed .collapse-btn svg{transform:rotate(180deg)}
+
+  /* main */
+  .eb-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+  .eb-header{padding:10px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg)}
+  .header-left{display:flex;align-items:center;gap:10px;min-width:0}
+  .eb-header h1{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .menu-btn{display:none;width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;align-items:center;justify-content:center;flex-shrink:0}
+  .menu-btn svg{width:17px;height:17px}
+  .eb-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:40}
+  .header-right{display:flex;gap:6px;align-items:center}
+  .status-pill{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid var(--border);background:var(--bg);font-size:11px;color:var(--text2)}
+  .status-dot{width:7px;height:7px;border-radius:50%;background:var(--danger)}
+  .status-dot.ok{background:var(--success)}
+  .eb-content{flex:1;overflow-y:auto;padding:16px 20px}
+
+  /* buttons */
+  .btn{padding:7px 14px;border-radius:999px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:600;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .12s;text-decoration:none;white-space:nowrap}
+  .btn:hover:not(:disabled){border-color:var(--accent-line);background:var(--bg3);color:var(--text)}
+  .btn:active:not(:disabled){transform:translateY(1px)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn-pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn-pri:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover);color:#fff}
+  .btn-danger{color:var(--danger);border-color:var(--danger-soft,#fde5ea)}
+  .btn-danger:hover:not(:disabled){background:#fde5ea;border-color:var(--danger);color:var(--danger)}
+  .btn-sm{padding:5px 11px;font-size:11px}
+  .btn svg{width:14px;height:14px}
+
+  .page{display:none;animation:fade .18s ease}
+  .page.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* cards & grid */
+  .card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);margin-bottom:14px}
+  .card-title{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:6px}
+  .card-title::before{content:'';width:3px;height:13px;border-radius:2px;background:var(--accent)}
+  .card-title .card-sub{text-transform:none;letter-spacing:0;font-weight:500;color:var(--text3);font-size:11px}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+
+  /* stat cards */
+  .stat{border:1px solid var(--border);border-radius:var(--radius);background:var(--bg2);padding:16px;text-align:center}
+  .stat .num{font-size:22px;font-weight:800;color:var(--accent-hover);line-height:1}
+  .stat .lbl{font-size:11px;color:var(--text3);margin-top:6px}
+
+  /* field */
+  .field{margin-bottom:12px}
+  .field:last-child{margin-bottom:0}
+  .field label{display:block;font-weight:600;font-size:12px;margin-bottom:4px;color:var(--text)}
+  .field .hint{font-size:11px;color:var(--text3);margin-top:4px;line-height:1.4}
+  input[type=text],input[type=number],textarea,select{
+    background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
+    color:var(--text);font-size:12px;padding:8px 10px;outline:none;font-family:inherit;width:100%}
+  input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  textarea{min-height:90px;resize:vertical;line-height:1.6;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+
+  /* toggle */
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);margin-bottom:8px}
+  .toggle-info{flex:1;min-width:0}
+  .toggle-title{font-weight:600;font-size:13px;color:var(--text)}
+  .toggle-desc{font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px}
+  .toggle-switch{position:relative;width:36px;height:20px;cursor:pointer;flex-shrink:0}
+  .toggle-switch input{opacity:0;width:0;height:0}
+  .toggle-track{position:absolute;inset:0;background:#c9d6e8;border-radius:999px;transition:background .2s}
+  .toggle-track::after{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+  .toggle-switch input:checked+.toggle-track{background:var(--accent)}
+  .toggle-switch input:checked+.toggle-track::after{transform:translateX(16px)}
+
+  /* sub tabs */
+  .subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .subtab{padding:5px 13px;border-radius:999px;border:1px solid var(--border);background:var(--bg);font-size:12px;cursor:pointer;color:var(--text2);font-weight:500;transition:all .12s}
+  .subtab:hover{border-color:var(--accent-line);color:var(--text)}
+  .subtab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .subpage{display:none}
+  .subpage.on{display:block}
+
+  .sec{padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--border2)}
+  .sec:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+  .sec-t{font-size:12px;font-weight:700;color:var(--accent-hover);margin-bottom:10px}
+  .sec-t small{font-weight:500;color:var(--text3)}
+
+  .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .muted{color:var(--text3);font-size:11px}
+  .spacer{flex:1}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--border2)}
+  th{color:var(--text3);font-weight:600}
+  .tbl-wrap{max-height:400px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+
+  /* list rows (qa / blacklist / presets) */
+  .list-row{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);margin-bottom:6px}
+  .list-row .txt{flex:1;min-width:0;font-size:12px}
+  .tag{display:inline-block;padding:1px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent-hover);font-size:10px;font-weight:600;margin-right:6px}
+  .arrow{color:var(--text3);margin:0 5px;vertical-align:middle}
+  .arrow svg{width:13px;height:13px;stroke-width:2;vertical-align:middle}
+
+  /* log console */
+  .log-c{background:#0f172a;border-radius:var(--radius-sm);padding:10px;max-height:420px;overflow-y:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.6}
+  .log-e{white-space:pre-wrap;word-break:break-all;padding:1px 0}
+  .log-e .lt{color:#64748b}
+  .log-e .lm{color:#e2e8f0}
+  .log-e.log-info .ll{color:#60a5fa}
+  .log-e.log-debug .ll{color:#a5b4fc}
+  .log-e.log-warn .ll{color:#fbbf24}
+  .log-e.log-error .ll{color:#f87171}
+
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(16px);background:var(--text);color:#fff;padding:8px 16px;border-radius:var(--radius);font-weight:600;font-size:12px;opacity:0;transition:.2s;z-index:99;pointer-events:none;box-shadow:var(--shadow-lg);max-width:90vw}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.err{background:var(--danger)}
+
+  @media(max-width:768px){
+    .menu-btn{display:flex}
+    .eb-sidebar{position:fixed;left:0;top:0;bottom:0;z-index:50;width:200px;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--shadow-lg)}
+    .eb-sidebar.open{transform:none}
+    .eb-sidebar.collapsed{width:200px}
+    .side-title,.nav-label,.collapse-label,.side-foot-txt{display:inline}
+    .nav-item{justify-content:flex-start;padding:9px 12px}
+    .eb-overlay.show{display:block}
+    .eb-content{padding:12px}
+    .grid-2,.grid-4{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="eb-page">
+  <div class="eb-overlay" id="eb-overlay" onclick="closeNav()"></div>
+  <!-- sidebar -->
+  <div class="eb-sidebar" id="eb-sidebar">
+    <div class="side-header">
+      <div class="side-brand">
+        <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3.5 8-9.5V5.5l-8-3-8 3V12.5c0 6 8 9.5 8 9.5z"/><path d="m9 12 2 2 4-4"/></svg></span>
+        <span class="side-title">群管插件<small>GroupGuard</small></span>
+      </div>
+    </div>
+    <div class="eb-nav">
+      <div class="nav-item active" data-page="dashboard" onclick="go('dashboard')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="14" y="10" width="7" height="11" rx="1"/><rect x="3" y="13" width="7" height="8" rx="1"/></svg>
+        <span class="nav-label">仪表盘</span>
+      </div>
+      <div class="nav-item" data-page="global" onclick="go('global')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="nav-label">群管设置</span>
+      </div>
+      <div class="nav-item" data-page="assistant" onclick="go('assistant')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z"/></svg>
+        <span class="nav-label">主人助手</span>
+      </div>
+      <div class="nav-item" data-page="activity" onclick="go('activity')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span class="nav-label">活跃统计</span>
+      </div>
+      <div class="nav-item" data-page="sessions" onclick="go('sessions')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span class="nav-label">验证状态</span>
+      </div>
+      <div class="nav-item" data-page="logs" onclick="go('logs')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span class="nav-label">调试日志</span>
+      </div>
+    </div>
+    <div class="side-footer">
+      <button class="collapse-btn" onclick="document.getElementById('eb-sidebar').classList.toggle('collapsed')" title="收起">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+        <span class="collapse-label">收起</span>
+      </button>
+      <div class="side-foot-txt">by 冷曦</div>
+    </div>
+  </div>
+
+  <!-- main -->
+  <div class="eb-main">
+    <div class="eb-header">
+      <div class="header-left">
+        <button class="menu-btn" onclick="openNav()" title="菜单"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+        <h1 id="page-title">仪表盘</h1>
+      </div>
+      <div class="header-right">
+        <div class="status-pill"><span class="status-dot" id="sDot"></span><span id="sTxt">加载中...</span></div>
+        <button class="btn btn-sm" onclick="reloadAll()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>重新加载</button>
+        <button class="btn btn-pri btn-sm" onclick="doSave()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>保存配置</button>
+      </div>
+    </div>
+    <div class="eb-content">
+
+      <!-- ========== 仪表盘 ========== -->
+      <div class="page on" id="page-dashboard">
+        <div class="card">
+          <div class="card-title">运行概览</div>
+          <div class="grid-4">
+            <div class="stat"><div class="num" id="d-gc">-</div><div class="lbl">管理群数</div></div>
+            <div class="stat"><div class="num" id="d-sc">-</div><div class="lbl">验证中</div></div>
+            <div class="stat"><div class="num" id="d-arc">-</div><div class="lbl">防撤回群</div></div>
+            <div class="stat"><div class="num" id="d-erc">-</div><div class="lbl">回应表情群</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">主人设置</div>
+          <div class="field">
+            <label>主人 QQ 号 ownerQQs</label>
+            <input type="text" id="d-owner" placeholder="如：123456,789012；留空则用框架 owner.ids">
+            <div class="hint" id="ownerPv">最高权限，可执行所有群管指令，多个用逗号分隔</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">功能开关概览</div>
+          <div class="grid-2">
+            <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">自动通过入群</div></div><span class="tag" id="d-aa">-</span></div>
+            <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">入群验证</div></div><span class="tag" id="d-ev">-</span></div>
+            <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">刷屏检测</div></div><span class="tag" id="d-sd">-</span></div>
+            <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">调试模式</div></div><span class="tag" id="d-db">-</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 群管设置 ========== -->
+      <div class="page" id="page-global">
+        <div class="card">
+          <div class="card-title">配置对象 <span class="card-sub">全局配置为所有群默认，可选择单群覆盖</span></div>
+          <div class="bar" style="margin-bottom:12px">
+            <select id="grpSel" style="width:auto;min-width:200px" onchange="onGrp()">
+              <option value="">全局配置（默认）</option>
+            </select>
+            <div id="grpUgWrap" style="display:none" class="bar">
+              <span class="muted">使用全局</span>
+              <label class="toggle-switch"><input type="checkbox" id="grp-ug" onchange="onGrpToggle()"><span class="toggle-track"></span></label>
+            </div>
+            <div class="spacer"></div>
+            <div id="presetWrap" class="bar">
+              <select id="presetSel" style="width:auto;min-width:120px"><option value="">应用预设...</option></select>
+              <button class="btn btn-sm" onclick="applyPreset()">应用</button>
+              <button class="btn btn-sm" onclick="showSavePreset()">存为预设</button>
+              <button class="btn btn-sm" onclick="showManagePresets()">管理</button>
+            </div>
+          </div>
+          <div id="presetSaveRow" style="display:none;margin-bottom:12px" class="bar">
+            <input type="text" id="presetName" style="width:200px" placeholder="输入预设名称">
+            <button class="btn btn-pri btn-sm" onclick="doSavePreset()">确认保存</button>
+            <button class="btn btn-sm" onclick="document.getElementById('presetSaveRow').style.display='none'">取消</button>
+          </div>
+          <div id="presetMgrRow" style="display:none;margin-bottom:12px"><div id="presetMgrList"></div></div>
+
+          <div class="subtabs">
+            <div class="subtab active" onclick="gTab('join',this)">入群管理</div>
+            <div class="subtab" onclick="gTab('filter',this)">违禁词</div>
+            <div class="subtab" onclick="gTab('bw',this)">黑白名单</div>
+            <div class="subtab" onclick="gTab('spam',this)">刷屏检测</div>
+            <div class="subtab" onclick="gTab('msgf',this)">消息过滤</div>
+            <div class="subtab" onclick="gTab('qa',this)">问答</div>
+          </div>
+
+          <!-- 入群管理 -->
+          <div class="subpage on" id="gt-join">
+            <div class="sec">
+              <div class="grid-2">
+                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">自动通过入群申请</div><div class="toggle-desc">自动同意所有入群申请</div></div><label class="toggle-switch"><input type="checkbox" id="c-aa"><span class="toggle-track"></span></label></div>
+                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">启用入群验证</div><div class="toggle-desc">新成员进群后需回答数学题</div></div><label class="toggle-switch"><input type="checkbox" id="c-ev"><span class="toggle-track"></span></label></div>
+                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">跳过机器人验证</div><div class="toggle-desc">开启后已知机器人号段的QQ进群自动跳过验证</div></div><label class="toggle-switch"><input type="checkbox" id="c-sbv"><span class="toggle-track"></span></label></div>
+              </div>
+            </div>
+            <div class="sec">
+              <div class="sec-t">验证参数</div>
+              <div class="grid-4">
+                <div class="field"><label>验证超时(秒)</label><input type="number" id="c-vt" min="30" value="300"></div>
+                <div class="field"><label>最大尝试次数</label><input type="number" id="c-ma" min="1" value="5"></div>
+                <div class="field"><label>数值最小值</label><input type="number" id="c-mn" min="0" value="1"></div>
+                <div class="field"><label>数值最大值</label><input type="number" id="c-mx" min="1" value="100"></div>
+              </div>
+            </div>
+            <div class="sec">
+              <div class="field"><label>欢迎词 welcomeMessage <span class="muted">支持 {user}=QQ号 {group}=群号，留空不发送</span></label><input type="text" id="c-wm" placeholder="欢迎 {user} 加入本群！"></div>
+            </div>
+            <div class="sec">
+              <div class="field"><label>入群验证消息 verifyMessage <span class="muted">启用验证时发送，占位符 {question}=题目 {timeout}=超时秒数 {welcome}=欢迎词 {comment}=入群信息 {user}=QQ {group}=群号，留空用默认</span></label><textarea id="c-vm" placeholder="{welcome}请在「{timeout}」秒内发送「{question}」答案,否则移出群聊。{comment}"></textarea></div>
+            </div>
+            <div class="sec">
+              <div class="field"><label>入群拒绝关键词 rejectKeywords <span class="muted">验证信息含关键词则拒绝入群，每行一个</span></label><textarea id="c-rk" placeholder="广告&#10;代刷"></textarea></div>
+            </div>
+            <div class="sec">
+              <div class="field"><label>针对用户 targetUsers <span class="muted">发言自动撤回，多个 QQ 用逗号分隔</span></label><input type="text" id="c-tu" placeholder="如：123456,789012"></div>
+            </div>
+          </div>
+
+          <!-- 违禁词 -->
+          <div class="subpage" id="gt-filter">
+            <div class="sec">
+              <div class="field"><label>违禁词列表 filterKeywords <span class="muted">每行一个，触发后按惩罚等级处理</span></label><textarea id="c-fk" placeholder="每行一个违禁词"></textarea></div>
+            </div>
+            <div class="sec">
+              <div class="sec-t">惩罚设置</div>
+              <div class="grid-2">
+                <div class="field"><label>惩罚等级 filterPunishLevel</label>
+                  <select id="c-fp">
+                    <option value="1">1 - 仅撤回</option>
+                    <option value="2">2 - 撤回+禁言</option>
+                    <option value="3">3 - 撤回+禁言+踢出</option>
+                    <option value="4">4 - 撤回+禁言+踢出+拉黑</option>
+                  </select>
+                </div>
+                <div class="field"><label>禁言时长(分钟) filterBanMinutes</label><input type="number" id="c-fb" min="1" value="10"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 黑白名单 -->
+          <div class="subpage" id="gt-bw">
+            <div class="sec-t" style="margin-bottom:10px">黑白名单 <small>黑名单发言立即撤回并踢出、入群自动拒绝；白名单豁免所有过滤</small></div>
+            <div class="toggle-row" style="max-width:340px"><div class="toggle-info"><div class="toggle-title">退群自动拉黑</div><div class="toggle-desc">退群自动加入黑名单</div></div><label class="toggle-switch"><input type="checkbox" id="c-lb"><span class="toggle-track"></span></label></div>
+            <div class="grid-2" style="margin-top:12px">
+              <div class="field"><label>黑名单 blacklist <span class="muted">每行一个 QQ</span></label><textarea id="c-bl" placeholder="每行一个QQ号"></textarea></div>
+              <div class="field"><label>白名单 whitelist <span class="muted">每行一个 QQ</span></label><textarea id="c-wl" placeholder="每行一个QQ号"></textarea></div>
+            </div>
+            <div class="muted" id="bwHint" style="margin-top:6px">白名单为全局配置；单群配置下黑名单对应本群 groupBlacklist</div>
+          </div>
+
+          <!-- 刷屏检测 -->
+          <div class="subpage" id="gt-spam">
+            <div class="sec-t" style="margin-bottom:10px">刷屏检测 <small>时间窗口内发送超过阈值数量的消息，自动禁言</small></div>
+            <div class="toggle-row" style="max-width:340px"><div class="toggle-info"><div class="toggle-title">启用刷屏检测</div></div><label class="toggle-switch"><input type="checkbox" id="c-sd"><span class="toggle-track"></span></label></div>
+            <div class="grid-4" style="margin-top:12px">
+              <div class="field"><label>时间窗口(秒)</label><input type="number" id="c-sw" min="1" value="10"></div>
+              <div class="field"><label>消息数量阈值</label><input type="number" id="c-st" min="2" value="10"></div>
+              <div class="field"><label>禁言时长(分钟)</label><input type="number" id="c-sb" min="1" value="5"></div>
+            </div>
+          </div>
+
+          <!-- 消息过滤 -->
+          <div class="subpage" id="gt-msgf">
+            <div class="sec-t" style="margin-bottom:10px">消息类型过滤 <small>开启后自动撤回对应类型的消息</small></div>
+            <div class="grid-2">
+              <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">拦截视频</div></div><label class="toggle-switch"><input type="checkbox" id="c-mf-v"><span class="toggle-track"></span></label></div>
+              <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">拦截图片</div></div><label class="toggle-switch"><input type="checkbox" id="c-mf-i"><span class="toggle-track"></span></label></div>
+              <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">拦截语音</div></div><label class="toggle-switch"><input type="checkbox" id="c-mf-r"><span class="toggle-track"></span></label></div>
+              <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">拦截合并转发</div></div><label class="toggle-switch"><input type="checkbox" id="c-mf-f"><span class="toggle-track"></span></label></div>
+              <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">拦截小程序卡片</div></div><label class="toggle-switch"><input type="checkbox" id="c-mf-l"><span class="toggle-track"></span></label></div>
+              <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">拦截名片分享</div></div><label class="toggle-switch"><input type="checkbox" id="c-mf-c"><span class="toggle-track"></span></label></div>
+              <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">拦截链接</div></div><label class="toggle-switch"><input type="checkbox" id="c-mf-u"><span class="toggle-track"></span></label></div>
+            </div>
+          </div>
+
+          <!-- 问答 -->
+          <div class="subpage" id="gt-qa">
+            <div class="sec-t" style="margin-bottom:10px">自动问答 qaList <small>匹配关键词自动回复，变量 {user} {group}</small></div>
+            <div class="bar" style="margin-bottom:12px">
+              <input type="text" id="qa-kw" style="flex:1" placeholder="触发关键词">
+              <input type="text" id="qa-rp" style="flex:1" placeholder="回复内容，支持 {user} {group}">
+              <select id="qa-mode" style="width:auto">
+                <option value="exact">精确</option>
+                <option value="contains">模糊</option>
+                <option value="regex">正则</option>
+              </select>
+              <button class="btn btn-pri" onclick="addQA()">添加</button>
+            </div>
+            <div id="qaList" style="max-height:320px;overflow-y:auto"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 主人助手 ========== -->
+      <div class="page" id="page-assistant">
+        <div class="card">
+          <div class="card-title">全局防撤回</div>
+          <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">开启全局防撤回</div><div class="toggle-desc">任何群有人撤回消息都会私发给主人（需先设置主人 QQ）</div></div><label class="toggle-switch"><input type="checkbox" id="a-gar"><span class="toggle-track"></span></label></div>
+        </div>
+        <div class="card">
+          <div class="card-title">全局回应表情</div>
+          <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">开启全局回应表情</div><div class="toggle-desc">自动给所有群的消息回应表情</div></div><label class="toggle-switch"><input type="checkbox" id="a-ger"><span class="toggle-track"></span></label></div>
+        </div>
+        <div class="card">
+          <div class="card-title">黑名单管理 <span class="card-sub">查看并移除全局黑名单中的用户</span></div>
+          <div class="bar" style="margin-bottom:10px"><button class="btn btn-sm" onclick="loadBlMgr()">刷新</button></div>
+          <div id="blMgr"><p class="muted">加载中...</p></div>
+        </div>
+      </div>
+
+      <!-- ========== 活跃统计 ========== -->
+      <div class="page" id="page-activity">
+        <div class="card">
+          <div class="card-title">群成员活跃统计</div>
+          <div class="bar" style="margin-bottom:12px">
+            <select id="actGrp" style="width:auto;min-width:200px" onchange="loadAct()"><option value="">全部群</option></select>
+            <button class="btn btn-sm" onclick="loadAct()">刷新</button>
+          </div>
+          <div class="grid-4" style="margin-bottom:12px">
+            <div class="stat"><div class="num" id="a-tu">-</div><div class="lbl">活跃用户</div></div>
+            <div class="stat"><div class="num" id="a-tm">-</div><div class="lbl">总消息数</div></div>
+            <div class="stat"><div class="num" id="a-tdm">-</div><div class="lbl">今日消息</div></div>
+            <div class="stat"><div class="num" id="a-tda">-</div><div class="lbl">今日活跃</div></div>
+          </div>
+          <div class="tbl-wrap">
+            <table><thead><tr><th>排名</th><th>QQ号</th><th>群号</th><th>总消息</th><th>今日</th><th>最后活跃</th></tr></thead><tbody id="actTb"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 验证状态 ========== -->
+      <div class="page" id="page-sessions">
+        <div class="card">
+          <div class="card-title">当前验证会话</div>
+          <div class="bar" style="margin-bottom:10px"><button class="btn btn-sm" onclick="loadSess()">刷新</button></div>
+          <div id="sessList"><p class="muted">加载中...</p></div>
+        </div>
+      </div>
+
+      <!-- ========== 调试日志 ========== -->
+      <div class="page" id="page-logs">
+        <div class="card">
+          <div class="card-title">调试日志 <span class="card-sub">实时查看插件运行日志</span></div>
+          <div class="bar" style="margin-bottom:10px">
+            <div class="toggle-row" style="margin:0;padding:6px 12px"><div class="toggle-info"><div class="toggle-title" style="font-size:12px">调试模式</div></div><label class="toggle-switch"><input type="checkbox" id="l-db" onchange="tglDbg()"><span class="toggle-track"></span></label></div>
+            <div class="spacer"></div>
+            <button class="btn btn-sm" onclick="loadLogs()">刷新</button>
+            <button class="btn btn-sm btn-danger" onclick="clrLogs()">清空</button>
+          </div>
+          <div class="subtabs" style="margin-bottom:8px">
+            <div class="subtab active" onclick="fltLog('all',this)">全部</div>
+            <div class="subtab" onclick="fltLog('info',this)">INFO</div>
+            <div class="subtab" onclick="fltLog('debug',this)">DEBUG</div>
+            <div class="subtab" onclick="fltLog('warn',this)">WARN</div>
+            <div class="subtab" onclick="fltLog('error',this)">ERROR</div>
+          </div>
+          <div id="logC" class="log-c"><p style="color:#64748b">加载中...</p></div>
+          <div class="bar" style="margin-top:8px">
+            <span class="muted" id="logCnt">0 条</span>
+            <div class="spacer"></div>
+            <label class="muted" style="cursor:pointer"><input type="checkbox" id="logAS" checked style="width:auto;vertical-align:middle"> 自动滚动</label>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '/api/ext/groupguard';
+const TOKEN = new URLSearchParams(location.search).get('access_token')
+  || (window.parent !== window && new URLSearchParams(location.search).get('token')) || '';
+function headers(){ const h={'Content-Type':'application/json'}; const t=TOKEN||localStorage.getItem('access_token')||''; if(t) h['Authorization']='Bearer '+t; return h; }
+function qs(u){ const t=TOKEN||localStorage.getItem('access_token')||''; return u+(t?(u.includes('?')?'&':'?')+'access_token='+encodeURIComponent(t):''); }
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function toast(m,err){ const el=$('toast'); el.textContent=m; el.className='toast show'+(err?' err':''); setTimeout(()=>el.className='toast',2200); }
+async function af(path,method='GET',body=null){
+  const o={method,headers:headers()}; if(body) o.body=JSON.stringify(body);
+  const r=await fetch(qs(API+path),o); return r.json();
+}
+function chk(id){ const e=$(id); return e?e.checked:false; }
+function sck(id,v){ const e=$(id); if(e) e.checked=!!v; }
+function sv(id,v){ const e=$(id); if(e) e.value=v; }
+function gn(id,d){ const v=parseInt($(id)?.value); return isNaN(v)?d:v; }
+function toLines(a){ return (a||[]).join('\n'); }
+function fromLines(v){ return (v||'').split('\n').map(s=>s.trim()).filter(Boolean); }
+function fromCsv(v){ return (v||'').replace(/，/g,',').split(',').map(s=>s.trim()).filter(Boolean); }
+
+let C={}, GL=[], editMode='', logD=[], logFlt='all', logTmr=null;
+const PAGE_TITLES={dashboard:'仪表盘',global:'群管设置',assistant:'主人助手',activity:'活跃统计',sessions:'验证状态',logs:'调试日志'};
+
+function openNav(){ $('eb-sidebar').classList.add('open'); $('eb-overlay').classList.add('show'); }
+function closeNav(){ $('eb-sidebar').classList.remove('open'); $('eb-overlay').classList.remove('show'); }
+function go(page){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.page===page));
+  closeNav();
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  $('page-'+page).classList.add('on');
+  $('page-title').textContent=PAGE_TITLES[page]||'';
+  if(page==='dashboard') updDash();
+  if(page==='global') popGrpSel();
+  if(page==='assistant') loadBlMgr();
+  if(page==='activity'){ popActSel(); loadAct(); }
+  if(page==='sessions') loadSess();
+  if(page==='logs'){ sck('l-db',C.debug); loadLogs(); startLR(); } else stopLR();
+}
+
+// ── config load/fill/collect ──
+async function loadCfg(){
+  try{
+    const d=await af('/config');
+    if(d.success){ C=d.config||{}; fillGlobal(); $('sDot').className='status-dot ok'; $('sTxt').textContent='已连接'; return true; }
+  }catch(e){}
+  $('sDot').className='status-dot'; $('sTxt').textContent='连接失败'; toast('加载配置失败',true); return false;
+}
+async function loadGrps(){ try{ const d=await af('/groups'); if(d.success) GL=d.groups||[]; }catch(e){} }
+
+function fillGlobal(){
+  const g=C.global||{};
+  sck('c-aa',g.autoApprove); sck('c-ev',g.enableVerify); sck('c-sbv',g.skipBotVerify);
+  sv('c-vt',g.verifyTimeout||300); sv('c-ma',g.maxAttempts||5); sv('c-mn',g.mathMin??1); sv('c-mx',g.mathMax??100);
+  sv('c-tu',(g.targetUsers||[]).join(','));
+  sv('c-vm',g.verifyMessage||'');
+  sv('c-wm',C.welcomeMessage||'');
+  sv('c-rk',toLines(C.rejectKeywords));
+  sv('c-fk',toLines(C.filterKeywords));
+  $('c-fp').value=String(C.filterPunishLevel||1);
+  sv('c-fb',C.filterBanMinutes||10);
+  sv('c-bl',toLines(C.blacklist)); sv('c-wl',toLines(C.whitelist));
+  sck('c-lb',C.leaveBlacklist);
+  sck('c-sd',C.spamDetect); sv('c-sw',C.spamWindow||10); sv('c-st',C.spamThreshold||10); sv('c-sb',C.spamBanMinutes||5);
+  const mf=C.msgFilter||{};
+  sck('c-mf-v',mf.blockVideo); sck('c-mf-i',mf.blockImage); sck('c-mf-r',mf.blockRecord);
+  sck('c-mf-f',mf.blockForward); sck('c-mf-l',mf.blockLightApp); sck('c-mf-c',mf.blockContact); sck('c-mf-u',mf.blockUrl);
+  renderQA(C.qaList||[]);
+  sv('d-owner',C.ownerQQs||'');
+  sck('a-gar',C.globalAntiRecall); sck('a-ger',C.globalEmojiReact);
+  $('bwHint').textContent='当前为全局配置：白名单/黑名单均为全局生效';
+  updDash();
+}
+
+function fillGroup(gid){
+  const gs=(C.groups||{})[gid]||{}, g=C.global||{};
+  sck('c-aa',gs.autoApprove??g.autoApprove); sck('c-ev',gs.enableVerify??g.enableVerify); sck('c-sbv',gs.skipBotVerify??g.skipBotVerify);
+  sv('c-vt',gs.verifyTimeout||g.verifyTimeout||300); sv('c-ma',gs.maxAttempts||g.maxAttempts||5);
+  sv('c-mn',gs.mathMin??g.mathMin??1); sv('c-mx',gs.mathMax??g.mathMax??100);
+  sv('c-tu',(gs.targetUsers||[]).join(','));
+  sv('c-vm',gs.verifyMessage??g.verifyMessage??'');
+  sv('c-wm',gs.welcomeMessage||'');
+  sv('c-rk',toLines(gs.rejectKeywords));
+  sv('c-fk',toLines(gs.filterKeywords));
+  $('c-fp').value=String(gs.filterPunishLevel||1);
+  sv('c-fb',gs.filterBanMinutes||10);
+  sv('c-bl',toLines(gs.groupBlacklist)); sv('c-wl','');
+  sck('c-lb',gs.leaveBlacklist);
+  sck('c-sd',gs.spamDetect); sv('c-sw',gs.spamWindow||10); sv('c-st',gs.spamThreshold||10); sv('c-sb',gs.spamBanMinutes||5);
+  const mf=gs.msgFilter||{};
+  sck('c-mf-v',mf.blockVideo); sck('c-mf-i',mf.blockImage); sck('c-mf-r',mf.blockRecord);
+  sck('c-mf-f',mf.blockForward); sck('c-mf-l',mf.blockLightApp); sck('c-mf-c',mf.blockContact); sck('c-mf-u',mf.blockUrl);
+  renderQA(gs.qaList||[]);
+  $('bwHint').textContent='当前为单群配置：黑名单对应本群 groupBlacklist；白名单请在全局配置编辑';
+}
+
+function collectGlobal(){
+  C.global={useGlobal:false,autoApprove:chk('c-aa'),enableVerify:chk('c-ev'),skipBotVerify:chk('c-sbv'),verifyTimeout:gn('c-vt',300),maxAttempts:gn('c-ma',5),mathMin:gn('c-mn',1),mathMax:gn('c-mx',100),verifyMessage:$('c-vm').value||'',targetUsers:fromCsv($('c-tu').value)};
+  C.welcomeMessage=$('c-wm').value||'';
+  C.rejectKeywords=fromLines($('c-rk').value);
+  C.filterKeywords=fromLines($('c-fk').value);
+  C.filterPunishLevel=parseInt($('c-fp').value)||1;
+  C.filterBanMinutes=gn('c-fb',10);
+  C.blacklist=fromLines($('c-bl').value); C.whitelist=fromLines($('c-wl').value);
+  C.leaveBlacklist=chk('c-lb');
+  C.spamDetect=chk('c-sd'); C.spamWindow=gn('c-sw',10); C.spamThreshold=gn('c-st',10); C.spamBanMinutes=gn('c-sb',5);
+  C.msgFilter={blockVideo:chk('c-mf-v'),blockImage:chk('c-mf-i'),blockRecord:chk('c-mf-r'),blockForward:chk('c-mf-f'),blockLightApp:chk('c-mf-l'),blockContact:chk('c-mf-c'),blockUrl:chk('c-mf-u')};
+  C.qaList=collectQA();
+}
+
+function collectGroup(gid){
+  C.groups=C.groups||{};
+  C.groups[gid]={
+    useGlobal:false,autoApprove:chk('c-aa'),enableVerify:chk('c-ev'),skipBotVerify:chk('c-sbv'),
+    verifyTimeout:gn('c-vt',300),maxAttempts:gn('c-ma',5),mathMin:gn('c-mn',1),mathMax:gn('c-mx',100),
+    verifyMessage:$('c-vm').value||'',
+    targetUsers:fromCsv($('c-tu').value),
+    groupBlacklist:fromLines($('c-bl').value),
+    leaveBlacklist:chk('c-lb'),
+    welcomeMessage:$('c-wm').value||'',
+    rejectKeywords:fromLines($('c-rk').value),
+    filterKeywords:fromLines($('c-fk').value),filterPunishLevel:parseInt($('c-fp').value)||1,filterBanMinutes:gn('c-fb',10),
+    spamDetect:chk('c-sd'),spamWindow:gn('c-sw',10),spamThreshold:gn('c-st',10),spamBanMinutes:gn('c-sb',5),
+    msgFilter:{blockVideo:chk('c-mf-v'),blockImage:chk('c-mf-i'),blockRecord:chk('c-mf-r'),blockForward:chk('c-mf-f'),blockLightApp:chk('c-mf-l'),blockContact:chk('c-mf-c'),blockUrl:chk('c-mf-u')},
+    qaList:collectQA(),
+  };
+}
+
+async function doSave(){
+  C.ownerQQs=$('d-owner').value||'';
+  C.globalAntiRecall=chk('a-gar'); C.globalEmojiReact=chk('a-ger');
+  if(editMode) collectGroup(editMode); else collectGlobal();
+  try{ const d=await af('/config','POST',C); if(d.success){ toast('配置已保存'); if(d.config) C=d.config; } else toast('保存失败: '+(d.error||''),true); }
+  catch(e){ toast('保存出错: '+e,true); }
+}
+
+async function reloadAll(){ await Promise.all([loadCfg(),loadGrps()]); editMode=''; toast('已重新加载'); }
+
+// ── dashboard ──
+function badge(id,on){ const e=$(id); if(!e) return; e.textContent=on?'已开启':'已关闭'; e.style.background=on?'var(--success-soft,#e4faf1)':'var(--bg3)'; e.style.color=on?'var(--success)':'var(--text3)'; }
+function updDash(){
+  $('d-gc').textContent=GL.length;
+  $('d-arc').textContent=(C.antiRecallGroups||[]).length;
+  $('d-erc').textContent=Object.keys(C.emojiReactGroups||{}).length;
+  const g=C.global||{};
+  badge('d-aa',g.autoApprove); badge('d-ev',g.enableVerify); badge('d-sd',C.spamDetect); badge('d-db',C.debug);
+  const ow=fromCsv(C.ownerQQs||''); $('ownerPv').textContent=ow.length?`当前主人：${ow.join('、')}（共${ow.length}人）`:'尚未设置主人（将回退框架 owner.ids）';
+  af('/sessions').then(d=>{ if(d.success) $('d-sc').textContent=(d.sessions||[]).length; }).catch(()=>{});
+}
+
+// ── group selector / per-group ──
+function popGrpSel(){ const s=$('grpSel'); const cv=s.value; s.innerHTML='<option value="">全局配置（默认）</option>'+GL.map(g=>`<option value="${g.group_id}">${esc(g.group_name||g.group_id)} (${g.group_id})</option>`).join(''); if(cv) s.value=cv; popPresetSel(); }
+function onGrp(){
+  if(editMode) collectGroup(editMode); else collectGlobal();
+  const gid=$('grpSel').value;
+  if(!gid){ editMode=''; $('grpUgWrap').style.display='none'; fillGlobal(); setFormDisabled(false); return; }
+  editMode=gid;
+  const gs=(C.groups||{})[gid];
+  const isGlobal=!gs||gs.useGlobal!==false;
+  $('grpUgWrap').style.display='flex';
+  sck('grp-ug',isGlobal);
+  if(isGlobal){ fillGlobal(); setFormDisabled(true); } else { fillGroup(gid); setFormDisabled(false); }
+}
+function onGrpToggle(){
+  const gid=editMode; if(!gid) return;
+  if(chk('grp-ug')){ C.groups=C.groups||{}; C.groups[gid]={useGlobal:true}; fillGlobal(); setFormDisabled(true); }
+  else { fillGroup(gid); setFormDisabled(false); }
+}
+function setFormDisabled(off){
+  document.querySelectorAll('#gt-join,#gt-filter,#gt-bw,#gt-spam,#gt-msgf,#gt-qa').forEach(area=>{
+    area.querySelectorAll('input,select,textarea,button').forEach(el=>{ el.disabled=off; });
+    area.style.opacity=off?'.5':'';
+  });
+}
+
+// ── sub tabs ──
+function gTab(id,btn){
+  btn.parentElement.querySelectorAll('.subtab').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+  document.querySelectorAll('#page-global .subpage').forEach(p=>p.classList.remove('on'));
+  $('gt-'+id).classList.add('on');
+}
+
+// ── QA ──
+let _qa=[];
+function renderQA(list){
+  _qa=list||[]; const c=$('qaList'); if(!c) return;
+  const mm={exact:'精确',contains:'模糊',regex:'正则'};
+  if(!_qa.length){ c.innerHTML='<p class="muted">暂无问答条目</p>'; return; }
+  c.innerHTML=_qa.map((q,i)=>`<div class="list-row"><div class="txt"><span class="tag">${mm[q.mode]||q.mode||'精确'}</span><span class="mono">${esc(q.keyword)}</span><span class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>${esc(q.reply)}</div><button class="btn btn-sm btn-danger" onclick="rmQA(${i})">删除</button></div>`).join('');
+}
+function collectQA(){ return _qa.slice(); }
+function addQA(){
+  const kw=$('qa-kw').value.trim(), rp=$('qa-rp').value.trim(), mode=$('qa-mode').value||'exact';
+  if(!kw||!rp){ toast('关键词和回复不能为空',true); return; }
+  _qa.push({mode,keyword:kw,reply:rp}); renderQA(_qa); $('qa-kw').value=''; $('qa-rp').value='';
+}
+function rmQA(i){ _qa.splice(i,1); renderQA(_qa); }
+
+// ── assistant: blacklist manager ──
+function loadBlMgr(){
+  const c=$('blMgr'); const list=C.blacklist||[];
+  if(!list.length){ c.innerHTML='<p class="muted">黑名单为空</p>'; return; }
+  c.innerHTML=list.map(qq=>`<div class="list-row"><div class="txt mono">${esc(qq)}</div><button class="btn btn-sm btn-danger" onclick="rmBl('${esc(qq)}')">移除</button></div>`).join('')+`<div class="muted" style="margin-top:6px">共 ${list.length} 人</div>`;
+}
+async function rmBl(qq){
+  C.blacklist=(C.blacklist||[]).filter(q=>q!==qq);
+  try{ const d=await af('/config','POST',C); if(d.success){ if(d.config) C=d.config; toast('已移除 '+qq); loadBlMgr(); } else toast('操作失败',true); }
+  catch(e){ toast('操作失败',true); }
+}
+
+// ── activity ──
+function popActSel(){ const s=$('actGrp'); const cv=s.value; s.innerHTML='<option value="">全部群</option>'+GL.map(g=>`<option value="${g.group_id}">${esc(g.group_name||g.group_id)} (${g.group_id})</option>`).join(''); if(cv) s.value=cv; }
+async function loadAct(){
+  const gid=$('actGrp')?.value||'';
+  try{
+    const d=await af(gid?`/activity?group_id=${encodeURIComponent(gid)}`:'/activity');
+    if(!d.success) return;
+    const st=d.activity||{}, td=new Date().toISOString().slice(0,10), es=[];
+    if(gid){ for(const [uid,v] of Object.entries(st)) es.push({gid,uid,...v}); }
+    else { for(const [g,users] of Object.entries(st)){ if(users&&typeof users==='object'){ for(const [uid,v] of Object.entries(users)) es.push({gid:g,uid,...v}); } } }
+    es.sort((a,b)=>(b.msgCount||0)-(a.msgCount||0));
+    $('a-tu').textContent=es.length;
+    $('a-tm').textContent=es.reduce((s,e)=>s+(e.msgCount||0),0);
+    const tde=es.filter(e=>e.todayDate===td);
+    $('a-tdm').textContent=tde.reduce((s,e)=>s+(e.todayCount||0),0);
+    $('a-tda').textContent=tde.filter(e=>e.todayCount>0).length;
+    const tb=$('actTb');
+    if(!es.length){ tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:12px">暂无数据</td></tr>'; return; }
+    tb.innerHTML=es.slice(0,100).map((e,i)=>{ const lt=e.lastActive?new Date(e.lastActive).toLocaleString('zh-CN'):'-'; return `<tr><td>${i+1}</td><td class="mono">${esc(e.uid)}</td><td class="mono">${esc(e.gid)}</td><td>${e.msgCount||0}</td><td>${e.todayDate===td?(e.todayCount||0):0}</td><td class="muted">${lt}</td></tr>`; }).join('');
+  }catch(e){ $('actTb').innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:12px">获取失败</td></tr>'; }
+}
+
+// ── sessions ──
+async function loadSess(){
+  const c=$('sessList');
+  try{
+    const d=await af('/sessions'); if(!d.success){ c.innerHTML='<p class="muted">获取失败</p>'; return; }
+    const l=d.sessions||[];
+    if(!l.length){ c.innerHTML='<p class="muted">当前没有进行中的验证</p>'; return; }
+    c.innerHTML=l.map(s=>{
+      let rem=''; if(s.createdAt){ const left=Math.ceil((s.createdAt/1000+ (C.global?.verifyTimeout||300))-Date.now()/1000); if(!isNaN(left)) rem=`<span class="tag">剩余 ${left>0?left:0}s</span>`; }
+      return `<div class="list-row"><div class="txt"><b>用户 ${esc(s.userId)}</b> <span class="muted">群 ${esc(s.groupId)}</span><div class="muted" style="margin-top:2px">题目: ${esc(s.expression)} | 已尝试 ${s.attempts}/${s.maxAttempts}</div></div>${rem}</div>`;
+    }).join('');
+  }catch(e){ c.innerHTML='<p class="muted">获取失败</p>'; }
+}
+
+// ── logs ──
+async function loadLogs(){ try{ const d=await af('/logs'); if(d.success){ logD=d.logs||[]; rndLogs(); } }catch(e){ $('logC').innerHTML='<p style="color:#ff8aa5">获取失败</p>'; } }
+function rndLogs(){
+  const c=$('logC'), f=logFlt==='all'?logD:logD.filter(l=>(l.level||'').toLowerCase()===logFlt);
+  $('logCnt').textContent=`${f.length}/${logD.length} 条`;
+  if(!f.length){ c.innerHTML='<p style="color:#64748b">暂无日志</p>'; return; }
+  c.innerHTML=f.map(l=>{ const lv=(l.level||'info').toLowerCase(); return `<div class="log-e log-${lv}"><span class="lt">${esc(l.time)}</span> <span class="ll">[${esc((l.level||'').toUpperCase())}]</span> <span class="lm">${esc(l.message)}</span></div>`; }).join('');
+  if($('logAS')?.checked) c.scrollTop=c.scrollHeight;
+}
+function fltLog(lv,btn){ logFlt=lv; btn.parentElement.querySelectorAll('.subtab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); rndLogs(); }
+async function clrLogs(){ try{ await af('/logs/clear','POST'); logD=[]; rndLogs(); toast('日志已清空'); }catch(e){ toast('清空失败',true); } }
+function tglDbg(){ C.debug=chk('l-db'); af('/config','POST',C).then(d=>{ if(d.success&&d.config) C=d.config; toast(C.debug?'调试模式已开启':'调试模式已关闭'); updDash(); }).catch(()=>{}); }
+function startLR(){ if(logTmr) return; logTmr=setInterval(loadLogs,3000); }
+function stopLR(){ if(logTmr){ clearInterval(logTmr); logTmr=null; } }
+
+// ── presets ──
+function popPresetSel(){ const s=$('presetSel'); if(!s) return; const presets=C.presets||[]; s.innerHTML='<option value="">应用预设...</option>'+presets.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join(''); }
+function showSavePreset(){ $('presetSaveRow').style.display='flex'; $('presetMgrRow').style.display='none'; $('presetName').value=''; $('presetName').focus(); }
+async function doSavePreset(){
+  const name=$('presetName').value.trim(); if(!name){ toast('请输入预设名称',true); return; }
+  if(editMode) collectGroup(editMode); else collectGlobal();
+  const settings=editMode?JSON.parse(JSON.stringify(C.groups[editMode]||C.global)):JSON.parse(JSON.stringify(C.global));
+  const gf=editMode?undefined:{
+    filterKeywords:(C.filterKeywords||[]).slice(),filterPunishLevel:C.filterPunishLevel||1,filterBanMinutes:C.filterBanMinutes||10,
+    blacklist:(C.blacklist||[]).slice(),whitelist:(C.whitelist||[]).slice(),leaveBlacklist:C.leaveBlacklist||false,
+    spamDetect:C.spamDetect||false,spamWindow:C.spamWindow||10,spamThreshold:C.spamThreshold||10,spamBanMinutes:C.spamBanMinutes||5,
+    msgFilter:C.msgFilter?{...C.msgFilter}:{},welcomeMessage:C.welcomeMessage||'',qaList:(C.qaList||[]).slice(),rejectKeywords:(C.rejectKeywords||[]).slice(),
+  };
+  C.presets=C.presets||[]; C.presets.push({name,settings,globalFields:gf});
+  try{ const d=await af('/presets','POST',{presets:C.presets}); if(d.success){ toast('预设已保存: '+name); popPresetSel(); $('presetSaveRow').style.display='none'; } else toast('保存失败',true); }
+  catch(e){ toast('保存失败',true); }
+}
+function applyPreset(){
+  const idx=parseInt($('presetSel').value); if(isNaN(idx)){ toast('请选择一个预设',true); return; }
+  const preset=(C.presets||[])[idx]; if(!preset){ toast('预设不存在',true); return; }
+  if(editMode){ C.groups=C.groups||{}; C.groups[editMode]={...JSON.parse(JSON.stringify(preset.settings)),useGlobal:false}; sck('grp-ug',false); fillGroup(editMode); setFormDisabled(false); }
+  else {
+    C.global={...JSON.parse(JSON.stringify(preset.settings)),useGlobal:false};
+    const gf=preset.globalFields;
+    if(gf){ for(const k of ['filterKeywords','filterPunishLevel','filterBanMinutes','leaveBlacklist','spamDetect','spamWindow','spamThreshold','spamBanMinutes','msgFilter','welcomeMessage','qaList','rejectKeywords','blacklist','whitelist']){ if(gf[k]!==undefined) C[k]=gf[k]; } }
+    fillGlobal();
+  }
+  toast('已应用预设: '+preset.name);
+}
+function showManagePresets(){ $('presetMgrRow').style.display='block'; $('presetSaveRow').style.display='none'; renderPresetMgr(); }
+function renderPresetMgr(){
+  const c=$('presetMgrList'); const presets=C.presets||[];
+  if(!presets.length){ c.innerHTML='<p class="muted">暂无预设</p>'; return; }
+  c.innerHTML=presets.map((p,i)=>`<div class="list-row"><div class="txt">${esc(p.name)}</div><button class="btn btn-sm btn-danger" onclick="delPreset(${i})">删除</button></div>`).join('')+`<div style="margin-top:6px"><button class="btn btn-sm" onclick="document.getElementById('presetMgrRow').style.display='none'">关闭</button></div>`;
+}
+async function delPreset(i){
+  const presets=C.presets||[]; if(i<0||i>=presets.length) return;
+  const name=presets[i].name; presets.splice(i,1); C.presets=presets;
+  try{ const d=await af('/presets','POST',{presets:C.presets}); if(d.success){ toast('已删除预设: '+name); popPresetSel(); renderPresetMgr(); } else toast('删除失败',true); }
+  catch(e){ toast('删除失败',true); }
+}
+
+// ── init ──
+async function init(){
+  await Promise.all([loadCfg(),loadGrps()]);
+  popGrpSel(); updDash();
+  $('d-owner').addEventListener('input',function(){ C.ownerQQs=this.value; const ow=fromCsv(this.value); $('ownerPv').textContent=ow.length?`当前主人：${ow.join('、')}（共${ow.length}人）`:'尚未设置主人（将回退框架 owner.ids）'; });
+}
+init();
+</script>
+</body>
+</html>
