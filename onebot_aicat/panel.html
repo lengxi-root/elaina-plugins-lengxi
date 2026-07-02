@@ -362,6 +362,22 @@
           <div class="field"><label>随机回复概率 (%)</label><input type="number" id="random_reply_chance" min="0" max="100" step="0.1"><div class="hint">例如填 1 表示每条未触发的消息有 1% 概率被 AI 回复; 0 表示关闭</div></div>
         </div>
         <div class="card">
+          <div class="card-title">发包 / 取包</div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-title">允许公开取包指令</div><div class="toggle-desc">开启后普通成员也可用「取 / 取&lt;seq&gt; / 取上一条」取消息 protobuf; 关闭则仅主人可用</div></div>
+            <label class="toggle-switch"><input type="checkbox" id="allow_public_packet"><span class="toggle-track"></span></label>
+          </div>
+          <div class="hint" style="margin-top:8px;line-height:1.7">
+            主人专用指令 (无需前缀):<br>
+            · <code>api {json}</code> — 调用任意 OneBot 动作, 支持 <code>{"action":..,"params":..}</code> 或首行动作名+JSON<br>
+            · <code>pb {json}</code> — 以 PbSendMsg 发送一个 elem (字段号 dict)<br>
+            · <code>pbl {json}</code> — 发送长消息 (合并转发底层协议)<br>
+            · <code>raw &lt;cmd&gt; {json}</code> — 对指定协议 cmd 发送数据包并回显响应<br>
+            · <code>模式取1 / 模式取2</code> — 切换取包结果展示为平铺 / 嵌套<br>
+            取包指令 (可公开): <code>取</code> / <code>取&lt;seq&gt;</code> / <code>取上一条</code>
+          </div>
+        </div>
+        <div class="card">
           <div class="card-title">人设</div>
           <div class="field">
             <label>机器人名字 bot_name</label>
@@ -441,7 +457,7 @@ function toast(msg, err) {
 }
 
 const BOOLS = ['enabled','allow_at_trigger','send_confirm_message','safety_filter','enable_tools','auto_switch',
-  'long_text_forward','random_reply'];
+  'long_text_forward','random_reply','allow_public_packet'];
 const FIELDS = ['temperature','reasoning_effort','max_rounds','request_timeout',
   'health_check_interval','bot_name','personality','system_prompt','prefix','confirm_message','max_context_turns',
   'context_expire_seconds','owner_qqs','forward_threshold','random_reply_chance'];

@@ -16,7 +16,7 @@ from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
 from .app import agent as agentmod
-from .app import aiconfig, modelmgr, safety, webpanel
+from .app import aiconfig, modelmgr, packet, safety, webpanel
 from .app.context import ContextManager
 
 __plugin_meta__ = {
@@ -264,6 +264,23 @@ async def _maybe_random_reply(event):
         return
     instruction = _build_random_instruction(event, content)
     await _run_and_reply(event, instruction, is_random=True, context_text=content)
+
+
+# 发包/取包指令: api/pb/pbl/raw/模式取 (主人) 与 取/取<seq>/取上一条 (可配置公开)。
+# 优先级高于 AI 对话且 block=True, 命中即拦截, 不再进入 AI 逻辑。
+_PACKET_TRIGGER = (r'^\s*(?:pbl\s*\{|pb\s*\{|api\s*\{|api\s+\w|raw\s+\S|模式取[12]\s*$|'
+                   r'取(?:\s*\d+|上一条)?\s*$)')
+
+
+@handler(_PACKET_TRIGGER, name='aicat_packet', desc='发包/取包: api/pb/pbl/raw/取/取上一条',
+         priority=50, event_types=['message'], block=True)
+async def handle_packet(event, match=None):
+    if not aiconfig.enabled():
+        return
+    if aiconfig.is_owner(str(event.user_id)):
+        await packet.handle_owner_commands(event)
+    elif aiconfig.allow_public_packet():
+        await packet.handle_public_commands(event)
 
 
 @handler(r'[\s\S]+', name='aicat', desc='猫娘 AI 对话: /<内容> 或 @机器人 <内容>',

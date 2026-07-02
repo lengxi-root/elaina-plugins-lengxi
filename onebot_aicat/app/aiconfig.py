@@ -50,6 +50,8 @@ DEFAULTS = {
     'context_expire_seconds': 600,
     # 权限
     'owner_qqs': '',
+    # 发包/取包: 是否允许非主人使用公开取包指令 (取 / 取<seq> / 取上一条)
+    'allow_public_packet': True,
 }
 
 # 允许面板写入并持久化的字段 (api_key 单独处理)
@@ -61,10 +63,11 @@ _WRITABLE = (
     'confirm_message', 'safety_filter', 'enable_tools', 'max_context_turns',
     'context_expire_seconds', 'owner_qqs',
     'long_text_forward', 'forward_threshold', 'random_reply', 'random_reply_chance',
+    'allow_public_packet',
 )
 
 _BOOL_FIELDS = ('enabled', 'allow_at_trigger', 'send_confirm_message', 'safety_filter', 'enable_tools', 'auto_switch',
-                'long_text_forward', 'random_reply')
+                'long_text_forward', 'random_reply', 'allow_public_packet')
 _INT_FIELDS = ('max_rounds', 'request_timeout', 'max_context_turns', 'context_expire_seconds', 'health_check_interval',
                'forward_threshold')
 _FLOAT_FIELDS = ('temperature', 'random_reply_chance')
@@ -416,6 +419,10 @@ def random_reply() -> bool:
     return _get_bool('random_reply')
 
 
+def allow_public_packet() -> bool:
+    return _get_bool('allow_public_packet')
+
+
 def random_reply_chance() -> float:
     """随机回复概率 (0-100, 单位 %); 例如 1 表示 1% 概率触发。"""
     try:
@@ -488,6 +495,7 @@ def public_config() -> dict:
         'forward_threshold': forward_threshold(),
         'random_reply': random_reply(),
         'random_reply_chance': random_reply_chance(),
+        'allow_public_packet': allow_public_packet(),
         'max_context_turns': max_context_turns(),
         'context_expire_seconds': context_expire_seconds(),
         'owner_qqs': str(get('owner_qqs') or ''),
