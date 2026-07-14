@@ -60,6 +60,8 @@ DEFAULT_TEMPLATE = (
 DEFAULT_INACTIVE_DAYS = 3
 MAX_REPLY_DELAY = 300       # 延迟回复上限 (秒)
 PAGE_SIZE = 1000            # 群列表 / 发送记录分页每页条数
+SCAN_BATCH = 500            # 扫描框架群成员表每批行数
+SCAN_BATCH_PAUSE = 0.05     # 每批之间让出事件循环的间隔 (秒)
 
 _DEFAULT_CONFIG = {
     'monitor_enabled': '0',
@@ -216,6 +218,36 @@ async def _list_pending(limit: int = PAGE_SIZE, offset: int = 0) -> list:
 async def _count_pending() -> int:
     async with _conn_lock:
         return _ensure_db().execute('SELECT COUNT(*) AS c FROM pending_groups').fetchone()['c']
+
+
+def _add_pending_batch_sync(items: dict) -> int:
+    """批量新增/更新待发群 (单事务); 返回新增数; 调用方须持有 _conn_lock。"""
+    conn = _ensure_db()
+    now = _now()
+    gids = list(items)
+    existing: set = set()
+    for i in range(0, len(gids), 500):
+        chunk = gids[i:i + 500]
+        ph = ','.join('?' * len(chunk))
+        existing.update(
+            r['group_id'] for r in conn.execute(
+                f'SELECT group_id FROM pending_groups WHERE group_id IN ({ph})', chunk
+            ).fetchall()
+        )
+    conn.executemany(
+        'INSERT INTO pending_groups (group_id, last_active, added_at) VALUES (?, ?, ?) '
+        'ON CONFLICT(group_id) DO UPDATE SET last_active=excluded.last_active',
+        [(gid, la or '', now) for gid, la in items.items()],
+    )
+    conn.commit()
+    return len(gids) - len(existing)
+
+
+async def _add_pending_batch(items: dict) -> int:
+    if not items:
+        return 0
+    async with _conn_lock:
+        return await asyncio.to_thread(_add_pending_batch_sync, items)
 
 
 # ---- sent records ----
@@ -434,42 +466,70 @@ def _is_inactive(last_active: str, days: int, today) -> bool:
     return (today - d).days >= days
 
 
-def _scan_inactive(days: int) -> tuple[dict, int]:
-    """扫描所有机器人群成员表, 返回 ({gid: last_active}, 扫描群总数)。"""
+def _scan_batch(ls, limit: int, offset: int, days: int, today) -> tuple[dict, int]:
+    """读取并解析一批 groups_users 行 (在工作线程中执行), 返回 ({gid: last_active}, 本批行数)。"""
+    rows = ls.query_data(
+        'SELECT group_id, users FROM groups_users LIMIT ? OFFSET ?',
+        (limit, offset),
+    ) or []
+    inactive: dict = {}
+    for r in rows:
+        gid = r.get('group_id') or ''
+        if not gid:
+            continue
+        la = _group_last_active(r.get('users'))
+        if _is_inactive(la, days, today):
+            inactive[gid] = la
+    return inactive, len(rows)
+
+
+async def _scan_inactive(days: int) -> tuple[dict, int]:
+    """分批扫描所有机器人群成员表 (每批在线程中执行, 批间让出事件循环),
+    避免一次性拉取全表阻塞框架; 返回 ({gid: last_active}, 扫描群总数)。"""
     today = datetime.now().date()
     inactive: dict = {}
     total = 0
     for ls in _iter_log_services():
-        try:
-            rows = ls.query_data('SELECT group_id, users FROM groups_users')
-        except Exception as e:
-            log.warning(f'读取 groups_users 失败: {e}')
-            continue
-        for r in rows or []:
-            gid = r.get('group_id') or ''
-            if not gid:
-                continue
-            total += 1
-            la = _group_last_active(r.get('users'))
-            if _is_inactive(la, days, today):
-                inactive[gid] = la
+        offset = 0
+        while True:
+            try:
+                batch, n = await asyncio.to_thread(_scan_batch, ls, SCAN_BATCH, offset, days, today)
+            except Exception as e:
+                log.warning(f'读取 groups_users 失败: {e}')
+                break
+            inactive.update(batch)
+            total += n
+            if n < SCAN_BATCH:
+                break
+            offset += SCAN_BATCH
+            await asyncio.sleep(SCAN_BATCH_PAUSE)
     return inactive, total
 
 
-def _list_db_groups(limit: int = PAGE_SIZE, offset: int = 0) -> tuple[list, int]:
-    """从框架 groups_users 表中获取所有群 ID (分页), 返回 (群列表, 总数)。"""
+async def _list_db_groups(limit: int = PAGE_SIZE, offset: int = 0) -> tuple[list, int]:
+    """从框架 groups_users 表中分批获取所有群 ID (分页), 返回 (群列表, 总数)。"""
     all_groups: list[str] = []
     seen: set[str] = set()
     for ls in _iter_log_services():
-        try:
-            rows = ls.query_data('SELECT group_id FROM groups_users')
-        except Exception:
-            continue
-        for r in rows or []:
-            gid = r.get('group_id') or ''
-            if gid and gid not in seen:
-                seen.add(gid)
-                all_groups.append(gid)
+        batch_offset = 0
+        while True:
+            try:
+                rows = await asyncio.to_thread(
+                    ls.query_data,
+                    'SELECT group_id FROM groups_users LIMIT ? OFFSET ?',
+                    (SCAN_BATCH, batch_offset),
+                ) or []
+            except Exception:
+                break
+            for r in rows:
+                gid = r.get('group_id') or ''
+                if gid and gid not in seen:
+                    seen.add(gid)
+                    all_groups.append(gid)
+            if len(rows) < SCAN_BATCH:
+                break
+            batch_offset += SCAN_BATCH
+            await asyncio.sleep(SCAN_BATCH_PAUSE)
     total = len(all_groups)
     page_data = all_groups[offset:offset + limit]
     return page_data, total
@@ -496,18 +556,22 @@ def _get_group_member_ids(group_id: str, limit: int = 3) -> list[str]:
     return []
 
 
-async def _run_extract(days: int) -> dict:
-    inactive, total = await asyncio.to_thread(_scan_inactive, days)
-    added = 0
-    for gid, la in inactive.items():
-        if await _add_pending(gid, la):
-            added += 1
-    return {
-        'total_groups': total,
-        'inactive': len(inactive),
-        'added': added,
-        'pending_total': await _count_pending(),
-    }
+_extract_lock = asyncio.Lock()
+
+
+async def _run_extract(days: int) -> dict | None:
+    """执行提取; 若已有提取任务在跑则返回 None (避免重复扫描叠加拖垮框架)。"""
+    if _extract_lock.locked():
+        return None
+    async with _extract_lock:
+        inactive, total = await _scan_inactive(days)
+        added = await _add_pending_batch(inactive)
+        return {
+            'total_groups': total,
+            'inactive': len(inactive),
+            'added': added,
+            'pending_total': await _count_pending(),
+        }
 
 
 # ==================== 发送 ====================
@@ -698,6 +762,8 @@ async def _delayed_member_reply(event, content: str, delay: int, buttons=None, q
 async def cmd_extract(event, match):
     days = int(await _get_cfg('inactive_days', str(DEFAULT_INACTIVE_DAYS)) or DEFAULT_INACTIVE_DAYS)
     result = await _run_extract(days)
+    if result is None:
+        return await event.reply('⏳ 已有提取任务正在进行中, 请稍后再试')
     await event.reply(
         f'📋 提取完成 (阈值: {days} 天内无发言)\n'
         f'扫描群数: {result["total_groups"]}\n'
@@ -997,6 +1063,8 @@ async def api_config(request):
 async def api_extract(request):
     days = int(await _get_cfg('inactive_days', str(DEFAULT_INACTIVE_DAYS)) or DEFAULT_INACTIVE_DAYS)
     result = await _run_extract(days)
+    if result is None:
+        return _json({'success': False, 'message': '已有提取任务正在进行中, 请稍后再试'}, status=409)
     return _json({'success': True, 'data': result, 'message': f'提取完成, 新增 {result["added"]} 个群'})
 
 
@@ -1118,7 +1186,7 @@ async def api_whitelist_delete(request):
 async def api_db_groups(request):
     """从框架数据库中获取所有已知群 (分页), 供白名单选择使用。"""
     page = _page_param(request)
-    data, total = await asyncio.to_thread(_list_db_groups, PAGE_SIZE, (page - 1) * PAGE_SIZE)
+    data, total = await _list_db_groups(PAGE_SIZE, (page - 1) * PAGE_SIZE)
     return _json({'success': True, 'data': data, 'total': total, 'page': page, 'page_size': PAGE_SIZE})
 
 
