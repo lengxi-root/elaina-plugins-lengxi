@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import json
+import time
 
 from core.base.logger import PLUGIN, get_logger
 
@@ -11,8 +12,26 @@ from . import store
 log = get_logger(PLUGIN, '主动推送')
 
 _push_lock = asyncio.Lock()
+_job_task = None
+_job_status = {
+    'state': 'idle',
+    'mode': '',
+    'total': 0,
+    'done': 0,
+    'success': 0,
+    'failed_count': 0,
+    'skipped': 0,
+    'failed': [],
+    'error_stats': [],
+    'message': '',
+    '_started_at': 0.0,
+    '_finished_at': 0.0,
+}
 
 _RAW_MAX = 1000
+_MAX_ERROR_TYPES = 100
+_INVALID_PRIVATE_USER_CODES = {'11255', '40054004'}
+_PERMANENT_SKIP_PRIVATE_USER_CODES = {'11500', '40054013'}
 _MODES = {'group', 'private'}
 
 
@@ -117,6 +136,22 @@ async def _send(bot, mode, target_id, content, buttons):
     return await bot.sender.send_to_user(target_id, content, buttons=buttons, skip_suffix=True)
 
 
+async def _remove_invalid_private_user(bot, mode, target_id, data):
+    if (
+        mode != 'private'
+        or not isinstance(data, dict)
+        or str(data.get('code')) not in _INVALID_PRIVATE_USER_CODES
+    ):
+        return
+    try:
+        await bot.log_service.db_execute(
+            'DELETE FROM members WHERE user_id=?',
+            (target_id,),
+        )
+    except Exception as e:
+        log.warning(f'移除失效私聊用户 {target_id} 失败: {e}')
+
+
 async def send_to_test_target(mode, content, source='web'):
     """发送到当前模式配置的测试目标，测试发送不写入已推送记录。"""
     if mode not in _MODES:
@@ -137,14 +172,155 @@ async def send_to_test_target(mode, content, source='web'):
     if ok:
         target_label = '测试群' if mode == 'group' else '测试用户'
         return True, f'已发送到{target_label} {target_id}'
+    await _remove_invalid_private_user(bot, mode, target_id, data)
     msg = data.get('message', str(data)) if isinstance(data, dict) else str(data)
     return False, f'发送失败: {msg}'
 
 
-async def broadcast(mode, content, source='web', progress=None, continue_only=False):
-    """向全部目标逐个发送主动消息。
+def get_broadcast_status():
+    started_at = _job_status.get('_started_at', 0.0)
+    finished_at = _job_status.get('_finished_at', 0.0)
+    elapsed = max((finished_at or time.monotonic()) - started_at, 0.0) if started_at else 0.0
+    done = _job_status.get('done', 0)
+    per_second = done / elapsed if elapsed else 0.0
+    status = {
+        **_job_status,
+        'failed': list(_job_status.get('failed') or []),
+        'error_stats': [dict(item) for item in _job_status.get('error_stats') or []],
+        'elapsed': round(elapsed, 1),
+        'average_per_second': round(per_second, 2),
+        'average_per_minute': round(per_second * 60, 2),
+    }
+    status.pop('_started_at', None)
+    status.pop('_finished_at', None)
+    return status
 
-    progress: 可选回调 async fn(done, total, ok_count), 每发 20 个目标通知一次。
+
+def start_broadcast(mode, content, source='web', continue_only=False):
+    global _job_task
+    if mode not in _MODES:
+        return {'ok': False, 'message': '未知推送模式'}
+    if (_job_task is not None and not _job_task.done()) or _push_lock.locked():
+        return {'ok': False, 'message': '已有推送任务进行中, 请稍后再试'}
+
+    error_counts = {}
+    _job_status.update(
+        {
+            'state': 'queued',
+            'mode': mode,
+            'total': 0,
+            'done': 0,
+            'success': 0,
+            'failed_count': 0,
+            'skipped': 0,
+            'failed': [],
+            'error_stats': [],
+            'message': '推送任务已进入后台队列',
+            '_started_at': time.monotonic(),
+            '_finished_at': 0.0,
+        }
+    )
+
+    async def progress(done, total, ok_count):
+        _job_status.update(
+            {
+                'state': 'running',
+                'total': total,
+                'done': done,
+                'success': ok_count,
+                'failed_count': done - ok_count,
+            }
+        )
+
+    async def failure(data):
+        if isinstance(data, dict):
+            code = str(data.get('code') or '')
+            message = str(data.get('message') or data)[:100]
+        else:
+            code = ''
+            message = str(data)[:100]
+        key = (code, message)
+        if key not in error_counts and len(error_counts) >= _MAX_ERROR_TYPES:
+            key = ('other', '其他错误')
+        error_counts[key] = error_counts.get(key, 0) + 1
+        _job_status['error_stats'] = [
+            {'code': item_code, 'message': item_message, 'count': count}
+            for (item_code, item_message), count in sorted(
+                error_counts.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        ]
+
+    async def run():
+        try:
+            result = await broadcast(
+                mode,
+                content,
+                source=source,
+                progress=progress,
+                continue_only=continue_only,
+                progress_every=1,
+                failure=failure,
+            )
+            _job_status['_finished_at'] = time.monotonic()
+            _job_status.update(
+                {
+                    'state': 'completed' if result.get('ok') else 'failed',
+                    'total': result.get('total', 0),
+                    'done': result.get('total', 0) if result.get('ok') else _job_status['done'],
+                    'success': result.get('success', 0),
+                    'failed_count': result.get('failed_count', 0),
+                    'skipped': result.get('skipped', 0),
+                    'failed': result.get('failed', []),
+                    'message': result.get('message', '推送结束'),
+                }
+            )
+        except asyncio.CancelledError:
+            _job_status.update(
+                {
+                    'state': 'cancelled',
+                    'message': '推送任务已取消',
+                    '_finished_at': time.monotonic(),
+                }
+            )
+            raise
+        except Exception as e:
+            log.exception(f'后台推送任务异常: {e}')
+            _job_status.update(
+                {
+                    'state': 'failed',
+                    'message': f'推送异常: {e}',
+                    '_finished_at': time.monotonic(),
+                }
+            )
+
+    _job_task = asyncio.create_task(run(), name=f'broadcast-{mode}')
+    return {'ok': True, 'message': '推送任务已在后台启动'}
+
+
+async def stop_broadcast():
+    global _job_task
+    task = _job_task
+    if task is not None and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    _job_task = None
+
+
+async def broadcast(
+    mode,
+    content,
+    source='web',
+    progress=None,
+    continue_only=False,
+    progress_every=20,
+    failure=None,
+):
+    """向全部目标异步并发发送主动消息。
+
+    progress: 可选回调 async fn(done, total, ok_count)。
     """
     if mode not in _MODES:
         return {'ok': False, 'message': '未知推送模式'}
@@ -173,54 +349,117 @@ async def broadcast(mode, content, source='web', progress=None, continue_only=Fa
                     'message': f'没有待推送的{target_label}, 已推送记录共 {skipped} 条',
                     'total': 0,
                     'success': 0,
+                    'failed_count': 0,
                     'skipped': skipped,
                     'failed': [],
                 }
-        interval = max(float(cfg.get('interval', 0.5) or 0), 0.1)
+        interval = min(max(float(cfg.get('interval', 0.5) or 0), 0.1), 10)
+        concurrency = min(max(int(cfg.get('concurrency', 20) or 1), 1), 100)
+        progress_every = max(int(progress_every or 1), 1)
         buttons = build_button_rows(cfg.get('buttons'))
         ok_count = 0
         failed = []
-        for i, target_id in enumerate(targets, 1):
-            try:
-                ok, data, _payload = await _send(bot, mode, target_id, content, buttons)
-            except Exception as e:
-                ok, data = False, {'message': str(e)}
-            if ok:
+        completed = 0
+        fatal_error = ''
+        target_iter = iter(targets)
+        rate_lock = asyncio.Lock()
+        next_launch = asyncio.get_running_loop().time()
+
+        async def wait_launch_slot():
+            nonlocal next_launch
+            async with rate_lock:
+                now = asyncio.get_running_loop().time()
+                wait = next_launch - now
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    now = asyncio.get_running_loop().time()
+                next_launch = max(next_launch + interval, now)
+
+        async def worker():
+            nonlocal ok_count, completed, fatal_error
+            while not fatal_error:
+                target_id = next(target_iter, None)
+                if target_id is None:
+                    return
+                await wait_launch_slot()
+                if fatal_error:
+                    return
                 try:
-                    await store.aadd_sent_target(
-                        resolved_appid,
-                        mode,
-                        target_id,
-                        content,
-                        source,
-                        _raw(data),
-                    )
+                    ok, data, _payload = await _send(bot, mode, target_id, content, buttons)
                 except Exception as e:
-                    log.error(f'目标 {target_id} 已送达但写入推送记录失败: {e}')
-                    return {
-                        'ok': False,
-                        'message': f'目标 {target_id} 已送达但记录失败, 已停止后续推送',
-                        'total': len(targets),
-                        'success': ok_count,
-                        'skipped': skipped,
-                        'failed': failed,
-                    }
-                ok_count += 1
-            else:
-                msg = data.get('message', str(data)) if isinstance(data, dict) else str(data)
-                failed.append({'target_id': target_id, 'message': str(msg)[:100]})
-            if progress and i % 20 == 0:
+                    ok, data = False, {'message': str(e)}
+                record_error = ''
+                if ok:
+                    try:
+                        await store.aadd_sent_target(
+                            resolved_appid,
+                            mode,
+                            target_id,
+                            content,
+                            source,
+                            _raw(data),
+                        )
+                    except Exception as e:
+                        log.error(f'目标 {target_id} 已送达但写入推送记录失败: {e}')
+                        fatal_error = f'目标 {target_id} 已送达但记录失败, 已停止后续推送'
+                        return
+                    ok_count += 1
+                else:
+                    msg = data.get('message', str(data)) if isinstance(data, dict) else str(data)
+                    await _remove_invalid_private_user(bot, mode, target_id, data)
+                    code = str(data.get('code')) if isinstance(data, dict) else ''
+                    if mode == 'private' and code in _PERMANENT_SKIP_PRIVATE_USER_CODES:
+                        try:
+                            await store.aadd_sent_target(
+                                resolved_appid,
+                                mode,
+                                target_id,
+                                content,
+                                source,
+                                _raw(data),
+                            )
+                        except Exception as e:
+                            log.error(f'目标 {target_id} 跳过记录写入失败: {e}')
+                            record_error = f'目标 {target_id} 跳过记录失败, 已停止后续推送'
+                    if failure:
+                        with contextlib.suppress(Exception):
+                            await failure(data)
+                    if len(failed) < 20:
+                        failed.append({'target_id': target_id, 'message': str(msg)[:100]})
+                completed += 1
+                if progress and (completed % progress_every == 0 or completed == len(targets)):
+                    with contextlib.suppress(Exception):
+                        await progress(completed, len(targets), ok_count)
+                if not ok and record_error:
+                    fatal_error = record_error
+                    return
+
+        if progress:
+            with contextlib.suppress(Exception):
+                await progress(0, len(targets), 0)
+        await asyncio.gather(*(worker() for _ in range(min(concurrency, len(targets)))))
+        if fatal_error:
+            if progress:
                 with contextlib.suppress(Exception):
-                    await progress(i, len(targets), ok_count)
-            if i < len(targets):
-                await asyncio.sleep(interval)
+                    await progress(completed, len(targets), ok_count)
+            return {
+                'ok': False,
+                'message': fatal_error,
+                'total': len(targets),
+                'success': ok_count,
+                'failed_count': completed - ok_count,
+                'skipped': skipped,
+                'failed': failed[:20],
+            }
         action = '继续推送' if continue_only else '全量推送'
-        log.info(f'{target_label}{action}完成: 成功 {ok_count}/{len(targets)}, 跳过 {skipped}')
+        failed_count = completed - ok_count
+        log.info(f'{target_label}{action}完成: 成功 {ok_count}, 失败 {failed_count}, 跳过 {skipped}')
         return {
             'ok': True,
-            'message': f'推送完成: 成功 {ok_count}/{len(targets)}' + (f', 跳过 {skipped}' if skipped else ''),
+            'message': f'推送完成: 成功 {ok_count}, 失败 {failed_count}' + (f', 跳过 {skipped}' if skipped else ''),
             'total': len(targets),
             'success': ok_count,
+            'failed_count': failed_count,
             'skipped': skipped,
             'failed': failed[:20],
         }

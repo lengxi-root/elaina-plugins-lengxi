@@ -90,6 +90,11 @@ async def api_save_config(request):
             updates['interval'] = min(max(float(data['interval']), 0.1), 10)
         except (TypeError, ValueError):
             return _fail('发送间隔必须为数字')
+    if 'concurrency' in data:
+        try:
+            updates['concurrency'] = min(max(int(data['concurrency']), 1), 100)
+        except (TypeError, ValueError):
+            return _fail('并发数必须为整数')
     if 'buttons' in data:
         btns = data['buttons']
         if btns in (None, ''):
@@ -123,7 +128,7 @@ async def api_broadcast(request):
     content = str(body.get('content') or '').strip()
     if not content:
         return _fail('消息内容不能为空')
-    result = await push.broadcast(
+    result = push.start_broadcast(
         mode,
         content,
         source='web',
@@ -131,15 +136,11 @@ async def api_broadcast(request):
     )
     if not result.get('ok'):
         return _fail(result.get('message', '推送失败'))
-    return _ok(
-        {
-            'total': result.get('total', 0),
-            'success': result.get('success', 0),
-            'skipped': result.get('skipped', 0),
-            'failed': result.get('failed', []),
-        },
-        message=result.get('message', ''),
-    )
+    return _ok(push.get_broadcast_status(), message=result.get('message', ''))
+
+
+async def api_broadcast_status(request):
+    return _ok(push.get_broadcast_status())
 
 
 async def api_clear_records(request):
@@ -160,4 +161,5 @@ def register_routes():
     register_route('POST', API_PREFIX + '/save', api_save_config)
     register_route('POST', API_PREFIX + '/test', api_test_send)
     register_route('POST', API_PREFIX + '/broadcast', api_broadcast)
+    register_route('GET', API_PREFIX + '/broadcast/status', api_broadcast_status)
     register_route('POST', API_PREFIX + '/records/clear', api_clear_records)

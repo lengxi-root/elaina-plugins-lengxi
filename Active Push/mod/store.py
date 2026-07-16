@@ -19,6 +19,7 @@ _MODE_DEFAULTS = {
     'test_target': '',
     'push_appid': '',
     'interval': 0.5,
+    'concurrency': 20,
     'buttons': [],
     'content': '',
 }

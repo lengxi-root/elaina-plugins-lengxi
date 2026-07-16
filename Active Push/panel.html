@@ -90,11 +90,16 @@ th{background:var(--card2);color:var(--muted);font-size:11px;font-weight:600;whi
         <select id="push_appid"></select>
       </div>
       <div class="field" style="max-width:125px;min-width:105px">
-        <label>发送间隔(秒)</label>
+        <label>启动间隔(秒)</label>
         <input id="interval" type="number" min="0.1" max="10" step="0.1">
+      </div>
+      <div class="field" style="max-width:105px;min-width:90px">
+        <label>异步并发数</label>
+        <input id="concurrency" type="number" min="1" max="100" step="1">
       </div>
       <button class="btn btn-accent" id="btn-save" onclick="saveMode()">保存设置</button>
     </div>
+    <div class="hint" style="margin-top:8px">启动间隔用于控制请求发起频率，0.1 秒 = 100 毫秒；接口响应不会再阻塞下一次发送。</div>
     <div class="field" style="margin-top:13px;margin-bottom:0">
       <label>消息按钮 JSON
         <button class="btn-link" onclick="fillBtnSample()">示例</button>
@@ -148,6 +153,7 @@ const META={
 };
 let mode='group';
 let data={config:{group:{},private:{}},stats:{group:{},private:{}},bots:[]};
+let broadcastTimer=null;
 
 function $(id){return document.getElementById(id)}
 function headers(){return {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}}
@@ -193,6 +199,7 @@ function captureCurrent(){
     test_target:$('test_target').value.trim(),
     push_appid:$('push_appid').value,
     interval:Number($('interval').value||0.5),
+    concurrency:Number($('concurrency').value||20),
     buttons:parsed.ok?parsed.value:(data.config[mode].buttons||[]),
     content:$('content').value
   };
@@ -203,7 +210,7 @@ function render(){
   $('mode-switch').textContent=meta.next;$('st-target-label').textContent=meta.targetLabel;$('settings-hint').textContent=meta.hint;
   $('test-label').textContent=meta.testLabel;$('test_target').placeholder=meta.placeholder;$('content-title').innerHTML=meta.badge+'发送内容 <span class="hint">群聊与私聊内容分别保存</span>';
   $('st-targets').textContent=stats.target_count??0;$('st-sent').textContent=stats.sent_count??0;$('st-pending').textContent=stats.pending_count??0;$('st-bots').textContent=(data.bots||[]).length;
-  $('test_target').value=cfg.test_target||'';$('interval').value=cfg.interval??0.5;$('content').value=cfg.content||'';
+  $('test_target').value=cfg.test_target||'';$('interval').value=cfg.interval??0.5;$('concurrency').value=cfg.concurrency??20;$('content').value=cfg.content||'';
   const buttons=Array.isArray(cfg.buttons)?cfg.buttons:[];$('btn_json').value=buttons.length?JSON.stringify(buttons,null,2):'';
   renderBots(cfg.push_appid||'');renderRecords(stats.records||[]);updateCount();$('send-result').className='result';
 }
@@ -212,6 +219,26 @@ async function load(){
   const result=await api('/config');
   if(!result.success)return toast(result.message||'加载失败');
   data=result.data||data;render();
+}
+function scheduleBroadcastStatus(){clearTimeout(broadcastTimer);broadcastTimer=setTimeout(pollBroadcastStatus,1000)}
+function formatRate(value){const rate=Number(value||0);return rate>=100?rate.toFixed(0):rate>=10?rate.toFixed(1):rate.toFixed(2)}
+function broadcastStats(job){
+  const done=job.done||0,total=job.total||0,success=job.success||0,failed=job.failed_count||0;
+  return `${done}/${total||'…'}，成功 ${success}，失败 ${failed}，平均 ${formatRate(job.average_per_second)} 条/秒 · ${formatRate(job.average_per_minute)} 条/分钟`;
+}
+async function pollBroadcastStatus(){
+  const result=await api('/broadcast/status');
+  if(!result.success)return;
+  const job=result.data||{},active=job.state==='queued'||job.state==='running';
+  if(active){
+    showResult({success:true,message:`后台推送中: ${broadcastStats(job)}`,data:{error_stats:job.error_stats||[]}});
+    scheduleBroadcastStatus();
+    return;
+  }
+  if(['completed','failed','cancelled'].includes(job.state)){
+    showResult({success:job.state==='completed',message:job.message,stats:broadcastStats(job),data:{failed:job.failed||[],error_stats:job.error_stats||[]}});
+    await load();
+  }
 }
 async function saveMode(silent=false){
   const parsed=parseButtons();if(!parsed.ok){toast(parsed.message);return false}
@@ -227,8 +254,11 @@ async function saveMode(silent=false){
 function showResult(result){
   const box=$('send-result');box.className='result show '+(result.success?'ok':'err');
   let text=esc(result.message|| (result.success?'发送完成':'发送失败'));
+  if(result.stats)text+='<br>'+esc(result.stats);
   const failed=result.data?.failed||[];
   if(failed.length)text+='<br>'+failed.map(item=>`${esc(item.target_id)}: ${esc(item.message)}`).join('<br>');
+  const errorStats=result.data?.error_stats||[];
+  if(errorStats.length)text+='<br><br>错误统计:<br>'+errorStats.map(item=>`[${esc(item.code||'无错误码')}] ${esc(item.message)}: ${esc(item.count)} 次`).join('<br>');
   box.innerHTML=text;
 }
 async function testSend(){
@@ -248,8 +278,8 @@ async function broadcast(continueOnly){
   const button=continueOnly?$('btn-continue'):$('btn-push');setBusy(button,true,action);
   try{
     const result=await api('/broadcast','POST',{mode,content,continue_only:continueOnly});
-    if(result.success)await load();
     showResult(result);
+    if(result.success)scheduleBroadcastStatus();
   }finally{setBusy(button,false,action)}
 }
 async function clearRecords(){
@@ -274,7 +304,7 @@ function applyTheme(){
     Object.entries(map).forEach(([target,sources])=>{for(const source of sources){const value=style.getPropertyValue(source).trim();if(value){root.setProperty(target,value);break}}});
   }catch(error){}
 }
-applyTheme();load();
+applyTheme();load().then(pollBroadcastStatus);
 </script>
 </body>
 </html>
