@@ -1,0 +1,10 @@
+# astr基座依赖
+# 渲染浏览器复用框架自带的 playwright 模块, 无需在此单独 playwright install chromium。
+httpx
+jinja2
+playwright
+# AstrBot 本体自带、插件常直接 import 的依赖 (兼容层需要):
+aiosqlite
+mcp
+pyyaml
+sqlalchemy

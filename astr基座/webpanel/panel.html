@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AstrBot 基座</title>
+<style>
+  /* ===== AstrBot PurpleTheme (light) 调色板 ===== */
+  :root{
+    --primary:#3c96ca; --secondary:#2f86bd; --darkprimary:#1565c0; --darksecondary:#236b99;
+    --info:#03c9d7; --success:#00c853; --warning:#ffc107; --error:#f44336;
+    --lightprimary:#eef2f6; --lightsecondary:#e8f3fa; --lightsuccess:#b9f6ca;
+    --lighterror:#f9d8d8; --lightwarning:#fff8e1;
+    --on-surface:#1b1c1d; --text2:#000000aa; --text3:#00000073;
+    --border:#d0d0d0; --border-light:rgba(208,208,208,.5);
+    --surface:#fff; --container-bg:#fffffff4; --code-bg:#ececec;
+    --market-card:#f8f0dd;
+    --radius:8px; --radius-lg:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--lightprimary); color:var(--on-surface); font-size:14px; line-height:1.5;
+    font-family:"SF Pro Display","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(100,116,139,.35);border-radius:4px}
+  button{font-family:inherit}
+
+  /* ===== 布局: 白色侧栏 + 浅灰主区 (复刻 AstrBot WebUI) ===== */
+  .ab-app{height:100vh;display:flex;overflow:hidden}
+  .ab-sidebar{width:235px;background:var(--surface);border-right:1px solid var(--border-light);display:flex;flex-direction:column;flex-shrink:0;transition:width .2s}
+  .sidebar-brand{display:flex;align-items:center;gap:10px;min-height:64px;padding:14px 18px 10px;border-bottom:1px solid var(--border-light);flex-shrink:0}
+  .sidebar-brand-logo{width:36px;height:36px;border-radius:8px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--primary),var(--info));color:#fff}
+  .sidebar-brand-logo svg{width:20px;height:20px}
+  .sidebar-brand-copy{display:flex;flex-direction:column;min-width:0;line-height:1.1}
+  .sidebar-brand-title{font-size:18px;font-weight:800;white-space:nowrap;color:var(--on-surface)}
+  .sidebar-brand-subtitle{margin-top:3px;font-size:12px;font-weight:500;color:rgba(27,28,29,.58);white-space:nowrap}
+  .ab-nav{flex:1;overflow-y:auto;padding:16px}
+  .nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;cursor:pointer;color:rgba(27,28,29,.76);font-size:14px;font-weight:500;margin-bottom:4px;transition:background-color .18s ease,color .18s ease;user-select:none}
+  .nav-item:hover{background:rgba(60,150,202,.09);color:var(--primary)}
+  .nav-item.active{background:rgba(60,150,202,.12);color:var(--primary);font-weight:600}
+  .nav-item svg{width:20px;height:20px;flex-shrink:0}
+  .sidebar-footer{padding:10px 16px 16px;border-top:1px solid var(--border-light)}
+  .sidebar-footer .nav-item{margin-bottom:0}
+
+  .ab-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+  .ab-content{flex:1;overflow-y:auto}
+  .page-wrap{max-width:1400px;margin:0 auto;padding:24px;width:100%}
+
+  /* ===== 页头 (text-h2 风格) ===== */
+  .page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+  .page-header h1{font-size:1.5rem;font-weight:700;line-height:1.3;margin-bottom:4px}
+  .page-header .sub{font-size:.875rem;color:var(--text2)}
+  .header-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+  /* ===== 按钮 (Vuetify 风格) ===== */
+  .v-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;cursor:pointer;
+    border-radius:var(--radius);font-size:.875rem;font-weight:500;letter-spacing:.02em;padding:0 16px;height:36px;
+    background:transparent;color:var(--primary);transition:all .15s;text-decoration:none;position:relative;white-space:nowrap}
+  .v-btn:hover{background:rgba(60,150,202,.08)}
+  .v-btn:disabled{opacity:.45;cursor:not-allowed}
+  .v-btn svg{width:18px;height:18px}
+  .v-btn.flat{background:var(--primary);color:#fff}
+  .v-btn.flat:hover:not(:disabled){background:var(--darksecondary)}
+  .v-btn.tonal{background:rgba(60,150,202,.12);color:var(--darkprimary)}
+  .v-btn.tonal:hover:not(:disabled){background:rgba(60,150,202,.2)}
+  .v-btn.outlined{border:1px solid rgba(60,150,202,.5)}
+  .v-btn.error{color:var(--error)}
+  .v-btn.error:hover{background:rgba(244,67,54,.08)}
+  .v-btn.error.flat{background:var(--error);color:#fff}
+  .v-btn.sm{height:30px;padding:0 12px;font-size:.8125rem}
+  .icon-btn{width:32px;height:32px;padding:0;border-radius:8px;flex-shrink:0}
+  .icon-btn svg{width:16px;height:16px}
+  .icon-btn.tonal-primary{background:rgba(60,150,202,.12);color:var(--darkprimary)}
+  .icon-btn.tonal-primary:hover{background:rgba(60,150,202,.22)}
+  .icon-btn.tonal-info{background:rgba(3,201,215,.12);color:#0a8a94}
+  .icon-btn.tonal-info:hover{background:rgba(3,201,215,.22)}
+  .icon-btn.tonal-secondary{background:rgba(0,0,0,.06);color:rgba(0,0,0,.65)}
+  .icon-btn.tonal-secondary:hover{background:rgba(0,0,0,.12)}
+  .icon-btn.tonal-error{background:rgba(244,67,54,.1);color:var(--error)}
+  .icon-btn.tonal-error:hover{background:rgba(244,67,54,.2)}
+
+  /* ===== 标签页 (v-tabs) ===== */
+  .v-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border-light);margin-bottom:20px}
+  .v-tab{padding:12px 18px;font-size:.875rem;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;position:relative;letter-spacing:.02em}
+  .v-tab:hover{color:var(--on-surface)}
+  .v-tab.active{color:var(--primary);font-weight:600}
+  .v-tab.active::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--primary);border-radius:2px 2px 0 0}
+  .tab-panel{display:none}
+  .tab-panel.on{display:block}
+  .page{display:none}
+  .page.on{display:block}
+
+  /* ===== 工具条 / 输入 ===== */
+  .toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .v-field{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:0 12px;height:40px;min-width:240px}
+  .v-field:focus-within{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+  .v-field svg{width:18px;height:18px;color:var(--text3);flex-shrink:0}
+  .v-field input{border:none;outline:none;background:none;font-size:.875rem;flex:1;color:var(--on-surface);min-width:0}
+  .muted{color:var(--text3);font-size:.8125rem}
+  select,input.v-input{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--on-surface);font-size:.875rem;padding:9px 12px;outline:none;max-width:100%}
+  select:focus,input.v-input:focus{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+
+  /* ===== 插件卡片 (复刻 AstrBot extension-card) ===== */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px}
+  .ext-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;position:relative;transition:box-shadow .15s}
+  .ext-card:hover{box-shadow:0 4px 14px rgba(16,24,40,.08)}
+  .ext-card.market{background:var(--market-card)}
+  .ext-card.off{opacity:.62}
+  .ext-card-text{padding:12px 14px 8px;width:100%;flex:1}
+  .ext-row{display:flex;gap:14px;align-items:flex-start}
+  .ext-logo{width:64px;height:64px;border-radius:10px;object-fit:cover;flex-shrink:0;background:var(--lightsecondary);display:flex;align-items:center;justify-content:center;color:var(--primary);overflow:hidden}
+  .ext-logo svg{width:34px;height:34px}
+  .ext-logo img{width:100%;height:100%;object-fit:cover;border-radius:10px}
+  .ext-meta{flex:1;min-width:0}
+  .ext-title-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .ext-title{display:flex;align-items:center;min-width:0;flex:1;font-size:1.125rem;font-weight:900}
+  .ext-title .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ext-version{color:rgba(27,28,29,.48);flex-shrink:0;font-size:.875rem;font-weight:500;margin-left:10px;white-space:nowrap}
+  .ext-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .v-chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 10px;border-radius:6px;font-size:.75rem;font-weight:500}
+  .v-chip.pill{border-radius:12px}
+  .v-chip.primary{background:rgba(60,150,202,.15);color:var(--darkprimary)}
+  .v-chip.secondary{border:1px solid rgba(47,134,189,.5);color:var(--darksecondary);background:transparent}
+  .v-chip.success{background:rgba(0,200,83,.15);color:#1b7e3d}
+  .v-chip.warning{background:rgba(255,193,7,.2);color:#8a6d00}
+  .v-chip.error{background:rgba(244,67,54,.14);color:#c62828}
+  .v-chip.grey{background:rgba(0,0,0,.08);color:rgba(0,0,0,.6)}
+  .ext-desc{margin-top:6px;font-size:.8125rem;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.6em}
+  .ext-actions{display:flex;align-items:center;gap:8px;padding:8px 14px 12px;justify-content:flex-end}
+
+  /* v-switch (success, inset) */
+  .v-switch{position:relative;width:44px;height:24px;cursor:pointer;flex-shrink:0}
+  .v-switch input{opacity:0;width:0;height:0}
+  .v-switch .track{position:absolute;inset:0;background:rgba(0,0,0,.25);border-radius:12px;transition:background .2s}
+  .v-switch .track::after{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .v-switch input:checked+.track{background:var(--success)}
+  .v-switch input:checked+.track::after{transform:translateX(20px)}
+  .v-switch input:disabled+.track{opacity:.4;cursor:not-allowed}
+
+  /* ===== 空态 / 加载 ===== */
+  .empty{text-align:center;padding:56px 20px;color:var(--text3)}
+  .empty svg{width:48px;height:48px;opacity:.35;margin-bottom:12px}
+  .loading{text-align:center;padding:56px 20px;color:var(--text3)}
+  .spinner{width:32px;height:32px;border:3px solid rgba(60,150,202,.2);border-top-color:var(--primary);border-radius:50%;animation:spin .9s linear infinite;margin:0 auto 14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ===== 表格 (指令面板) ===== */
+  .v-table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .v-table th,.v-table td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--border-light);font-size:.8125rem;vertical-align:top}
+  .v-table th{background:var(--lightprimary);color:var(--text2);font-weight:600;position:sticky;top:0}
+  .v-table tr:last-child td{border-bottom:none}
+  .v-table tr:hover td{background:rgba(60,150,202,.05)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Roboto Mono",monospace;background:var(--code-bg);padding:2px 6px;border-radius:6px;font-size:.75rem;word-break:break-all;color:#0d0d0d}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Roboto Mono",monospace}
+  .table-wrap{border-radius:var(--radius);overflow:auto}
+
+  /* ===== 控制台 (复刻 AstrBot ConsoleDisplayer 暗色终端) ===== */
+  .console-filters{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .lv-chip{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 11px;border-radius:13px;font-size:.75rem;font-weight:600;cursor:pointer;border:none;opacity:.35;transition:opacity .15s;color:#fff}
+  .lv-chip.on{opacity:1}
+  .lv-chip.DEBUG{background:#9e9e9e}
+  .lv-chip.INFO{background:#90caf9;color:#0d3c61}
+  .lv-chip.WARNING{background:#ffc107;color:#5c4500}
+  .lv-chip.ERROR{background:#f44336}
+  .lv-chip.CRITICAL{background:#9c27b0}
+  .console-term{background:#1e1e2a;border-radius:var(--radius);height:calc(100vh - 250px);min-height:320px;overflow-y:auto;
+    padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Roboto Mono",monospace;font-size:12.5px;line-height:1.7;color:#c8c8c8}
+  .console-term.fullscreen{position:fixed;inset:0;z-index:60;height:100vh;border-radius:0}
+  .log-line{white-space:pre-wrap;word-break:break-word}
+  .log-line .lt{color:#6b7280}
+  .log-line .lsrc{color:#72c4cc}
+  .log-line .lv-INFO{color:#6cb6d9;font-weight:bold}
+  .log-line .lv-DEBUG{color:#9e9e9e;font-weight:bold}
+  .log-line .lv-WARNING{color:#d4b95e;font-weight:bold}
+  .log-line .lv-ERROR{color:#e06060;font-weight:bold}
+  .log-line .lv-CRITICAL{color:#c678dd;font-weight:bold}
+  .switch-label{display:flex;align-items:center;gap:8px;font-size:.8125rem;color:var(--text2);cursor:pointer;user-select:none}
+  .v-switch.pri input:checked+.track{background:var(--primary)}
+
+  /* ===== 设置页 (白卡片行) ===== */
+  .settings-wrap{max-width:760px}
+  .settings-section{font-weight:600;font-size:.875rem;color:var(--text2);margin:22px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--border-light)}
+  .setting-row{display:flex;align-items:center;gap:16px;padding:14px 18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px}
+  .setting-info{flex:1;min-width:0}
+  .setting-title{font-weight:600;font-size:.9375rem;margin-bottom:3px}
+  .setting-desc{font-size:.75rem;color:var(--text3);line-height:1.55}
+  .setting-select{flex-shrink:0;min-width:210px;max-width:55%}
+
+  /* ===== 对话框 (v-dialog) ===== */
+  .v-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .v-overlay.show{display:flex}
+  .v-dialog{background:var(--surface);border-radius:var(--radius);box-shadow:0 12px 40px rgba(16,24,40,.24);width:min(580px,100%);max-height:88vh;overflow:auto;display:flex;flex-direction:column}
+  .v-dialog .dh{display:flex;align-items:center;justify-content:space-between;padding:18px 22px 8px}
+  .v-dialog .dh h3{font-size:1.125rem;font-weight:700}
+  .v-dialog .db{padding:14px 22px}
+  .v-dialog .df{display:flex;justify-content:flex-end;gap:8px;padding:10px 16px 16px}
+  .x-btn{cursor:pointer;color:var(--text3);background:none;border:none;font-size:22px;line-height:1;padding:2px 6px;border-radius:6px}
+  .x-btn:hover{background:rgba(0,0,0,.06)}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-weight:600;font-size:.8125rem;margin-bottom:5px}
+  .field .hint{font-size:.75rem;color:var(--text3);margin-bottom:6px;white-space:pre-wrap}
+  .field input.v-input,.field select{width:100%}
+  .dialog-tabs{margin-bottom:16px}
+
+  /* ===== Snackbar ===== */
+  #snackbar{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#333;color:#fff;
+    padding:14px 18px;border-radius:8px;font-weight:600;font-size:.875rem;opacity:0;transition:.25s;z-index:99;pointer-events:none;
+    box-shadow:0 10px 24px rgba(16,24,40,.16);max-width:90vw;min-height:52px;display:flex;align-items:center;gap:12px;line-height:1.35}
+  #snackbar.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #snackbar.success{background:#457c3c}
+  #snackbar.error{background:#c62828}
+
+  @media(max-width:768px){
+    .ab-sidebar{width:72px}
+    .sidebar-brand-copy,.nav-item span{display:none}
+    .sidebar-brand{justify-content:center;padding:14px 8px 10px}
+    .nav-item{justify-content:center;padding:10px}
+    .page-wrap{padding:16px}
+    .grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="ab-app">
+  <!-- 左侧栏 -->
+  <aside class="ab-sidebar">
+    <div class="sidebar-brand">
+      <span class="sidebar-brand-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg></span>
+      <div class="sidebar-brand-copy">
+        <span class="sidebar-brand-title">AstrBot 基座</span>
+        <span class="sidebar-brand-subtitle">WebUI</span>
+      </div>
+    </div>
+    <nav class="ab-nav">
+      <div class="nav-item active" data-page="extension" onclick="go('extension')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 0 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 0 1 5.4 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
+        <span>插件管理</span>
+      </div>
+      <div class="nav-item" data-page="console" onclick="go('console')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span>控制台</span>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="nav-item" data-page="settings" onclick="go('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>设置</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 主区 -->
+  <main class="ab-main">
+    <div class="ab-content">
+
+      <!-- ========== 插件管理 ========== -->
+      <div class="page on" id="page-extension">
+        <div class="page-wrap">
+          <div class="page-header">
+            <div>
+              <h1>插件管理</h1>
+              <div class="sub">安装、配置与管理运行在基座上的 AstrBot 插件。</div>
+            </div>
+            <div class="header-actions">
+              <button class="v-btn" onclick="openMirror()">镜像设置</button>
+              <button class="v-btn" onclick="reloadBase()">重载基座</button>
+              <button class="v-btn flat" onclick="openInstall()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                安装插件
+              </button>
+            </div>
+          </div>
+
+          <div class="v-tabs">
+            <button class="v-tab active" data-tab="installed" onclick="goTab('installed')">已安装 <span id="n-installed"></span></button>
+            <button class="v-tab" data-tab="market" onclick="goTab('market')">插件市场 <span id="n-market"></span></button>
+            <button class="v-tab" data-tab="commands" onclick="goTab('commands')">指令面板 <span id="n-commands"></span></button>
+          </div>
+
+          <!-- 已安装 -->
+          <div class="tab-panel on" id="tab-installed">
+            <div class="toolbar">
+              <div class="v-field" style="max-width:320px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="inst-search" placeholder="搜索已安装插件…" oninput="renderInstalled()">
+              </div>
+              <span style="flex:1"></span>
+              <button class="v-btn sm tonal" onclick="loadList().then(()=>toast('已刷新'))">刷新</button>
+            </div>
+            <div id="installed-body"><div class="loading"><div class="spinner"></div>加载中…</div></div>
+          </div>
+
+          <!-- 插件市场 -->
+          <div class="tab-panel" id="tab-market">
+            <div class="toolbar">
+              <div class="v-field" style="max-width:320px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="mk-search" placeholder="搜索名称 / 描述 / 作者 / 标签…" oninput="renderMarket()">
+              </div>
+              <span class="muted" id="mk-tip">来源: AstrBot 官方插件市场</span>
+              <span style="flex:1"></span>
+              <button class="v-btn sm tonal" onclick="loadMarket(true)">重新拉取</button>
+            </div>
+            <div id="market-body"></div>
+          </div>
+
+          <!-- 指令面板 -->
+          <div class="tab-panel" id="tab-commands">
+            <div class="muted" style="margin-bottom:12px">基座当前已注册到框架的指令与匹配正则 (装/卸插件后自动重载刷新)。</div>
+            <div id="commands-body"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 控制台 ========== -->
+      <div class="page" id="page-console">
+        <div class="page-wrap">
+          <div class="page-header">
+            <div>
+              <h1>控制台</h1>
+              <div class="sub">框架实时运行日志 (含插件安装 / 依赖安装 / 报错信息)。</div>
+            </div>
+            <div class="header-actions">
+              <label class="switch-label"><span class="v-switch pri"><input type="checkbox" id="log-auto" checked onchange="toggleLogAuto()"><span class="track"></span></span>自动滚动</label>
+              <button class="v-btn" onclick="loadLogs(true)">刷新</button>
+              <button class="v-btn error" onclick="clearLogs()">清空</button>
+            </div>
+          </div>
+          <div class="console-filters" id="lv-filters"></div>
+          <div class="console-term" id="console-term"><div class="loading"><div class="spinner"></div>加载日志…</div></div>
+        </div>
+      </div>
+
+      <!-- ========== 设置 ========== -->
+      <div class="page" id="page-settings">
+        <div class="page-wrap">
+          <div class="page-header">
+            <div>
+              <h1>设置</h1>
+              <div class="sub">基座运行相关的开关与选项，修改后即时保存并热重载。</div>
+            </div>
+          </div>
+          <div class="settings-wrap" id="settings-body"><div class="loading"><div class="spinner"></div>加载设置…</div></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- 安装插件对话框 -->
+<div class="v-overlay" id="install-mask">
+  <div class="v-dialog">
+    <div class="dh"><h3>安装插件</h3><button class="x-btn" onclick="closeInstall()">&times;</button></div>
+    <div class="db">
+      <div class="v-tabs dialog-tabs">
+        <button class="v-tab active" data-itab="url" onclick="goInstTab('url')">从 URL 安装</button>
+        <button class="v-tab" data-itab="file" onclick="goInstTab('file')">上传文件</button>
+      </div>
+      <div id="itab-url">
+        <div class="field">
+          <label>仓库地址或 zip 直链</label>
+          <div class="hint">支持 GitHub 仓库 URL (可带 /tree/分支) 或 .zip 直链。</div>
+          <input class="v-input" type="text" id="inst-url" placeholder="https://github.com/owner/astrbot_plugin_xxx">
+        </div>
+        <div class="field">
+          <label>目录名 (可选)</label>
+          <div class="hint">留空自动推断; 装入 apps/&lt;目录名&gt;/。</div>
+          <input class="v-input" type="text" id="inst-name" placeholder="astrbot_plugin_xxx">
+        </div>
+      </div>
+      <div id="itab-file" style="display:none">
+        <div class="field">
+          <label>选择 zip 文件</label>
+          <div class="hint">zip 内需含 AstrBot 插件的 main.py (支持单层根目录包裹)。</div>
+          <input type="file" id="inst-file" accept=".zip">
+        </div>
+      </div>
+    </div>
+    <div class="df">
+      <button class="v-btn" onclick="closeInstall()">取消</button>
+      <button class="v-btn flat" id="inst-btn" onclick="doInstall()">安装</button>
+    </div>
+  </div>
+</div>
+
+<!-- 插件配置对话框 -->
+<div class="v-overlay" id="cfg-mask">
+  <div class="v-dialog">
+    <div class="dh"><h3 id="cfg-title">插件配置</h3><button class="x-btn" onclick="closeCfg()">&times;</button></div>
+    <div class="db" id="cfg-body"></div>
+    <div class="df"><button class="v-btn" onclick="closeCfg()">取消</button><button class="v-btn flat" id="cfg-save" onclick="saveCfg()">保存并重载</button></div>
+  </div>
+</div>
+
+<!-- 镜像对话框 -->
+<div class="v-overlay" id="mirror-mask">
+  <div class="v-dialog">
+    <div class="dh"><h3>GitHub 下载镜像</h3><button class="x-btn" onclick="closeMirror()">&times;</button></div>
+    <div class="db">
+      <div class="field">
+        <label>当前镜像 (留空 = 自动按延迟优选)</label>
+        <div class="hint">下载插件时优先使用此镜像; 失败会自动回退到框架镜像列表。</div>
+        <input class="v-input" type="text" id="mirror-input" placeholder="https://gh-proxy.com/">
+      </div>
+      <button class="v-btn tonal sm" onclick="testMirrors()">测速并列出可用镜像</button>
+      <div id="mirror-list" style="margin-top:12px"></div>
+    </div>
+    <div class="df"><button class="v-btn" onclick="closeMirror()">取消</button><button class="v-btn flat" onclick="saveMirror()">保存</button></div>
+  </div>
+</div>
+
+<div id="snackbar"></div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const TOKEN = qs.get('token') || '';
+const _bm = location.pathname.match(/^(.*)\/api\/web-pages\//);
+const API = (_bm ? _bm[1] : '') + '/api/ext/astrbot_base';
+
+let PAGE = 'extension';
+let TAB = 'installed';
+let DATA = {installed:[], mirror:'', market:[]};
+let MARKET_LOADED = false;
+
+const DEFAULT_LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 0 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 0 1 5.4 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>';
+
+function toast(m, kind){
+  const t=document.getElementById('snackbar');
+  t.textContent=m; t.className=''; if(kind)t.classList.add(kind);
+  void t.offsetWidth; t.classList.add('show');
+  clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('show'),2800);
+}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function api(path, method, body){
+  const m = method||'GET';
+  const url = API+path+(m==='GET'?((path.includes('?')?'&':'?')+'token='+encodeURIComponent(TOKEN)):'');
+  try{
+    const r = await fetch(url, {method:m, headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}, body: body?JSON.stringify(body):undefined});
+    return await r.json();
+  }catch(e){ return {success:false, message:'网络错误: '+e}; }
+}
+
+/* ===== 导航 ===== */
+function go(p){
+  PAGE=p;
+  document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===p));
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+  document.getElementById('page-'+p).classList.add('on');
+  if(p==='settings') loadSettings();
+  if(p==='console'){ loadLogs(true); startLogAuto(); } else { stopLogAuto(); }
+}
+function goTab(t){
+  TAB=t;
+  document.querySelectorAll('.v-tabs:not(.dialog-tabs) .v-tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
+  document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('on'));
+  document.getElementById('tab-'+t).classList.add('on');
+  if(t==='market' && !MARKET_LOADED) loadMarket();
+  if(t==='commands') loadCommands();
+}
+
+/* ===== 控制台 ===== */
+let LOG_SEQ = 0;
+let LOG_TIMER = null;
+let LOG_CACHE = [];
+const LOG_LEVELS = ['DEBUG','INFO','WARNING','ERROR','CRITICAL'];
+let LV_ON = new Set(LOG_LEVELS);
+
+function renderLvFilters(){
+  document.getElementById('lv-filters').innerHTML = LOG_LEVELS.map(l=>
+    `<button class="lv-chip ${l} ${LV_ON.has(l)?'on':''}" onclick="toggleLv('${l}')">${l}</button>`).join('');
+}
+function toggleLv(l){
+  if(LV_ON.has(l)) LV_ON.delete(l); else LV_ON.add(l);
+  renderLvFilters(); renderLogs();
+}
+function logLineHtml(e){
+  const lv=(e.level||'INFO');
+  const src=e.source?`<span class="lsrc">${esc(e.source)}</span> `:'';
+  return `<div class="log-line"><span class="lt">[${esc(e.time||'')}]</span> <span class="lv-${esc(lv)}">${esc(lv.padEnd(8))}</span> ${src}<span>${esc(e.msg||'')}</span></div>`;
+}
+function renderLogs(){
+  const box=document.getElementById('console-term');
+  const list = LOG_CACHE.filter(e=>LV_ON.has(e.level||'INFO'));
+  if(!list.length){ box.innerHTML='<div class="empty" style="color:#6b7280">暂无日志</div>'; return; }
+  box.innerHTML = list.map(logLineHtml).join('');
+  if(autoScrollOn()) box.scrollTop = box.scrollHeight;
+}
+function autoScrollOn(){ const el=document.getElementById('log-auto'); return el && el.checked; }
+async function loadLogs(reset){
+  if(reset){ LOG_SEQ=0; LOG_CACHE=[]; }
+  const d = await api('/logs'+(LOG_SEQ?('?since='+LOG_SEQ):''));
+  if(!d||!d.success){
+    if(reset) document.getElementById('console-term').innerHTML='<div class="empty" style="color:#e06060">日志加载失败'+(d&&d.message?(': '+esc(d.message)):'')+'</div>';
+    return;
+  }
+  const logs = d.logs||[];
+  if(typeof d.seq==='number') LOG_SEQ=d.seq;
+  if(logs.length || reset){
+    LOG_CACHE = LOG_CACHE.concat(logs);
+    if(LOG_CACHE.length>3000) LOG_CACHE=LOG_CACHE.slice(-3000);
+    renderLogs();
+  }
+}
+function startLogAuto(){
+  stopLogAuto();
+  LOG_TIMER=setInterval(()=>{ if(PAGE==='console') loadLogs(false); }, 3000);
+}
+function stopLogAuto(){ if(LOG_TIMER){ clearInterval(LOG_TIMER); LOG_TIMER=null; } }
+function toggleLogAuto(){ if(autoScrollOn()){ const box=document.getElementById('console-term'); box.scrollTop=box.scrollHeight; } }
+async function clearLogs(){
+  if(!confirm('清空日志显示?')) return;
+  await api('/clear-logs','POST',{});
+  LOG_SEQ=0; LOG_CACHE=[];
+  renderLogs();
+}
+
+/* ===== 已安装 ===== */
+async function loadList(){
+  const d = await api('/list');
+  if(!d.success){ toast(d.message||'加载失败','error'); return; }
+  DATA.installed = d.installed||[];
+  DATA.mirror = d.mirror||'';
+  renderInstalled();
+}
+
+function marketLogoOf(name){
+  const p = DATA.market.find(x=>x.name===name);
+  return p && p.logo ? p.logo : '';
+}
+
+function renderInstalled(){
+  document.getElementById('n-installed').textContent = DATA.installed.length?('('+DATA.installed.length+')'):'';
+  const q=(document.getElementById('inst-search').value||'').toLowerCase().trim();
+  const list = !q ? DATA.installed : DATA.installed.filter(a=>
+    (a.name+' '+(a.display_name||'')+' '+(a.desc||'')).toLowerCase().includes(q));
+  const el=document.getElementById('installed-body');
+  if(!DATA.installed.length){
+    el.innerHTML='<div class="empty">'+DEFAULT_LOGO+'<div>暂无已安装插件</div><div class="muted" style="margin-top:4px">点击右上角「安装插件」或到「插件市场」一键安装</div></div>';
+    return;
+  }
+  if(!list.length){ el.innerHTML='<div class="empty">无匹配插件</div>'; return; }
+  el.innerHTML='<div class="grid">'+list.map(a=>{
+    const enabled = a.enabled!==false;
+    const logo = marketLogoOf(a.name);
+    const logoHtml = logo?`<img src="${esc(logo)}" alt="" onerror="this.parentNode.innerHTML=DEFAULT_LOGO">`:DEFAULT_LOGO;
+    const updBtn = a.repo?`
+      <button class="v-btn icon-btn tonal-primary" title="更新 / 重新安装" onclick="reinstall('${esc(a.name)}','${esc(a.repo)}')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      </button>`:'';
+    const repoBtn = a.repo?`
+      <a class="v-btn icon-btn tonal-info" title="打开仓库" href="${esc(a.repo)}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </a>`:'';
+    return `<div class="ext-card${enabled?'':' off'}">
+      <div class="ext-card-text">
+        <div class="ext-row">
+          <div class="ext-logo">${logoHtml}</div>
+          <div class="ext-meta">
+            <div class="ext-title-row">
+              <p class="ext-title"><span class="nm" title="${esc(a.name)}">${esc(a.display_name||a.name)}</span>${a.version?`<span class="ext-version">v${esc(a.version).replace(/^v/,'')}</span>`:''}</p>
+              <label class="v-switch" title="${enabled?'停用':'启用'}"><input type="checkbox" ${enabled?'checked':''} onchange="toggleApp('${esc(a.name)}',this.checked)"><span class="track"></span></label>
+            </div>
+            <div class="ext-chips">
+              <span class="v-chip primary">${a.command_count} 条指令</span>
+              ${enabled?'':'<span class="v-chip grey">已停用</span>'}
+              ${a.has_schema?'<span class="v-chip secondary">可配置</span>':''}
+            </div>
+            <div class="ext-desc">${esc(a.desc||a.name)}</div>
+          </div>
+        </div>
+      </div>
+      <div class="ext-actions">
+        ${repoBtn}
+        <button class="v-btn icon-btn tonal-primary" title="插件配置" onclick="openCfg('${esc(a.name)}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        ${updBtn}
+        <button class="v-btn icon-btn tonal-error" title="卸载插件" onclick="uninstall('${esc(a.name)}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('')+'</div>';
+}
+
+/* ===== 指令面板 ===== */
+async function loadCommands(){
+  const el=document.getElementById('commands-body');
+  el.innerHTML='<div class="loading"><div class="spinner"></div>加载中…</div>';
+  const d = await api('/commands');
+  const cmds = (d&&d.commands)||[];
+  document.getElementById('n-commands').textContent = cmds.length?('('+cmds.length+')'):'';
+  if(!cmds.length){ el.innerHTML='<div class="empty">基座当前未注册任何指令<div class="muted" style="margin-top:4px">先安装插件, 安装后会自动重载并在此显示正则</div></div>'; return; }
+  el.innerHTML='<div class="table-wrap"><table class="v-table"><thead><tr><th>插件</th><th>指令</th><th>匹配正则</th><th>说明</th></tr></thead><tbody>'+
+    cmds.map(c=>`<tr><td class="mono">${esc(c.app)}</td><td>${esc(c.command)}</td><td><code>${esc(c.pattern)}</code></td><td class="muted">${esc(c.desc||'')}</td></tr>`).join('')+
+    '</tbody></table></div>';
+}
+
+/* ===== 插件市场 ===== */
+async function loadMarket(force){
+  const el=document.getElementById('market-body');
+  el.innerHTML='<div class="loading"><div class="spinner"></div>正在拉取 AstrBot 官方插件市场…</div>';
+  const d = await api('/market'+(force?'?force=1':''));
+  if(!d.success){ el.innerHTML='<div class="empty">'+esc(d.message||'拉取失败')+'</div>'; return; }
+  DATA.market = d.market||[];
+  MARKET_LOADED = true;
+  renderMarket();
+  renderInstalled();  // 市场 logo 可用于已安装卡片
+}
+
+function renderMarket(){
+  document.getElementById('n-market').textContent = DATA.market.length?('('+DATA.market.length+')'):'';
+  const q=(document.getElementById('mk-search').value||'').toLowerCase().trim();
+  const list = !q ? DATA.market : DATA.market.filter(p=>
+    (p.name+' '+p.display_name+' '+p.desc+' '+p.author+' '+(p.tags||[]).join(' ')).toLowerCase().includes(q));
+  document.getElementById('mk-tip').textContent = '来源: AstrBot 官方插件市场 · 共 '+DATA.market.length+' 款'+(q?(' · 匹配 '+list.length+' 款'):'');
+  const el=document.getElementById('market-body');
+  if(!list.length){ el.innerHTML='<div class="empty">'+(q?'无匹配插件':'未获取到市场清单')+'</div>'; return; }
+  el.innerHTML='<div class="grid">'+list.slice(0,200).map(p=>{
+    const src = p.download_url || p.repo;
+    const logoHtml = p.logo?`<img src="${esc(p.logo)}" alt="" onerror="this.parentNode.innerHTML=DEFAULT_LOGO">`:DEFAULT_LOGO;
+    return `<div class="ext-card market">
+      <div class="ext-card-text">
+        <div class="ext-row">
+          <div class="ext-logo">${logoHtml}</div>
+          <div class="ext-meta">
+            <div class="ext-title-row">
+              <p class="ext-title"><span class="nm" title="${esc(p.name)}">${esc(p.display_name||p.name)}</span>${p.version?`<span class="ext-version">${esc(p.version)}</span>`:''}</p>
+              ${p.installed?'<span class="v-chip success">已安装</span>':''}
+            </div>
+            <div class="ext-chips">
+              <span class="v-chip warning">★ ${p.stars}</span>
+              ${p.author?`<span class="v-chip secondary">${esc(p.author)}</span>`:''}
+              ${(p.tags||[]).slice(0,3).map(t=>`<span class="v-chip primary">${esc(t)}</span>`).join('')}
+            </div>
+            <div class="ext-desc">${esc(p.desc||'')}</div>
+          </div>
+        </div>
+      </div>
+      <div class="ext-actions">
+        ${p.repo?`<a class="v-btn icon-btn tonal-info" title="打开仓库" href="${esc(p.repo)}" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>`:''}
+        <button class="v-btn sm flat" onclick="marketInstall('${esc(p.name)}','${esc(src)}',${p.installed?'true':'false'})">${p.installed?'重新安装':'安装'}</button>
+      </div>
+    </div>`;
+  }).join('')+'</div>'+(list.length>200?'<div class="muted" style="margin-top:10px">仅展示前 200 款, 请用搜索缩小范围</div>':'');
+}
+
+async function marketInstall(name, src, isReinstall){
+  if(!src){ toast('该插件无可用下载源','error'); return; }
+  if(!confirm((isReinstall?'重新安装':'安装')+' '+name+' ?')) return;
+  toast('正在下载 '+name+' …');
+  const d = await api('/install','POST',{url:src, name});
+  toast(d.message||(d.success?'完成':'失败'), d.success?'success':'error');
+  if(d.success){ await loadList(); DATA.market.forEach(p=>{ if(p.name===name) p.installed=true; }); renderMarket(); if(TAB==='commands') loadCommands(); }
+}
+
+/* ===== 安装对话框 ===== */
+let INST_TAB='url';
+function openInstall(){ document.getElementById('install-mask').classList.add('show'); }
+function closeInstall(){ document.getElementById('install-mask').classList.remove('show'); }
+function goInstTab(t){
+  INST_TAB=t;
+  document.querySelectorAll('[data-itab]').forEach(x=>x.classList.toggle('active',x.dataset.itab===t));
+  document.getElementById('itab-url').style.display = t==='url'?'':'none';
+  document.getElementById('itab-file').style.display = t==='file'?'':'none';
+}
+async function doInstall(){
+  if(INST_TAB==='url') await installUrl(); else await installFile();
+}
+async function installUrl(){
+  const url=document.getElementById('inst-url').value.trim();
+  const name=document.getElementById('inst-name').value.trim();
+  if(!url){ toast('请填写仓库地址或 zip 直链','error'); return; }
+  const btn=document.getElementById('inst-btn'); btn.disabled=true; btn.textContent='安装中…';
+  toast('正在下载安装…');
+  const d = await api('/install','POST',{url, name});
+  btn.disabled=false; btn.textContent='安装';
+  toast(d.message||(d.success?'完成':'失败'), d.success?'success':'error');
+  if(d.success){
+    document.getElementById('inst-url').value=''; document.getElementById('inst-name').value='';
+    closeInstall(); await loadList(); goTab('installed');
+  }
+}
+async function installFile(){
+  const f=document.getElementById('inst-file').files[0];
+  if(!f){ toast('请选择 zip 文件','error'); return; }
+  const btn=document.getElementById('inst-btn'); btn.disabled=true; btn.textContent='上传中…';
+  const fd=new FormData(); fd.append('file',f); fd.append('name',f.name.replace(/\.zip$/i,''));
+  try{
+    const r=await fetch(API+'/install?token='+encodeURIComponent(TOKEN),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:fd});
+    const j=await r.json();
+    toast(j.message||'', j.success?'success':'error');
+    if(j.success){ document.getElementById('inst-file').value=''; closeInstall(); await loadList(); goTab('installed'); }
+  }catch(e){ toast('上传失败: '+e,'error'); }
+  btn.disabled=false; btn.textContent='安装';
+}
+
+async function reinstall(name, repo){
+  if(!confirm('重新下载/更新 '+name+' ? (来源: '+repo+')')) return;
+  toast('正在下载 '+name+' …');
+  const d = await api('/install','POST',{url:repo, name});
+  toast(d.message||(d.success?'完成':'失败'), d.success?'success':'error');
+  if(d.success){ await loadList(); if(TAB==='commands') loadCommands(); }
+}
+
+async function toggleApp(name, enable){
+  if(!enable && !confirm('停用 '+name+' ? (功能关闭, 但文件保留, 不卸载)')){ renderInstalled(); return; }
+  toast((enable?'启用':'停用')+' '+name+' …');
+  const d = await api('/toggle','POST',{name, enabled:enable});
+  toast(d.message||(d.success?'完成':'失败'), d.success?'success':'error');
+  await loadList(); if(TAB==='commands') loadCommands();
+}
+
+async function uninstall(name){
+  if(!confirm('确定卸载 '+name+' ? (apps/'+name+' 将被删除)')) return;
+  const d = await api('/uninstall','POST',{name});
+  toast(d.message||(d.success?'已卸载':'失败'), d.success?'success':'error');
+  if(d.success){ await loadList(); if(TAB==='commands') loadCommands(); }
+}
+
+async function reloadBase(){
+  toast('重载中…');
+  const d = await api('/reload','POST',{});
+  toast(d.message||'完成', d.success?'success':'error');
+  await loadList(); if(TAB==='commands') loadCommands();
+}
+
+/* ===== 设置 ===== */
+async function loadSettings(){
+  const el=document.getElementById('settings-body');
+  el.innerHTML='<div class="loading"><div class="spinner"></div>加载设置…</div>';
+  const d = await api('/settings');
+  const items=(d&&d.settings)||[];
+  if(!items.length){ el.innerHTML='<div class="empty">无可配置项</div>'; return; }
+  let prevType='';
+  el.innerHTML = items.map(s=>{
+    let head='';
+    if(s.type==='module' && prevType!=='module'){
+      head='<div class="settings-section">框架模块 (启用后供基座调用)</div>';
+    }
+    prevType=s.type;
+    let control;
+    if(s.type==='select'){
+      const opts=(s.options||[]).map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(s.value)?'selected':''}>${esc(o.label||o.value)}</option>`).join('');
+      control=`<select class="setting-select" data-key="${esc(s.key)}" data-type="select" onchange="saveSettings()">${opts}</select>`;
+    }else{
+      const disabled=(s.type==='module' && s.available===false)?'disabled':'';
+      control=`<label class="v-switch"><input type="checkbox" data-key="${esc(s.key)}" data-type="${esc(s.type||'bool')}" ${s.value?'checked':''} ${disabled} onchange="saveSettings()"><span class="track"></span></label>`;
+    }
+    return head + `<div class="setting-row">
+      <div class="setting-info">
+        <div class="setting-title">${esc(s.title||s.key)}</div>
+        <div class="setting-desc">${esc(s.desc||'')}</div>
+      </div>
+      ${control}
+    </div>`;
+  }).join('') +
+    '<div class="muted" style="margin-top:6px">修改后即时保存并热重载基座。</div>';
+}
+
+async function saveSettings(){
+  const vals={};
+  document.querySelectorAll('#settings-body [data-key]').forEach(el=>{
+    vals[el.dataset.key] = (el.dataset.type==='select') ? el.value : el.checked;
+  });
+  const d = await api('/settings','POST',{values:vals});
+  toast(d.message||(d.success?'已保存':'失败'), d.success?'success':'error');
+}
+
+/* ===== 插件配置对话框 ===== */
+let CFG_NAME='';
+async function openCfg(name){
+  CFG_NAME=name;
+  document.getElementById('cfg-title').textContent=name+' 配置';
+  document.getElementById('cfg-body').innerHTML='<div class="muted">加载中…</div>';
+  document.getElementById('cfg-mask').classList.add('show');
+  const d = await api('/config?name='+encodeURIComponent(name));
+  const fields=(d&&d.fields)||[];
+  if(!fields.length){ document.getElementById('cfg-body').innerHTML='<div class="muted">该插件没有可配置项</div>'; return; }
+  document.getElementById('cfg-body').innerHTML=fields.map(f=>{
+    const v=f.value;
+    let input;
+    if(f.type==='bool'){
+      input=`<select data-key="${esc(f.key)}" data-type="bool"><option value="true" ${v?'selected':''}>true</option><option value="false" ${!v?'selected':''}>false</option></select>`;
+    }else if(f.type==='int'){
+      input=`<input class="v-input" type="text" data-key="${esc(f.key)}" data-type="int" value="${esc(v==null?'':v)}">`;
+    }else if(f.type==='list'||typeof v==='object'){
+      input=`<input class="v-input" type="text" data-key="${esc(f.key)}" data-type="json" value='${esc(JSON.stringify(v==null?(f.default||[]):v))}'>`;
+    }else{
+      const pw=/key|token|secret|密钥|密码/i.test(f.key+f.description);
+      input=`<input class="v-input" type="${pw?'password':'text'}" data-key="${esc(f.key)}" data-type="string" value="${esc(v==null?'':v)}">`;
+    }
+    return `<div class="field"><label>${esc(f.description||f.key)} <span class="muted">(${esc(f.key)})</span></label>${f.hint?`<div class="hint">${esc(f.hint)}</div>`:''}${input}</div>`;
+  }).join('');
+}
+function closeCfg(){document.getElementById('cfg-mask').classList.remove('show');}
+async function saveCfg(){
+  const vals={};
+  document.querySelectorAll('#cfg-body [data-key]').forEach(el=>{
+    const k=el.dataset.key, t=el.dataset.type; let v=el.value;
+    if(t==='bool') v=(v==='true');
+    else if(t==='int'){ const n=parseInt(v,10); v=isNaN(n)?0:n; }
+    else if(t==='json'){ try{ v=JSON.parse(v); }catch(e){ /* 保留原文本 */ } }
+    vals[k]=v;
+  });
+  document.getElementById('cfg-save').disabled=true;
+  const d = await api('/config','POST',{name:CFG_NAME, values:vals});
+  document.getElementById('cfg-save').disabled=false;
+  toast(d.message||(d.success?'已保存':'失败'), d.success?'success':'error');
+  if(d.success){ closeCfg(); loadList(); }
+}
+
+/* ===== 镜像对话框 ===== */
+function openMirror(){document.getElementById('mirror-input').value=DATA.mirror||'';document.getElementById('mirror-mask').classList.add('show');}
+function closeMirror(){document.getElementById('mirror-mask').classList.remove('show');}
+async function saveMirror(){
+  const m=document.getElementById('mirror-input').value.trim();
+  const d=await api('/mirror','POST',{mirror:m});
+  toast(d.message||'已保存', d.success?'success':'error');
+  if(d.success){ DATA.mirror=m; closeMirror(); }
+}
+async function testMirrors(){
+  document.getElementById('mirror-list').innerHTML='<div class="muted">测速中 (可能需要十几秒)…</div>';
+  const d=await api('/test-mirrors','POST',{});
+  const ms=(d&&d.mirrors)||[];
+  if(!ms.length){ document.getElementById('mirror-list').innerHTML='<div class="muted">无可用镜像</div>'; return; }
+  document.getElementById('mirror-list').innerHTML=ms.slice(0,12).map(m=>
+    `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-light);align-items:center">
+      <code>${esc(m.mirror||'(直连)')}</code>
+      <span style="display:flex;gap:8px;align-items:center"><span class="muted">${m.latency!=null?m.latency+'s':''}</span>
+      <button class="v-btn sm tonal" onclick="pickMirror('${esc(m.mirror||'')}')">选用</button></span>
+    </div>`).join('');
+}
+function pickMirror(m){document.getElementById('mirror-input').value=m;toast('已填入, 点保存生效');}
+
+/* 初始化 */
+renderLvFilters();
+loadList();
+loadMarket();  // 预取市场 (取 logo 供已安装卡片)
+</script>
+</body>
+</html>
