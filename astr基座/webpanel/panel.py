@@ -115,11 +115,13 @@ _PANEL_HTML = os.path.join(_WEB_DIR, "panel.html")
 _PAGE_KEY = "astrbot-base"
 _API_PREFIX = "/api/ext/astrbot_base"
 
-# AstrBot 官方插件市场清单 API + 缓存 (10 分钟)
+# AstrBot 官方插件市场清单 API + 缓存
 _MARKET_API = "https://api.soulter.top/astrbot/plugins"
 _market_cache: list | None = None
 _market_cache_ts: float = 0.0
-_MARKET_TTL = 10 * 60
+_MARKET_TTL = 3 * 60 * 60  # 市场清单缓存 3 小时
+_MARKET_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  os.pardir, "data", "market_cache.json")
 
 # 面板可选镜像 (下拉展示; "" = 自动按测速排名多镜像兜底)
 _MIRROR_CHOICES = [
@@ -555,19 +557,49 @@ async def handle_commands(request):
     return await _json({"success": True, "commands": _registered_commands()})
 
 
-async def _fetch_market(force: bool = False) -> list[dict]:
-    """拉取 AstrBot 官方插件市场清单 (10 分钟缓存)。"""
+def _market_cache_load():
+    """从磁盘恢复市场缓存 (重启后 3 小时内不重复拉取)。"""
     global _market_cache, _market_cache_ts
+    try:
+        with open(_MARKET_CACHE_FILE, encoding="utf-8") as f:
+            saved = json.load(f)
+        items, ts = saved.get("items"), float(saved.get("ts") or 0)
+        if isinstance(items, list) and items:
+            _market_cache, _market_cache_ts = items, ts
+    except (OSError, ValueError):
+        pass
+
+
+def _market_cache_save():
+    try:
+        os.makedirs(os.path.dirname(_MARKET_CACHE_FILE), exist_ok=True)
+        with open(_MARKET_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"ts": _market_cache_ts, "items": _market_cache}, f, ensure_ascii=False)
+    except OSError as e:
+        log.debug(f"[astr基座] 市场缓存落盘失败 (忽略): {e}")
+
+
+async def _fetch_market(force: bool = False) -> list[dict]:
+    """拉取 AstrBot 官方插件市场清单 (缓存 3 小时, 落盘; 拉取失败时回退旧缓存)。"""
+    global _market_cache, _market_cache_ts
+    if _market_cache is None:
+        _market_cache_load()
     now = time.time()
     if not force and _market_cache is not None and (now - _market_cache_ts) < _MARKET_TTL:
         return _market_cache
     import aiohttp
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(_MARKET_API, timeout=aiohttp.ClientTimeout(total=30),
-                               headers={"User-Agent": "ElainaBot-astrbot-base"}) as resp:
-            resp.raise_for_status()
-            data = await resp.json(content_type=None)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(_MARKET_API, timeout=aiohttp.ClientTimeout(total=30),
+                                   headers={"User-Agent": "ElainaBot-astrbot-base"}) as resp:
+                resp.raise_for_status()
+                data = await resp.json(content_type=None)
+    except Exception as e:
+        if _market_cache is not None:  # 拉取失败: 用旧缓存兜底, 不让页面卡死
+            log.warning(f"[astr基座] 市场清单拉取失败, 回退旧缓存: {e}")
+            return _market_cache
+        raise
     items: list[dict] = []
     for key, p in (data or {}).items():
         if not isinstance(p, dict):
@@ -593,6 +625,7 @@ async def _fetch_market(force: bool = False) -> list[dict]:
         )
     items.sort(key=lambda x: -x["stars"])
     _market_cache, _market_cache_ts = items, now
+    _market_cache_save()
     return items
 
 

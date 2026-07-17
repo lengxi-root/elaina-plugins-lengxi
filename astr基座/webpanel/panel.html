@@ -299,7 +299,7 @@
             <div class="toolbar">
               <div class="v-field" style="max-width:320px">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input type="text" id="mk-search" placeholder="搜索名称 / 描述 / 作者 / 标签…" oninput="renderMarket()">
+                <input type="text" id="mk-search" placeholder="搜索名称 / 描述 / 作者 / 标签…" oninput="MK_PAGE=1;renderMarket()">
               </div>
               <span class="muted" id="mk-tip">来源: AstrBot 官方插件市场</span>
               <span style="flex:1"></span>
@@ -603,14 +603,23 @@ async function loadCommands(){
 }
 
 /* ===== 插件市场 ===== */
+let MK_PAGE=1;
+const MK_PER_PAGE=24;
+function mkGo(p){ MK_PAGE=p; renderMarket(); document.getElementById('market-body').scrollIntoView({behavior:'smooth',block:'start'}); }
 async function loadMarket(force){
   const el=document.getElementById('market-body');
-  el.innerHTML='<div class="loading"><div class="spinner"></div>正在拉取 AstrBot 官方插件市场…</div>';
+  // 已有列表时刷新不清空, 只在提示栏显示拉取中, 避免页面卡在加载态
+  if(DATA.market.length){ document.getElementById('mk-tip').textContent='正在重新拉取市场清单…'; }
+  else{ el.innerHTML='<div class="loading"><div class="spinner"></div>正在拉取 AstrBot 官方插件市场…</div>'; }
   const d = await api('/market'+(force?'?force=1':''));
-  if(!d.success){ el.innerHTML='<div class="empty">'+esc(d.message||'拉取失败')+'</div>'; return; }
+  if(!d.success){
+    if(DATA.market.length){ toast(d.message||'拉取失败','error'); renderMarket(); }
+    else{ el.innerHTML='<div class="empty">'+esc(d.message||'拉取失败')+'</div>'; }
+    return;
+  }
   DATA.market = d.market||[];
   MARKET_LOADED = true;
-  renderMarket();
+  try{ renderMarket(); }catch(e){ el.innerHTML='<div class="empty">渲染失败: '+esc(String(e))+'</div>'; }
   renderInstalled();  // 市场 logo 可用于已安装卡片
 }
 
@@ -622,7 +631,16 @@ function renderMarket(){
   document.getElementById('mk-tip').textContent = '来源: AstrBot 官方插件市场 · 共 '+DATA.market.length+' 款'+(q?(' · 匹配 '+list.length+' 款'):'');
   const el=document.getElementById('market-body');
   if(!list.length){ el.innerHTML='<div class="empty">'+(q?'无匹配插件':'未获取到市场清单')+'</div>'; return; }
-  el.innerHTML='<div class="grid">'+list.slice(0,200).map(p=>{
+  const totalPages=Math.max(1,Math.ceil(list.length/MK_PER_PAGE));
+  if(MK_PAGE>totalPages) MK_PAGE=totalPages;
+  if(MK_PAGE<1) MK_PAGE=1;
+  const pageList=list.slice((MK_PAGE-1)*MK_PER_PAGE, MK_PAGE*MK_PER_PAGE);
+  const pager = totalPages>1?('<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:14px">'+
+    '<button class="v-btn sm flat" '+(MK_PAGE<=1?'disabled':'')+' onclick="mkGo('+(MK_PAGE-1)+')">上一页</button>'+
+    '<span class="muted">第 '+MK_PAGE+' / '+totalPages+' 页</span>'+
+    '<button class="v-btn sm flat" '+(MK_PAGE>=totalPages?'disabled':'')+' onclick="mkGo('+(MK_PAGE+1)+')">下一页</button>'+
+    '</div>'):'';
+  el.innerHTML='<div class="grid">'+pageList.map(p=>{
     const src = p.download_url || p.repo;
     const logoHtml = p.logo?`<img src="${esc(p.logo)}" alt="" onerror="this.parentNode.innerHTML=DEFAULT_LOGO">`:DEFAULT_LOGO;
     return `<div class="ext-card market">
@@ -649,7 +667,7 @@ function renderMarket(){
         <button class="v-btn sm flat" onclick="marketInstall('${esc(p.name)}','${esc(src)}',${p.installed?'true':'false'})">${p.installed?'重新安装':'安装'}</button>
       </div>
     </div>`;
-  }).join('')+'</div>'+(list.length>200?'<div class="muted" style="margin-top:10px">仅展示前 200 款, 请用搜索缩小范围</div>':'');
+  }).join('')+'</div>'+pager;
 }
 
 async function marketInstall(name, src, isReinstall){
