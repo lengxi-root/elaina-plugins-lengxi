@@ -38,7 +38,7 @@ __plugin_meta__ = {
     'name': '群管',
     'author': '冷曦',
     'description': '违禁词过滤、入群验证、禁发链接/卡片/转发、针对撤回等群管理功能',
-    'version': '1.0.0',
+    'version': '1.0.1',
     'license': 'MIT',
 }
 

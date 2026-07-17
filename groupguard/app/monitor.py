@@ -76,12 +76,13 @@ async def _punish_spam(event, gid, user_id):
                 retracted += 1
             await asyncio.sleep(0.15)
 
-    if punish_minutes == 0:
-        await _notify_safe(event, f'<@{user_id}> ⚠️ 检测到刷屏行为，已撤回近期消息')
-    elif punish_minutes < 0:
-        await _notify_safe(event, f'<@{user_id}> ⚠️ 检测到刷屏行为，已撤回近期消息并永久撤回发言')
-    else:
-        await _notify_safe(event, f'<@{user_id}> ⚠️ 检测到刷屏行为，已撤回近期消息并加入发言撤回 {punish_minutes} 分钟')
+    if _can_notify(gid, user_id):
+        if punish_minutes == 0:
+            await _notify_safe(event, f'<@{user_id}> ⚠️ 检测到刷屏行为，已撤回近期消息')
+        elif punish_minutes < 0:
+            await _notify_safe(event, f'<@{user_id}> ⚠️ 检测到刷屏行为，已撤回近期消息并永久撤回发言')
+        else:
+            await _notify_safe(event, f'<@{user_id}> ⚠️ 检测到刷屏行为，已撤回近期消息并加入发言撤回 {punish_minutes} 分钟')
     log.info(f'刷屏处罚: group={gid} user={user_id} 处罚={punish_minutes}分钟 撤回={retracted}条')
 
 
