@@ -8,7 +8,11 @@ import io
 import asyncio
 import hashlib
 
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 
 def mask_word(word: str) -> str:
@@ -130,8 +134,11 @@ def _render_sync(words: list) -> bytes:
 
 
 async def render_forbidden_list(words: list):
-    """渲染脱敏违禁词列表图并上传 COS meme/, 返回 dict(file_url, px) 或 None"""
-    if not words:
+    """渲染脱敏违禁词列表图并上传 COS meme/, 返回 dict(file_url, px) 或 None (PIL 缺失/上传失败时回退文本)"""
+    if not words or not PIL_AVAILABLE:
         return None
-    png = await asyncio.to_thread(_render_sync, words)
+    try:
+        png = await asyncio.to_thread(_render_sync, words)
+    except Exception:
+        return None
     return await _upload_meme(png, 'fw_list')
