@@ -39,7 +39,7 @@ astr基座/
 
 面板通过框架的 `core.plugin.web_pages`（`register_page` / `register_route`）挂载，接口前缀 `/api/ext/astrbot_base`。界面完全复刻 AstrBot WebUI 风格。功能：
 
-- **插件管理 · 已安装**：列出各插件（版本、指令数、启停开关），可停用/启用、编辑配置（含指令前缀）、更新、卸载；
+- **插件管理 · 已安装**：列出各插件（版本、指令数、启停开关），可停用/启用、编辑配置（含指令前缀）、更新、卸载；带 `pages/` 自带 UI 的插件可点「打开插件UI界面」直接使用（`window.AstrBotPluginPage` bridge + `register_web_api` 后端均已适配）；
 - **插件管理 · 插件市场**：接入 AstrBot 官方插件市场（api.soulter.top），按 star 排序、可搜索，一键下载安装；
 - **安装插件**：GitHub 仓库 URL / `.zip` 直链下载安装，或上传本地 zip（右上角对话框）；安装后自动补装 `requirements.txt` 并热重载；
 - **插件管理 · 指令面板**：查看基座已注册的全部指令与其匹配正则（装/卸插件后自动更新）；

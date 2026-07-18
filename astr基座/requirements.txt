@@ -7,4 +7,5 @@ playwright
 aiosqlite
 mcp
 pyyaml
+quart
 sqlalchemy

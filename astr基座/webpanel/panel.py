@@ -16,6 +16,8 @@ from collections import deque
 
 from core.base.logger import PLUGIN, get_logger
 
+from . import pages as plugin_pages
+
 log = get_logger(PLUGIN, "astr基座")
 
 # 面板日志挂在框架根 logger 上, 捕获全部框架日志 (复刻 AstrBot 控制台)
@@ -304,6 +306,7 @@ def _installed_apps() -> list[dict]:
                 "has_schema": os.path.isfile(os.path.join(entry.path, "_conf_schema.json")),
                 "command_count": _app_command_count(entry.name),
                 "enabled": entry.name not in disabled,
+                "pages": plugin_pages.list_app_pages(entry.path),
             }
         )
     return out
@@ -616,7 +619,7 @@ async def _fetch_market(force: bool = False) -> list[dict]:
                 "author": p.get("author") or "",
                 "version": p.get("version") or "",
                 "stars": int(p.get("stars") or 0),
-                "tags": p.get("tags") or [],
+                "tags": _normalize_tags(p.get("tags")),
                 "repo": repo,
                 "download_url": p.get("download_url") or "",
                 "updated_at": p.get("updated_at") or "",
@@ -629,6 +632,15 @@ async def _fetch_market(force: bool = False) -> list[dict]:
     return items
 
 
+def _normalize_tags(tags) -> list[str]:
+    """市场个别插件的 tags 是字符串而非列表, 统一成字符串列表 (否则前端搜索/分页会报错)。"""
+    if isinstance(tags, str):
+        tags = [tags]
+    elif not isinstance(tags, list):
+        tags = []
+    return [str(t) for t in tags if t]
+
+
 async def handle_market(request):
     """AstrBot 官方插件市场清单 (需联网, 单独异步接口, 不阻塞首屏)。"""
     force = request.query.get("force") in ("1", "true")
@@ -638,7 +650,8 @@ async def handle_market(request):
         log.warning(f"[astr基座] 拉取插件市场失败: {e}")
         return await _json({"success": False, "message": f"拉取插件市场失败: {e}"})
     installed = {a["name"] for a in _installed_apps()}
-    out = [dict(p, installed=p["name"] in installed) for p in items]
+    # 旧磁盘缓存可能含未归一化的 tags, 输出前再归一化一次
+    out = [dict(p, installed=p["name"] in installed, tags=_normalize_tags(p.get("tags"))) for p in items]
     return await _json({"success": True, "market": out, "total": len(out)})
 
 
@@ -1102,6 +1115,9 @@ _ROUTES = [
     ("GET", "/config", handle_get_config),
     ("GET", "/settings", handle_get_settings),
     ("GET", "/logs", handle_logs),
+    ("GET", "/page", plugin_pages.handle_page),
+    ("GET", "/page-api", plugin_pages.handle_page_api),
+    ("POST", "/page-api", plugin_pages.handle_page_api),
     ("POST", "/install", handle_install),
     ("POST", "/uninstall", handle_uninstall),
     ("POST", "/toggle", handle_toggle),

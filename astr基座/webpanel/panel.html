@@ -529,6 +529,16 @@ async function loadList(){
   renderInstalled();
 }
 
+function tagsOf(p){ return Array.isArray(p.tags)?p.tags:(p.tags?[String(p.tags)]:[]); }
+
+function pageUrl(app,page){ return API+'/page?app='+encodeURIComponent(app)+'&page='+encodeURIComponent(page)+'&token='+encodeURIComponent(TOKEN); }
+function openPluginPage(app,pages){
+  if(!pages||!pages.length) return;
+  if(pages.length===1){ window.open(pageUrl(app,pages[0]),'_blank'); return; }
+  const pick=prompt('该插件有多个 UI 页面, 输入要打开的页面名:\n'+pages.join('\n'), pages[0]);
+  if(pick&&pages.includes(pick.trim())) window.open(pageUrl(app,pick.trim()),'_blank');
+}
+
 function marketLogoOf(name){
   const p = DATA.market.find(x=>x.name===name);
   return p && p.logo ? p.logo : '';
@@ -557,6 +567,10 @@ function renderInstalled(){
       <a class="v-btn icon-btn tonal-info" title="打开仓库" href="${esc(a.repo)}" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
       </a>`:'';
+    const pagesBtn = (a.pages&&a.pages.length)?`
+      <button class="v-btn icon-btn tonal-primary" title="打开插件UI界面" onclick='openPluginPage(${JSON.stringify(a.name)},${JSON.stringify(a.pages)})'>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </button>`:'';
     return `<div class="ext-card${enabled?'':' off'}">
       <div class="ext-card-text">
         <div class="ext-row">
@@ -577,6 +591,7 @@ function renderInstalled(){
       </div>
       <div class="ext-actions">
         ${repoBtn}
+        ${pagesBtn}
         <button class="v-btn icon-btn tonal-primary" title="插件配置" onclick="openCfg('${esc(a.name)}')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
@@ -627,7 +642,7 @@ function renderMarket(){
   document.getElementById('n-market').textContent = DATA.market.length?('('+DATA.market.length+')'):'';
   const q=(document.getElementById('mk-search').value||'').toLowerCase().trim();
   const list = !q ? DATA.market : DATA.market.filter(p=>
-    (p.name+' '+p.display_name+' '+p.desc+' '+p.author+' '+(p.tags||[]).join(' ')).toLowerCase().includes(q));
+    ((p.name||'')+' '+(p.display_name||'')+' '+(p.desc||'')+' '+(p.author||'')+' '+tagsOf(p).join(' ')).toLowerCase().includes(q));
   document.getElementById('mk-tip').textContent = '来源: AstrBot 官方插件市场 · 共 '+DATA.market.length+' 款'+(q?(' · 匹配 '+list.length+' 款'):'');
   const el=document.getElementById('market-body');
   if(!list.length){ el.innerHTML='<div class="empty">'+(q?'无匹配插件':'未获取到市场清单')+'</div>'; return; }
@@ -655,7 +670,7 @@ function renderMarket(){
             <div class="ext-chips">
               <span class="v-chip warning">★ ${p.stars}</span>
               ${p.author?`<span class="v-chip secondary">${esc(p.author)}</span>`:''}
-              ${(p.tags||[]).slice(0,3).map(t=>`<span class="v-chip primary">${esc(t)}</span>`).join('')}
+              ${tagsOf(p).slice(0,3).map(t=>`<span class="v-chip primary">${esc(t)}</span>`).join('')}
             </div>
             <div class="ext-desc">${esc(p.desc||'')}</div>
           </div>

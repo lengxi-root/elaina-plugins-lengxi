@@ -46,6 +46,9 @@ class AstrMessageEvent:
     def get_platform_name(self) -> str:
         return "elaina"
 
+    def get_platform_id(self) -> str:
+        return self.platform_meta.id
+
     def get_message_str(self) -> str:
         return self.message_str
 
@@ -371,14 +374,21 @@ class Context:
     def get_platform(self, *_a, **_k):
         return None
 
+    def get_platform_inst(self, *_a, **_k):
+        return None
+
     def register_task(self, coro, name=""):
         return asyncio.create_task(coro)
 
-    # ---- 未适配的能力: 提供 no-op, 避免插件实例化失败 ----
-    def register_web_api(self, *_a, **_k):
+    def register_web_api(self, route, view_handler=None, methods=None, desc: str = ""):
+        """登记插件后端 Web API, 由基座面板插件页 (page-api) 分发调用。"""
+        if view_handler is not None:
+            state.register_web_api(route, view_handler, methods, desc)
         return None
 
-    def unregister_web_api(self, *_a, **_k):
+    def unregister_web_api(self, route=None, methods=None, *_a, **_k):
+        if route is not None:
+            state.unregister_web_api(route, methods)
         return None
 
     def add_llm_tools(self, *_a, **_k):

@@ -10,11 +10,33 @@ PLUGIN_SPECS: list = []   # 发现到的 AstrBot 插件 (PluginSpec)
 _CONFIG: dict = {}        # 基座配置
 STAR_SUBCLASSES: list = []  # 所有定义过的 Star 子类 (按 import 顺序)
 _APPS_DATA_ROOT = {"path": ""}  # apps 数据根目录 (装 dict 便于跨模块取最新)
+WEB_APIS: list = []  # 插件 register_web_api 登记的后端 API: (route, handler, methods, desc)
 
 
 def reset():
     PLUGIN_SPECS.clear()
     STAR_SUBCLASSES.clear()
+    WEB_APIS.clear()
+
+
+def register_web_api(route: str, handler, methods, desc: str = ""):
+    """登记插件 Web API (同路由同方法覆盖), 供面板插件页 page-api 分发。"""
+    route = "/" + str(route or "").strip().lstrip("/")
+    methods = [str(m).upper() for m in (methods or ["GET"])]
+    for i, (r, _h, m, _d) in enumerate(WEB_APIS):
+        if r == route and m == methods:
+            WEB_APIS[i] = (route, handler, methods, desc)
+            return
+    WEB_APIS.append((route, handler, methods, desc))
+
+
+def unregister_web_api(route: str, methods=None):
+    route = "/" + str(route or "").strip().lstrip("/")
+    methods = [str(m).upper() for m in methods] if methods else None
+    WEB_APIS[:] = [
+        (r, h, m, d) for r, h, m, d in WEB_APIS
+        if not (r == route and (methods is None or m == methods))
+    ]
 
 
 def set_config(cfg: dict):
