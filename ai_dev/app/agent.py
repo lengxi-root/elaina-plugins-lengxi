@@ -194,6 +194,7 @@ async def run_agent(store, session_id: str, user_text: str, model: str = '', ima
                         cur += 1
                         continue
                     store.add_event('error', {'message': f'模型调用失败: {e}'}, session_id)
+                    store.set_messages(session_id, [m for m in messages if m.get('role') != 'system'])
                     return {'ok': False, 'message': str(e), 'iterations': iteration}
 
             choice = (resp.get('choices') or [{}])[0]

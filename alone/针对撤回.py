@@ -57,8 +57,10 @@ def _load_targets():
 
 
 def _save_targets():
-    with open(_TARGETS_FILE, 'w', encoding='utf-8') as f:
+    tmp = _TARGETS_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(_targets, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, _TARGETS_FILE)
 
 
 def _purge_expired():

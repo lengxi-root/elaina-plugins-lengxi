@@ -111,8 +111,10 @@ class AIStore:
 
     def _save_sessions(self):
         try:
-            with open(self._sessions_file, 'w', encoding='utf-8') as f:
+            tmp = self._sessions_file + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(self._sessions, f, ensure_ascii=False)
+            os.replace(tmp, self._sessions_file)
         except Exception:
             pass
 
