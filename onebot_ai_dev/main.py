@@ -22,7 +22,7 @@ __plugin_meta__ = {
     'name': 'AI 开发助手',
     'author': '冷曦',
     'description': '接入 OpenAI 让 AI 自主编写/修改框架插件并提供亮色 Web 面板',
-    'version': '1.0.5',
+    'version': '1.1.0',
 }
 
 log = logging.getLogger('ElainaBot.plugins.ai_dev')
