@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+
 
 class _Component:
     type = "component"
@@ -46,6 +48,12 @@ class Image(_Component):
         obj.bytes_ = data
         obj.file = data
         return obj
+
+    @classmethod
+    def fromBase64(cls, data: str):
+        if isinstance(data, str) and data.startswith("base64://"):
+            data = data[len("base64://"):]
+        return cls.fromBytes(base64.b64decode(data))
 
     def __repr__(self):
         return f"Image(file={self.file!r})"
