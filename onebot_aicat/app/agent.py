@@ -83,7 +83,7 @@ async def run_agent(history: list, user_text: str, meta: dict, model: str = '') 
     cur_idx = 0
     cur_model = candidates[0] if candidates else aiconfig.model()
 
-    messages = [{'role': 'system', 'content': toolmod.build_system_prompt()}]
+    messages = [{'role': 'system', 'content': toolmod.build_system_prompt(meta)}]
     messages.extend(history)
     messages.append({'role': 'user', 'content': user_text})
 
