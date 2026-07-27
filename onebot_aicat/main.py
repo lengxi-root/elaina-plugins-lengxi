@@ -16,14 +16,23 @@ from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
 from .app import agent as agentmod
-from .app import aiconfig, modelmgr, packet, safety, webpanel
+from .app import (
+    aiconfig,
+    customcmd,
+    modelmgr,
+    packet,
+    safety,
+    tasks,
+    watchers,
+    webpanel,
+)
 from .app.context import ContextManager
 
 __plugin_meta__ = {
     'name': '猫娘 AI (aicat)',
     'author': '冷曦',
     'description': '接入 OpenAI 兼容接口的 AI 对话助手, 支持人设/上下文/工具调用与 Web 面板配置',
-    'version': '1.0.0',
+    'version': '1.1.0',
 }
 
 log = get_logger(PLUGIN, 'aicat')
@@ -43,6 +52,8 @@ _ICON = (
 _CTX_ATTR = '_aicat_context'
 _POLL_TASK_ATTR = '_aicat_poll_task'
 _POLL_STOP_ATTR = '_aicat_poll_stop'
+_SCHED_TASK_ATTR = '_aicat_sched_task'
+_SCHED_STOP_ATTR = '_aicat_sched_stop'
 
 
 def _start_poll():
@@ -74,6 +85,35 @@ def _stop_poll(app=None):
     setattr(app, _POLL_TASK_ATTR, None)
 
 
+def _start_scheduler():
+    """启动定时任务调度循环 (热重载安全)。"""
+    from core.application import get_app
+    app = get_app()
+    if app is None:
+        return
+    _stop_scheduler(app)
+    stop = asyncio.Event()
+    task = asyncio.create_task(tasks.scheduler_loop(stop))
+    setattr(app, _SCHED_STOP_ATTR, stop)
+    setattr(app, _SCHED_TASK_ATTR, task)
+
+
+def _stop_scheduler(app=None):
+    if app is None:
+        from core.application import get_app
+        app = get_app()
+    if app is None:
+        return
+    stop = getattr(app, _SCHED_STOP_ATTR, None)
+    if stop is not None:
+        stop.set()
+    task = getattr(app, _SCHED_TASK_ATTR, None)
+    if task is not None and not task.done():
+        task.cancel()
+    setattr(app, _SCHED_STOP_ATTR, None)
+    setattr(app, _SCHED_TASK_ATTR, None)
+
+
 def _context() -> ContextManager:
     from core.application import get_app
     app = get_app()
@@ -100,12 +140,14 @@ async def init():
     )
     webpanel.register_routes()
     _start_poll()
+    _start_scheduler()
     log.info('aicat 插件已加载')
 
 
 @on_unload
 async def cleanup():
     _stop_poll()
+    _stop_scheduler()
     unregister_page(_PAGE_KEY)
 
 
@@ -220,7 +262,8 @@ async def _run_and_reply(event, instruction: str, is_random: bool = False, conte
 
     ctx = _context()
     history = ctx.get(user_id, group_id)
-    meta = {'user_id': user_id, 'group_id': group_id, 'is_owner': aiconfig.is_owner(user_id)}
+    meta = {'user_id': user_id, 'group_id': group_id, 'is_owner': aiconfig.is_owner(user_id),
+            'self_id': str(getattr(event, 'self_id', '') or '')}
 
     try:
         result = await agentmod.run_agent(history, instruction, meta)
@@ -288,6 +331,26 @@ async def handle_packet(event, match=None):
 async def handle_message(event, match=None):
     if not aiconfig.enabled():
         return
+    # 用户检测器 (命中时自动执行操作, 不阻断后续处理)
+    try:
+        watch_result = await watchers.check_and_execute(
+            event.user_id, event.group_id, event.content or '', event.message_id)
+        if watch_result:
+            log.info(f'用户检测器触发: {watch_result["watcher_id"]}')
+    except Exception as e:  # noqa: BLE001
+        log.error(f'用户检测器执行失败: {e}')
+
+    # 自定义指令 (命中则直接回复, 不进入 AI 对话)
+    try:
+        cmd_resp = await customcmd.match_and_execute(
+            event.content or '', event.user_id, event.group_id,
+            event.sender_card or event.sender_nickname or '')
+        if cmd_resp:
+            await event.reply(cmd_resp[:3000])
+            return
+    except Exception as e:  # noqa: BLE001
+        log.error(f'自定义指令执行失败: {e}')
+
     instruction = _extract_instruction(event)
     if not instruction:
         await _maybe_random_reply(event)

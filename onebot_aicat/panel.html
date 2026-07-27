@@ -367,6 +367,14 @@
             <div class="toggle-info"><div class="toggle-title">允许公开取包指令</div><div class="toggle-desc">开启后普通成员也可用「取 / 取&lt;seq&gt; / 取上一条」取消息 protobuf; 关闭则仅主人可用</div></div>
             <label class="toggle-switch"><input type="checkbox" id="allow_public_packet"><span class="toggle-track"></span></label>
           </div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-title">解析 pb 工具仅主人可用</div><div class="toggle-desc">开启后 AI 的 parse_pb (解析 protobuf / msg_idx) 工具仅主人触发时可调用; 关闭则任何用户都能让 AI 解析</div></div>
+            <label class="toggle-switch"><input type="checkbox" id="ai_pb_parse_owner_only"><span class="toggle-track"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-title">pb 发包工具仅主人可用</div><div class="toggle-desc">开启后 AI 的 send_pb (发送 protobuf 协议数据包) 工具仅主人触发时可调用; 建议保持开启</div></div>
+            <label class="toggle-switch"><input type="checkbox" id="ai_pb_send_owner_only"><span class="toggle-track"></span></label>
+          </div>
           <div class="hint" style="margin-top:8px;line-height:1.7">
             主人专用指令 (无需前缀):<br>
             · <code>api {json}</code> — 调用任意 OneBot 动作, 支持 <code>{"action":..,"params":..}</code> 或首行动作名+JSON<br>
@@ -374,7 +382,8 @@
             · <code>pbl {json}</code> — 发送长消息 (合并转发底层协议)<br>
             · <code>raw &lt;cmd&gt; {json}</code> — 对指定协议 cmd 发送数据包并回显响应<br>
             · <code>模式取1 / 模式取2</code> — 切换取包结果展示为平铺 / 嵌套<br>
-            取包指令 (可公开): <code>取</code> / <code>取&lt;seq&gt;</code> / <code>取上一条</code>
+            取包指令 (可公开): <code>取</code> / <code>取&lt;seq&gt;</code> / <code>取上一条</code><br>
+            AI 工具: <code>parse_pb</code> (解析 pb / msg_idx) 与 <code>send_pb</code> (pb 发包) 已接入模型, 权限由上方两个开关控制
           </div>
         </div>
         <div class="card">
@@ -457,7 +466,8 @@ function toast(msg, err) {
 }
 
 const BOOLS = ['enabled','allow_at_trigger','send_confirm_message','safety_filter','enable_tools','auto_switch',
-  'long_text_forward','random_reply','allow_public_packet'];
+  'long_text_forward','random_reply','allow_public_packet',
+  'ai_pb_parse_owner_only','ai_pb_send_owner_only'];
 const FIELDS = ['temperature','reasoning_effort','max_rounds','request_timeout',
   'health_check_interval','bot_name','personality','system_prompt','prefix','confirm_message','max_context_turns',
   'context_expire_seconds','owner_qqs','forward_threshold','random_reply_chance'];

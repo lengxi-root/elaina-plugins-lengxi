@@ -52,6 +52,9 @@ DEFAULTS = {
     'owner_qqs': '',
     # 发包/取包: 是否允许非主人使用公开取包指令 (取 / 取<seq> / 取上一条)
     'allow_public_packet': True,
+    # AI 工具: 解析 pb / pb 发包 是否仅允许主人使用
+    'ai_pb_parse_owner_only': False,
+    'ai_pb_send_owner_only': True,
 }
 
 # 允许面板写入并持久化的字段 (api_key 单独处理)
@@ -63,11 +66,12 @@ _WRITABLE = (
     'confirm_message', 'safety_filter', 'enable_tools', 'max_context_turns',
     'context_expire_seconds', 'owner_qqs',
     'long_text_forward', 'forward_threshold', 'random_reply', 'random_reply_chance',
-    'allow_public_packet',
+    'allow_public_packet', 'ai_pb_parse_owner_only', 'ai_pb_send_owner_only',
 )
 
 _BOOL_FIELDS = ('enabled', 'allow_at_trigger', 'send_confirm_message', 'safety_filter', 'enable_tools', 'auto_switch',
-                'long_text_forward', 'random_reply', 'allow_public_packet')
+                'long_text_forward', 'random_reply', 'allow_public_packet',
+                'ai_pb_parse_owner_only', 'ai_pb_send_owner_only')
 _INT_FIELDS = ('max_rounds', 'request_timeout', 'max_context_turns', 'context_expire_seconds', 'health_check_interval',
                'forward_threshold')
 _FLOAT_FIELDS = ('temperature', 'random_reply_chance')
@@ -423,6 +427,14 @@ def allow_public_packet() -> bool:
     return _get_bool('allow_public_packet')
 
 
+def ai_pb_parse_owner_only() -> bool:
+    return _get_bool('ai_pb_parse_owner_only')
+
+
+def ai_pb_send_owner_only() -> bool:
+    return _get_bool('ai_pb_send_owner_only')
+
+
 def random_reply_chance() -> float:
     """随机回复概率 (0-100, 单位 %); 例如 1 表示 1% 概率触发。"""
     try:
@@ -496,6 +508,8 @@ def public_config() -> dict:
         'random_reply': random_reply(),
         'random_reply_chance': random_reply_chance(),
         'allow_public_packet': allow_public_packet(),
+        'ai_pb_parse_owner_only': ai_pb_parse_owner_only(),
+        'ai_pb_send_owner_only': ai_pb_send_owner_only(),
         'max_context_turns': max_context_turns(),
         'context_expire_seconds': context_expire_seconds(),
         'owner_qqs': str(get('owner_qqs') or ''),
