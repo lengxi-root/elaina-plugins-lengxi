@@ -27,6 +27,7 @@ OWNER_ONLY_APIS = frozenset({
 ADMIN_REQUIRED_APIS = frozenset({
     'set_group_ban', 'set_group_kick', 'set_group_whole_ban', 'set_group_anonymous_ban',
     'kick_group_member_batch', 'set_group_admin', 'set_group_special_title', 'set_group_name',
+    'set_group_card',
     'set_group_portrait', 'set_essence_msg', 'delete_essence_msg', 'send_group_notice',
     '_send_group_notice', 'delete_group_file', 'delete_group_folder',
 })
@@ -216,7 +217,7 @@ def _msg_query_scope(args: dict, meta: dict) -> tuple:
 async def query_history_messages(args: dict, meta: dict) -> dict:
     """查询历史聊天记录 (框架自动记录的消息库), 支持关键词/用户/时间范围过滤与分页。"""
     group_id, user_id = _msg_query_scope(args, meta)
-    limit = min(int(args.get('limit') or 20), 100)
+    limit = int(args.get('limit') or 20)
     offset = int(args.get('offset') or 0)
     hours_ago = args.get('hours_ago')
     start_time = None
@@ -236,7 +237,7 @@ async def search_messages(args: dict, meta: dict) -> dict:
     if not pattern:
         return {'ok': False, 'error': '缺少搜索模式 pattern'}
     group_id, user_id = _msg_query_scope(args, meta)
-    limit = min(int(args.get('limit') or 20), 100)
+    limit = int(args.get('limit') or 20)
     records = await msglog.search_messages(meta, str(pattern), group_id=group_id,
                                            user_id=user_id, limit=limit)
     if not records:
@@ -283,6 +284,7 @@ TOOLS_SCHEMA = [
                 '普通文字回复无需调用本工具, 直接输出文本即可。'
                 '常用: send_group_msg{group_id,message} / send_private_msg{user_id,message} / '
                 'delete_msg{message_id} / set_group_ban{group_id,user_id,duration} / '
+                'set_group_card{group_id,user_id,card} (改群昵称/群名片) / '
                 'get_group_member_info{group_id,user_id}。message 为消息段数组, '
                 '如 [{"type":"image","data":{"file":"URL"}}]。'
             ),
@@ -351,7 +353,7 @@ TOOLS_SCHEMA = [
                     'group_id': {'type': 'string', 'description': '群号, 查询指定群的消息'},
                     'user_id': {'type': 'string', 'description': '用户QQ号, 过滤指定用户的消息'},
                     'keyword': {'type': 'string', 'description': '关键词, 搜索包含该词的消息'},
-                    'limit': {'type': 'integer', 'description': '返回条数, 默认20, 最大100'},
+                    'limit': {'type': 'integer', 'description': '返回条数, 默认20'},
                     'offset': {'type': 'integer', 'description': '偏移量, 用于分页'},
                     'hours_ago': {'type': 'number', 'description': '查询多少小时内的消息, 如24表示最近24小时'},
                 },
@@ -418,6 +420,43 @@ TOOLS_SCHEMA = [
                     'count': {'type': 'integer', 'description': '返回结果数量, 默认5'},
                 },
                 'required': ['query'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'search_napcat_apis',
+            'description': (
+                '在 NapCat (OneBot) 接口文档目录中按关键词搜索接口, 返回匹配的接口名称/分类/文档链接。'
+                '不确定某功能用什么 action 或参数时先用本工具搜, 再用 get_napcat_api_doc 看详情。'
+                '由服务器拉取文档, 无需联网能力。'
+            ),
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'keyword': {'type': 'string', 'description': '关键词, 如 群名片 / 戳一戳 / 相册; 多个词用空格分隔(需同时匹配)'},
+                    'limit': {'type': 'integer', 'description': '返回条数, 默认10, 最大30'},
+                },
+                'required': ['keyword'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'get_napcat_api_doc',
+            'description': (
+                '获取 NapCat 接口文档详情 (请求参数/响应结构的 OpenAPI 定义)。'
+                'url 使用 search_napcat_apis 返回的文档链接。由服务器拉取, 无需联网能力。'
+            ),
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'url': {'type': 'string', 'description': '文档链接, 如 https://napcat.apifox.cn/xxx.md'},
+                    'max_length': {'type': 'integer', 'description': '最大返回字符数, 默认6000'},
+                },
+                'required': ['url'],
             },
         },
     },
@@ -657,6 +696,12 @@ async def run_tool(name: str, args: dict, meta: dict) -> dict:
         return await webtools.web_search(str(args.get('query') or ''),
                                          str(args.get('engine') or 'auto'),
                                          args.get('count') or 5)
+    if name == 'search_napcat_apis':
+        return await webtools.search_napcat_apis(str(args.get('keyword') or ''),
+                                                 args.get('limit') or 10)
+    if name == 'get_napcat_api_doc':
+        return await webtools.get_napcat_api_doc(str(args.get('url') or ''),
+                                                 args.get('max_length') or 6000)
     if name == 'fetch_url':
         return await webtools.fetch_url(str(args.get('url') or ''),
                                         args.get('max_length') or 2000)
@@ -710,12 +755,16 @@ def build_system_prompt() -> str:
             '',
             '【工具规则】',
             '- 只有在需要发送图片/语音/视频/音乐卡片、合并转发、群管理等场景时才调用 call_api。',
+            '- 你可以通过 call_api 执行群管理: 改群名片/群昵称 (set_group_card)、禁言、踢人、'
+            '设置头衔等, 不要声称自己无法操作。需要对多个成员操作时可多次调用。',
             '- 群聊中只操作当前群, 不跨群。',
             '- 群管理操作会校验权限, 无权限时会被拒绝, 请如实告知用户。',
             '- 需要解析 protobuf / msg_idx 时用 parse_pb; 需要发送协议数据包时用 send_pb。',
             '- parse_pb / send_pb 可能被限制为仅主人可用, 无权限时会被拒绝, 请如实告知用户。',
             '- 查聊天记录用 query_history_messages / search_messages / get_message_stats / get_message_by_id。',
             '- 需要实时信息时用 web_search 搜索, 用 fetch_url 读取网页。',
+            '- 不确定 OneBot/NapCat 接口的 action 名或参数时, 先用 search_napcat_apis 搜接口, '
+            '再用 get_napcat_api_doc 查看参数详情, 然后用 call_api 调用。',
             ('- 定时任务 (add/remove/list/toggle_scheduled_task, run_scheduled_task_now)、'
              '用户检测器 (add/remove/list/toggle_user_watcher)、'
              '自定义指令 (add/remove/list/toggle_custom_command) 的增删改仅主人可用。'),

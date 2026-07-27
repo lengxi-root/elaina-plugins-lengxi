@@ -32,7 +32,7 @@ __plugin_meta__ = {
     'name': '猫娘 AI (aicat)',
     'author': '冷曦',
     'description': '接入 OpenAI 兼容接口的 AI 对话助手, 支持人设/上下文/工具调用与 Web 面板配置',
-    'version': '1.1.0',
+    'version': '1.3.0',
 }
 
 log = get_logger(PLUGIN, 'aicat')
