@@ -529,7 +529,8 @@ async def _render_html_to_image(html: str, options: dict | None = None):
     """用框架共享 playwright 模块截图; 无浏览器时返回 None。"""
     import tempfile
 
-    fw = state.get_module("playwright")
+    rd = state.get_module("renderer")
+    fw = rd.playwright if rd else state.get_module("playwright")
     ensure = getattr(fw, "_ensure_browser", None) if fw else None
     if ensure is None:
         log.warning("[astr基座] 无框架 playwright 模块, html_render 不可用")

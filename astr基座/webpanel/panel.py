@@ -924,9 +924,9 @@ _BASE_SETTINGS = [
 # 基座依赖的框架拓展模块开关 (type: module, 直接启停框架 modules/, 持久化到 modules_enabled.json)
 _MODULE_SETTINGS = [
     {
-        "key": "playwright",
-        "title": "Playwright 渲染模块",
-        "desc": "启用框架共享 Playwright 浏览器, 供插件截图/渲染复用 (避免每次冷启动 Chromium, 显著加快出图)。关: 各插件用自带浏览器渲染。",
+        "key": "renderer",
+        "title": "渲染引擎模块",
+        "desc": "启用框架共享渲染引擎 (PIL 渲染池 + Playwright 浏览器), 供插件截图/渲染复用 (避免每次冷启动 Chromium, 显著加快出图)。关: 各插件用自带浏览器渲染。",
     },
     {
         "key": "image_hosting",

@@ -121,7 +121,7 @@ async def _t_delete_file(path: str) -> dict:
         return {'path': _rel(target), 'deleted': True, 'type': 'file'}
     if os.path.isdir(target):
         import shutil
-        shutil.rmtree(target)
+        await asyncio.to_thread(shutil.rmtree, target)
         return {'path': _rel(target), 'deleted': True, 'type': 'dir'}
     raise ValueError(f'路径不存在: {path}')
 

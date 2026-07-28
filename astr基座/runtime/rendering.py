@@ -11,7 +11,8 @@ log = state.log
 
 async def prewarm_browser():
     """预热框架共享浏览器, 让首次渲染不必冷启动 Chromium。"""
-    fw = state.get_module("playwright")
+    rd = state.get_module("renderer")
+    fw = rd.playwright if rd else state.get_module("playwright")
     ensure = getattr(fw, "_ensure_browser", None) if fw else None
     if ensure is None:
         return
@@ -49,7 +50,8 @@ def _hook_renderer(renderer_cls):
     orig_screenshot = renderer_cls._screenshot
 
     async def _screenshot_hooked(self, *args, **kwargs):
-        fw = state.get_module("playwright")
+        rd = state.get_module("renderer")
+        fw = rd.playwright if rd else state.get_module("playwright")
         if fw is not None:
             try:
                 ensure = getattr(fw, "_ensure_browser", None)
