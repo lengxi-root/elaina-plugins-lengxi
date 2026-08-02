@@ -1,5 +1,10 @@
 """字符字: 将汉字转为字符画"""
 
+import json
+
+from core.network.http_compat import AsyncHttpClient
+from core.plugin.decorators import handler, on_unload
+
 __plugin_meta__ = {
     'name': '字符字',
     'author': 'lengxi',
@@ -7,11 +12,6 @@ __plugin_meta__ = {
     'version': '1.0.0',
 }
 
-
-import json
-
-from core.network.http_compat import AsyncHttpClient
-from core.plugin.decorators import handler, on_unload
 
 _API = 'http://life.chacuo.net/convertfont2char'
 _HDR = {
@@ -34,7 +34,7 @@ async def _http():
 async def _cleanup():
     global _client
     if _client and not _client.is_closed:
-        await _client.close()
+        await _client.aclose()
     _client = None
 
 
