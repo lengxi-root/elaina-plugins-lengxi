@@ -14,7 +14,7 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .app import aiconfig
+from .app import central
 from .app import agent as agentmod
 from .app import webpanel
 from .app.store import AIStore
@@ -22,8 +22,9 @@ from .app.store import AIStore
 __plugin_meta__ = {
     'name': 'AI 开发助手',
     'author': '冷曦',
-    'description': '接入 OpenAI 让 AI 自主编写/修改框架插件',
+    'description': '通过中央 AI LLM 模块调用模型并自主编写/修改框架插件',
     'version': '1.1.0',
+    'github': 'https://github.com/lengxi-root/elaina-plugins-lengxi',
 }
 
 log = get_logger(PLUGIN, 'ai_dev')
@@ -73,8 +74,8 @@ async def cleanup():
 @handler(r'^ai\s+([\s\S]+)$', name='ai', desc='AI 开发助手: ai <需求> (仅主人)', owner_only=True)
 async def handle_ai(event, match):
     """主人在 QQ 中直接驱动 AI 开发助手"""
-    if not aiconfig.is_configured():
-        await event.reply('AI 未配置: 请在 config/settings.yaml 的 ai.api_key 填入密钥, 或设置环境变量 AI_DEV_API_KEY')
+    if not central.available():
+        await event.reply('中央 AI 模块未启用，请先在模块管理中启用并配置 AI 服务')
         return
     prompt = match.group(1).strip()
     from core.application import get_app
