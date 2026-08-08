@@ -36,10 +36,8 @@ async def _body(request: web.Request) -> dict:
 
 async def _get_config(_request: web.Request) -> web.Response:
     result = config.public_config()
-    result.pop('providers', None)
-    result.pop('active_provider', None)
-    result.pop('auto_switch', None)
     result['shared_ai_available'] = central.available()
+    result['shared_ai_status'] = central.status()
     result['shared_ai'] = central.public_config()
     return web.json_response({'success': True, 'data': result})
 
@@ -48,10 +46,8 @@ async def _save_config(request: web.Request) -> web.Response:
     body = await _body(request)
     try:
         value = await asyncio.to_thread(config.save, body)
-        value.pop('providers', None)
-        value.pop('active_provider', None)
-        value.pop('auto_switch', None)
         value['shared_ai_available'] = central.available()
+        value['shared_ai_status'] = central.status()
         value['shared_ai'] = central.public_config()
         return web.json_response({'success': True, 'data': value})
     except (TypeError, ValueError) as error:
@@ -96,7 +92,9 @@ async def _test(request: web.Request) -> web.Response:
     current = config.load()
     personality = config.active_personality(current, str(body.get('personality_id') or ''))
     if not central.available():
-        return web.json_response({'success': False, 'error': '中央 AI 模块未启用'}, status=503)
+        return web.json_response({
+            'success': False, 'error': central.status()['message'],
+        }, status=503)
     if personality is None:
         return web.json_response({'success': False, 'error': '人格不存在'}, status=400)
     message = str(body.get('message') or '你好，请用一句话确认连接成功。').strip()

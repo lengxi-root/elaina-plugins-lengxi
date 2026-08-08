@@ -374,20 +374,6 @@ input,textarea,select{font-family:inherit}
 </head>
 <body>
 
-<!-- Login -->
-<div id="login">
-  <div class="login-card">
-    <div class="login-logo"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5 10.1 7.6z"/><path d="M19 14l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/></svg></div>
-    <h1>AI 开发助手</h1>
-    <p>使用框架管理员密码登录，开始让 AI 编写与管理插件。</p>
-    <form id="loginForm">
-      <div class="field"><input id="pwd" type="password" placeholder="管理员密码" autocomplete="current-password"></div>
-      <button class="btn-primary" type="submit" id="loginBtn">登录</button>
-    </form>
-    <div class="login-err" id="loginErr"></div>
-  </div>
-</div>
-
 <!-- App -->
 <div id="app">
   <div class="topbar">
@@ -408,7 +394,6 @@ input,textarea,select{font-family:inherit}
     <div class="status"><span class="dot" id="connDot"></span><span id="connTxt">连接中…</span></div>
     <button class="icon-btn menu-btn menu-act" id="menuActivity" title="实时调用"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="18" y2="18"/></svg></button>
     <button class="icon-btn" id="settingsBtn" title="设置 (OpenAI 地址 / 密钥 / 模型)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-    <button class="icon-btn" id="logoutBtn" title="退出登录"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
   </div>
 
   <div class="main">
@@ -466,7 +451,21 @@ input,textarea,select{font-family:inherit}
   <div class="drawer-back" id="drawerBack"></div>
 </div>
 
-<!-- Settings modal -->
+<div class="modal" id="capabilityModal">
+  <div class="modal-card" style="width:520px">
+    <h2>中央 Agent 能力</h2>
+    <div class="sub">选择 AI 开发可调用的中央能力。能力内容、来源和跨插件授权在 AI LLM 模块中统一管理。</div>
+    <div class="set-row">
+      <label class="switch-row"><input type="checkbox" id="centralSkills"><span class="sw"></span><span class="sw-text"><b>Skills</b><small>允许读取中央 Skill 与 AI 开发注入的开发规范。</small></span></label>
+      <label class="switch-row"><input type="checkbox" id="centralMcp"><span class="sw"></span><span class="sw-text"><b>MCP</b><small>允许调用中央 MCP 与已授权的插件 MCP 服务。</small></span></label>
+      <label class="switch-row"><input type="checkbox" id="centralAgent"><span class="sw"></span><span class="sw-text"><b>Agent</b><small>允许委派中央子代理与已授权的插件 Agent。</small></span></label>
+    </div>
+    <div class="set-err" id="capabilityErr"></div>
+    <div class="modal-actions"><button class="btn-primary" id="capabilitySave" type="button">保存</button><button class="btn-ghost" id="capabilityCancel" type="button">取消</button></div>
+  </div>
+</div>
+
+<template id="legacyStandaloneSettings">
 <div class="modal" id="settingsModal">
   <div class="modal-card wide">
     <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>AI 设置</h2>
@@ -548,12 +547,11 @@ input,textarea,select{font-family:inherit}
   </div>
 </div>
 
+</template>
 <div class="toast" id="toast"></div>
 
 <script>
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
-function _qsToken(){try{return new URLSearchParams(location.search).get('token')||'';}catch(e){return '';}}
-let TOKEN=_qsToken()||localStorage.getItem('ai_dev_token')||'';
 let SID=localStorage.getItem('ai_dev_sid')||'';
 let MODEL=localStorage.getItem('ai_dev_model')||'';
 let CFG={};
@@ -565,7 +563,8 @@ let RENDER_TARGET=null; // 批量渲染历史时的目标容器 (DocumentFragmen
 function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600);}
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function api(path,opts={}){
-  opts.headers=Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+TOKEN},opts.headers||{});
+  opts.headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});
+  opts.credentials='same-origin';
   return fetch(path,opts);
 }
 function fmtTime(t){const d=new Date(t*1000);return d.toLocaleTimeString('zh-CN',{hour12:false});}
@@ -664,21 +663,6 @@ function render(md){
   return out;
 }
 
-/* ---- login ---- */
-$('#loginForm').addEventListener('submit',async e=>{
-  e.preventDefault();
-  const pwd=$('#pwd').value, btn=$('#loginBtn');
-  btn.disabled=true;btn.textContent='登录中…';$('#loginErr').textContent='';
-  try{
-    const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
-    const d=await r.json();
-    if(d.success){TOKEN=d.token;localStorage.setItem('ai_dev_token',TOKEN);start();}
-    else{$('#loginErr').textContent=d.error||'登录失败';}
-  }catch(err){$('#loginErr').textContent='网络错误';}
-  btn.disabled=false;btn.textContent='登录';
-});
-$('#logoutBtn').addEventListener('click',()=>{localStorage.removeItem('ai_dev_token');location.reload();});
-
 /* ---- 跟随框架系统主题色 ---- */
 // 面板作为同源 iframe 嵌入框架, 读取父页 :root 的主题变量并映射到本面板,
 // 框架在 亮/暗/各主题 间切换时本面板实时跟随。独立打开时回退到默认调色板。
@@ -699,8 +683,8 @@ function syncTheme(){
 /* ---- boot ---- */
 async function start(){
   const r=await api('/api/ext/aidev/config');
-  if(r.status===401){showLogin();return;}
-  $('#login').style.display='none';$('#app').style.display='flex';
+  if(!r.ok)throw new Error('读取 AI 开发配置失败：HTTP '+r.status);
+  $('#app').style.display='flex';
   CFG=(await r.json()).config||{};
   MODEL=CFG.model_preference||'';
   fillSiteSelectors();
@@ -708,9 +692,8 @@ async function start(){
   await loadSessions(true);
   await loadCalls();
   connectSSE();
-  if(!CFG.shared_ai_available)toast('中央 AI 模块未启用');
+  if(!CFG.shared_ai_available)toast(CFG.shared_ai_status?.message||'中央 AI LLM 未就绪');
 }
-function showLogin(){$('#login').style.display='flex';$('#app').style.display='none';}
 
 async function loadModels(){
   const provider=(CFG.shared_ai?.providers||[]).find(p=>p.enabled&&p.id===(CFG.provider_id||''));
@@ -723,7 +706,8 @@ async function loadModels(){
 async function saveAISelection(){const d=await (await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify({provider_id:CFG.provider_id||'',model_preference:MODEL||''})})).json();if(d.success)CFG=d.config||CFG;else throw new Error(d.error||'保存失败')}
 $('#modelSel').addEventListener('change',async e=>{MODEL=e.target.value;CFG.model_preference=MODEL;$('#chatModel').textContent=MODEL||'自动模型';try{await saveAISelection();toast('模型选择已保存')}catch(err){toast(err.message)}});
 
-/* ---- settings: 站点与模型管理 + 故障转移/可用性轮询 ---- */
+/* Legacy standalone provider settings are intentionally inactive. */
+if(false){
 let PRESETS=[], ACTIVE_PRESET='';
 let SITE_MODELS={};   // {presetId: [{name,enabled,priority,status}]}  (设置弹窗内的工作副本)
 const CHK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -895,8 +879,26 @@ async function saveSettings(){
   }catch(e){setErr('请求失败: '+e.message);}
   btn.disabled=false;btn.textContent='保存并应用';
 }
-$('#settingsBtn').title='中央 AI 服务设置';
-$('#settingsBtn').addEventListener('click',()=>toast('接口、密钥与模型优先级请在中央 AI 模块中管理'));
+}
+$('#settingsBtn').title='中央 Agent 能力';
+$('#settingsBtn').addEventListener('click',()=>{
+  $('#centralSkills').checked=CFG.central_skills_enabled!==false;
+  $('#centralMcp').checked=CFG.central_mcp_enabled!==false;
+  $('#centralAgent').checked=CFG.central_agent_enabled!==false;
+  $('#capabilityErr').textContent='';
+  $('#capabilityModal').classList.add('show');
+});
+$('#capabilityCancel').addEventListener('click',()=>$('#capabilityModal').classList.remove('show'));
+$('#capabilityModal').addEventListener('click',e=>{if(e.target.id==='capabilityModal')e.currentTarget.classList.remove('show')});
+$('#capabilitySave').addEventListener('click',async()=>{
+  const button=$('#capabilitySave');button.disabled=true;$('#capabilityErr').textContent='';
+  try{
+    const response=await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify({central_skills_enabled:$('#centralSkills').checked,central_mcp_enabled:$('#centralMcp').checked,central_agent_enabled:$('#centralAgent').checked})});
+    const data=await response.json();if(!data.success)throw new Error(data.error||'保存失败');
+    CFG=data.config||CFG;$('#capabilityModal').classList.remove('show');toast('中央能力设置已保存');
+  }catch(error){$('#capabilityErr').textContent=error.message;}finally{button.disabled=false;}
+});
+if(false){
 $('#setCancel').addEventListener('click',closeSettings);
 $('#setSave').addEventListener('click',saveSettings);
 $('#settingsModal').addEventListener('click',e=>{if(e.target.id==='settingsModal')closeSettings();});
@@ -924,8 +926,9 @@ $('#addSiteOk').addEventListener('click',async()=>{
   }catch(e){err.textContent='保存失败: '+e.message;}
   btn.disabled=false;btn.textContent='确定';
 });
+}
 
-/* ---- AI 站点: 顶栏一键切换 ---- */
+/* ---- 中央 AI LLM 接口: 顶栏一键切换 ---- */
 function fillSiteSelectors(){
   const head=$('#siteSel');
   const providers=(CFG.shared_ai?.providers||[]).filter(p=>p.enabled);
@@ -1252,7 +1255,7 @@ $('#actClear').addEventListener('click',()=>{evbuf=[];renderEvents();});
 /* ---- SSE ---- */
 function connectSSE(){
   if(es)es.close();
-  es=new EventSource('/api/ext/aidev/stream?token='+encodeURIComponent(TOKEN));
+  es=new EventSource('/api/ext/aidev/stream');
   es.onopen=()=>{$('#connDot').className='dot on';$('#connTxt').textContent='已连接';};
   es.onerror=()=>{$('#connDot').className='dot off';$('#connTxt').textContent='重连中…';};
   es.onmessage=ev=>{
@@ -1262,7 +1265,7 @@ function connectSSE(){
 
 /* ---- init ---- */
 syncTheme();setInterval(syncTheme,1200); // 登录页与面板都跟随框架主题, 并实时跟随切换
-if(TOKEN)start();else showLogin();
+start().catch(error=>toast(error.message||'面板加载失败'));
 </script>
 </body>
 </html>

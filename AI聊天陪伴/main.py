@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import random
 import time
@@ -15,9 +16,9 @@ from .app import audit, central, config, safety, store, webpanel
 __plugin_meta__ = {
     'name': 'AI 聊天陪伴',
     'author': 'ElainaBot',
-    'description': '支持猫娘等人格、中央 AI LLM、群聊/私聊独立上下文与 Web 面板',
+    'description': '支持猫娘等人格、多 OpenAI 兼容接口、群聊/私聊独立上下文与 Web 面板',
     'version': '1.1.0',
-    'github': 'https://github.com/lengxi-root/elaina-plugins-lengxi',
+    'github': 'https://github.com/lengxi-plugins/elaina',
     'license': 'MIT',
 }
 
@@ -33,6 +34,7 @@ MESSAGE_EVENTS = [
 ]
 _locks: dict[str, asyncio.Lock] = {}
 _last_group_reply: dict[str, float] = {}
+_capability_task: asyncio.Task | None = None
 
 _ICON = (
     '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" '
@@ -74,7 +76,7 @@ async def reply_for_event(event, text: str, recorded_message_id: int | None = No
     current = config.load()
     personality = config.active_personality(current)
     if not central.available():
-        raise RuntimeError('中央 AI 模块未启用，请先在模块管理中启用 AI 服务')
+        raise RuntimeError(central.status()['message'])
     if personality is None:
         raise RuntimeError('没有可用人格')
     scope = conversation_scope(event)
@@ -141,6 +143,7 @@ def _should_random_reply(scope: str, current: dict) -> bool:
 
 @on_load
 async def initialize() -> None:
+    global _capability_task
     await asyncio.to_thread(config.init, DATA_DIR)
     await asyncio.to_thread(store.connect, DATA_DIR)
     webpanel.register_routes()
@@ -152,15 +155,33 @@ async def initialize() -> None:
         icon=_ICON,
         html_file=os.path.join(BASE_DIR, 'panel.html'),
     )
+    injected = central.register_capabilities()
+    if injected:
+        log.info('已向中央 AI LLM 注入 %s 个 AI 陪伴能力', len(injected))
+    if _capability_task is None or _capability_task.done():
+        _capability_task = asyncio.create_task(_watch_ai_service())
     log.info('AI 聊天陪伴插件已加载')
 
 
 @on_unload
 async def cleanup() -> None:
+    global _capability_task
+    if _capability_task is not None:
+        _capability_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _capability_task
+        _capability_task = None
+    central.unregister_capabilities()
     unregister_page(PAGE_KEY)
     await asyncio.to_thread(store.close)
     _locks.clear()
     _last_group_reply.clear()
+
+
+async def _watch_ai_service() -> None:
+    while True:
+        central.get_service()
+        await asyncio.sleep(5)
 
 
 @handler(

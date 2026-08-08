@@ -1,6 +1,8 @@
 """Agent 工具集: 文件读写/编辑、目录、插件热重载与指令测试、配置读写、运行 Python、发消息。文件操作沙箱限定在仓库内且禁访 .git。"""
 
 import asyncio
+import ast
+import fnmatch
 import json
 import os
 import platform
@@ -311,6 +313,54 @@ async def _t_run_python(code: str, timeout: int = _PYTHON_TIMEOUT) -> dict:
     }
 
 
+async def _t_search_code(query: str, path: str = '.', pattern: str = '*',
+                         case_sensitive: bool = False, limit: int = 100) -> dict:
+    """Search repository text without exposing files outside the workspace."""
+    if not str(query or ''):
+        raise ValueError('缺少 query')
+    base = _safe_path(path or '.')
+    if not os.path.isdir(base):
+        raise ValueError(f'不是目录: {path}')
+    maximum = min(max(int(limit or 100), 1), 500)
+    needle = str(query) if case_sensitive else str(query).lower()
+    results = []
+    for root, dirs, files in os.walk(base):
+        dirs[:] = [item for item in dirs if item not in {'.git', '__pycache__', 'node_modules'}]
+        for name in files:
+            rel = _rel(os.path.join(root, name))
+            if not fnmatch.fnmatch(name, pattern or '*') and not fnmatch.fnmatch(rel, pattern or '*'):
+                continue
+            try:
+                if os.path.getsize(os.path.join(root, name)) > _MAX_READ_BYTES:
+                    continue
+                with open(os.path.join(root, name), encoding='utf-8', errors='replace') as file:
+                    for number, line in enumerate(file, 1):
+                        candidate = line if case_sensitive else line.lower()
+                        if needle in candidate:
+                            results.append({'path': rel, 'line': number, 'text': line.rstrip()[:500]})
+                            if len(results) >= maximum:
+                                return {'query': query, 'matches': results, 'truncated': True}
+            except OSError:
+                continue
+    return {'query': query, 'matches': results, 'truncated': False}
+
+
+async def _t_check_python(path: str) -> dict:
+    target = _safe_path(path)
+    if not os.path.isfile(target):
+        raise ValueError(f'文件不存在: {path}')
+    try:
+        with open(target, encoding='utf-8', errors='replace') as file:
+            source = file.read(_MAX_READ_BYTES)
+        ast.parse(source, filename=_rel(target))
+        return {'path': _rel(target), 'ok': True, 'error': ''}
+    except SyntaxError as error:
+        return {
+            'path': _rel(target), 'ok': False, 'line': error.lineno,
+            'column': error.offset, 'error': error.msg, 'text': error.text or '',
+        }
+
+
 async def _t_get_config(file: str = 'settings') -> dict:
     if file not in _CONFIG_FILES:
         raise ValueError(f"file 仅支持 {' 或 '.join(_CONFIG_FILES)}")
@@ -399,6 +449,8 @@ _DISPATCH = {
     'reload_plugin': _t_reload_plugin,
     'test_command': _t_test_command,
     'run_python': _t_run_python,
+    'search_code': _t_search_code,
+    'check_python': _t_check_python,
     'get_config': _t_get_config,
     'set_config': _t_set_config,
     'system_info': _t_system_info,
@@ -418,6 +470,33 @@ async def run_tool(name: str, args: dict) -> dict:
 # ==================== OpenAI tools schema ====================
 
 TOOLS_SCHEMA = [
+    {
+        'type': 'function',
+        'function': {
+            'name': 'search_code',
+            'description': '在仓库内按文本搜索代码，返回文件、行号和匹配内容。定位实现和调用关系时优先使用。',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'query': {'type': 'string'}, 'path': {'type': 'string'},
+                    'pattern': {'type': 'string', 'description': '文件 glob，例如 *.py'},
+                    'case_sensitive': {'type': 'boolean'}, 'limit': {'type': 'integer'},
+                },
+                'required': ['query'],
+            },
+        },
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'check_python',
+            'description': '使用 Python AST 对仓库内指定 Python 文件执行无副作用语法检查。',
+            'parameters': {
+                'type': 'object', 'properties': {'path': {'type': 'string'}},
+                'required': ['path'],
+            },
+        },
+    },
     {
         'type': 'function',
         'function': {

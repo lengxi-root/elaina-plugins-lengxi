@@ -8,6 +8,8 @@ QQ 内使用 (仅主人): 发送  ai <你的需求>   即可触发 AI 开发助�
 Web 面板:          登录框架后台 → 侧边栏「AI 开发」页面。
 """
 
+import asyncio
+import contextlib
 import os
 
 from core.base.logger import PLUGIN, get_logger
@@ -32,6 +34,7 @@ log = get_logger(PLUGIN, 'ai_dev')
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 _PANEL_HTML = os.path.join(_PLUGIN_DIR, 'panel.html')
 _PAGE_KEY = 'ai-dev'
+_capability_task: asyncio.Task | None = None
 
 _ICON = (
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
@@ -44,6 +47,7 @@ _ICON = (
 
 @on_load
 async def init():
+    global _capability_task
     """注册侧边栏页面 + /api/ext/aidev/* 路由 + 初始化存储 (热重载安全)"""
     from core.application import get_app
     app = get_app()
@@ -63,19 +67,37 @@ async def init():
     )
     # 注册插件自定义路由 (热重载即时生效, 卸载时由框架自动清理)
     webpanel.register_routes()
+    injected = central.register_capabilities()
+    if injected:
+        log.info('已向中央 AI LLM 注入 %s 个 AI 开发能力', len(injected))
+    if _capability_task is None or _capability_task.done():
+        _capability_task = asyncio.create_task(_watch_ai_service())
     log.info('AI 开发助手插件已加载')
 
 
 @on_unload
 async def cleanup():
+    global _capability_task
+    if _capability_task is not None:
+        _capability_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _capability_task
+        _capability_task = None
+    central.unregister_capabilities()
     unregister_page(_PAGE_KEY)
+
+
+async def _watch_ai_service() -> None:
+    while True:
+        central.get_service()
+        await asyncio.sleep(5)
 
 
 @handler(r'^ai\s+([\s\S]+)$', name='ai', desc='AI 开发助手: ai <需求> (仅主人)', owner_only=True)
 async def handle_ai(event, match):
     """主人在 QQ 中直接驱动 AI 开发助手"""
     if not central.available():
-        await event.reply('中央 AI 模块未启用，请先在模块管理中启用并配置 AI 服务')
+        await event.reply(central.status()['message'])
         return
     prompt = match.group(1).strip()
     from core.application import get_app

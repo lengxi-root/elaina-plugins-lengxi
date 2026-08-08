@@ -7,7 +7,7 @@ from . import aiconfig, central
 async def aidev_chat(messages: list[dict], model: str = '', **kwargs) -> dict:
     service = central.get_service()
     if service is None:
-        raise RuntimeError('中央 AI 模块未启用')
+        raise RuntimeError(central.status()['message'])
     provider_id, selected_model = central.resolve_selection(
         aiconfig.provider_id(), model or aiconfig.model_preference()
     )
