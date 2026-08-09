@@ -19,7 +19,7 @@ __plugin_meta__ = {
     'author': 'ElainaBot',
     'description': '支持多人格、中央 LLM、全入口用户独立上下文与 Web 面板',
     'version': '1.1.1',
-    'github': 'https://github.com/lengxi-root/elaina-plugins-lengxi',
+    'github': 'https://github.com/lengxi-plugins/elaina',
     'license': 'MIT',
 }
 
@@ -61,6 +61,19 @@ def user_context_scope(event) -> str:
     """Return one private context shared by this user's direct and group conversations."""
     appid = str(getattr(event, 'appid', '') or 'default')
     return f'userchat:{appid}:{event.user_id}'
+
+
+def _addressed_text(event, text: str) -> str:
+    """Identify the recipient in busy group chats without polluting direct messages."""
+    content = str(text or '').strip()
+    if not getattr(event, 'is_group', False):
+        return content
+    mention = f'<@{event.user_id}>'
+    return content if content.startswith(mention) else f'{mention} {content}'
+
+
+async def _reply_to_user(event, text: str) -> None:
+    await event.reply(_addressed_text(event, text))
 
 
 async def _personality_for(event, current: dict) -> dict | None:
@@ -246,7 +259,8 @@ async def help_command(event, _match) -> None:
     personalities = '、'.join(
         f'{key}({value["name"]})' for key, value in current['personalities'].items()
     )
-    await event.reply(
+    await _reply_to_user(
+        event,
         '【AI 聊天陪伴】\n'
         '直接 @我 或私聊即可对话\n'
         '全量群聊可按面板设置的概率自动参与对话\n'
@@ -272,7 +286,7 @@ async def help_command(event, _match) -> None:
 )
 async def clear_command(event, _match) -> None:
     deleted = await asyncio.to_thread(store.clear, user_context_scope(event))
-    await event.reply(f'你的独立上下文已清空（{deleted} 条消息）。')
+    await _reply_to_user(event, f'你的独立上下文已清空（{deleted} 条消息）。')
 
 
 @handler(
@@ -290,10 +304,10 @@ async def personality_command(event, match) -> None:
     current = config.load()
     personality = current['personalities'].get(personality_id)
     if personality is None:
-        await event.reply('人格不存在。发送 /ai 查看可用人格。')
+        await _reply_to_user(event, '人格不存在。发送 /ai 查看可用人格。')
         return
     await asyncio.to_thread(store.set_personality, user_context_scope(event), personality_id)
-    await event.reply(f'你的陪伴人格已切换为「{personality["name"]}」。')
+    await _reply_to_user(event, f'你的陪伴人格已切换为「{personality["name"]}」。')
 
 
 @handler(
@@ -308,7 +322,7 @@ async def personality_command(event, match) -> None:
 async def remember_command(event, match) -> None:
     current = config.load()
     if not current.get('memory_enabled'):
-        await event.reply('长期记忆当前未启用。')
+        await _reply_to_user(event, '长期记忆当前未启用。')
         return
     content = str(match.group(1) or '').strip()
     if (
@@ -316,16 +330,16 @@ async def remember_command(event, match) -> None:
         or safety.personality_override_request(content)
         or safety.find_blocked(content, current['blocked_words'])
     ):
-        await event.reply(current['moderation_blocked_response'])
+        await _reply_to_user(event, current['moderation_blocked_response'])
         return
     if await _input_rejected(current, content):
-        await event.reply(current['moderation_blocked_response'])
+        await _reply_to_user(event, current['moderation_blocked_response'])
         return
     await asyncio.to_thread(
         store.add_memory, user_memory_scope(event), content,
         current.get('memory_items_limit', 30),
     )
-    await event.reply('已记住。')
+    await _reply_to_user(event, '已记住。')
 
 
 @handler(
@@ -340,7 +354,9 @@ async def remember_command(event, match) -> None:
 async def memories_command(event, _match) -> None:
     items = await asyncio.to_thread(store.memories, [user_memory_scope(event)], 30)
     text = '\n'.join(f'{index}. {item["content"]}' for index, item in enumerate(items, 1))
-    await event.reply('已保存的长期记忆：\n' + text if text else '当前没有长期记忆。')
+    await _reply_to_user(
+        event, '已保存的长期记忆：\n' + text if text else '当前没有长期记忆。'
+    )
 
 
 @handler(
@@ -354,7 +370,7 @@ async def memories_command(event, _match) -> None:
 )
 async def forget_command(event, _match) -> None:
     deleted = await asyncio.to_thread(store.clear_memories, user_memory_scope(event))
-    await event.reply(f'已清空 {deleted} 条长期记忆。')
+    await _reply_to_user(event, f'已清空 {deleted} 条长期记忆。')
 
 
 @handler(
@@ -401,7 +417,7 @@ async def chat_message(event, _match) -> None:
             store.append, user_context_scope(event), 'assistant', response,
             current['max_stored_messages'],
         )
-        await event.reply(response)
+        await _reply_to_user(event, response)
         return
     if safety.personality_override_request(text):
         response = '我会保持既定人格与你交流，不会接受覆盖、重置或替换人格的要求。'
@@ -409,7 +425,7 @@ async def chat_message(event, _match) -> None:
             store.append, user_context_scope(event), 'assistant', response,
             current['max_stored_messages'],
         )
-        await event.reply(response)
+        await _reply_to_user(event, response)
         return
     blocked = safety.find_blocked(text, current['blocked_words'])
     if blocked:
@@ -427,7 +443,7 @@ async def chat_message(event, _match) -> None:
             current['blocked_response'],
             current['max_stored_messages'],
         )
-        await event.reply(current['blocked_response'])
+        await _reply_to_user(event, current['blocked_response'])
         return
     if await _input_rejected(current, text):
         response = current['moderation_blocked_response']
@@ -439,12 +455,12 @@ async def chat_message(event, _match) -> None:
             store.append, user_context_scope(event), 'assistant', response,
             current['max_stored_messages'],
         )
-        await event.reply(response)
+        await _reply_to_user(event, response)
         return
     try:
         reply = await reply_for_event(event, text)
         if reply.strip():
-            await event.reply(reply)
+            await _reply_to_user(event, reply)
     except Exception as error:
         log.warning(f'AI 对话失败: {error}')
-        await event.reply('AI 服务暂时不可用，请稍后再试，或检查中央 AI 模块配置。')
+        await _reply_to_user(event, 'AI 服务暂时不可用，请稍后再试，或检查中央 AI 模块配置。')

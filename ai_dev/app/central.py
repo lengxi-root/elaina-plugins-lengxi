@@ -177,9 +177,25 @@ def public_config() -> dict:
 def resolve_selection(provider_id: str = '', model: str = '') -> tuple[str, str]:
     config = public_config()
     providers = [item for item in config.get('providers', []) if item.get('enabled')]
-    provider = next((item for item in providers if item.get('id') == provider_id), None)
-    if provider is None:
-        return '', ''
-    disabled = set(provider.get('disabled_models', []))
-    models = {item for item in provider.get('models', []) if item not in disabled}
-    return str(provider['id']), model if model in models else ''
+
+    def usable_models(provider: dict) -> set[str]:
+        disabled = {str(item) for item in provider.get('disabled_models', [])}
+        values = [
+            *(provider.get('model_priority') or []),
+            *(provider.get('models') or []),
+            provider.get('model'),
+        ]
+        return {
+            str(item).strip() for item in values
+            if str(item or '').strip() and str(item).strip() not in disabled
+        }
+
+    if provider_id:
+        provider = next((item for item in providers if item.get('id') == provider_id), None)
+        if provider is None:
+            return '', ''
+        return str(provider['id']), model if model in usable_models(provider) else ''
+    if model:
+        provider = next((item for item in providers if model in usable_models(item)), None)
+        return ('', model) if provider else ('', '')
+    return '', ''

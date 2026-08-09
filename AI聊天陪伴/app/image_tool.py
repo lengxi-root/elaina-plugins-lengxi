@@ -137,7 +137,8 @@ async def run(
             parsed = urlsplit(url)
             if parsed.scheme not in {'http', 'https'}:
                 return {'ok': True, 'sent': False}
-            await event.reply_image(url, content='')
+            mention = f"<@{context.get('user_id')}>" if getattr(event, 'is_group', False) else ''
+            await event.reply_image(url, content=mention)
         else:
             encoded = str(result.get('b64_json') or '').strip()
             if not encoded:
@@ -145,7 +146,8 @@ async def run(
             data = base64.b64decode(encoded, validate=True)
             if not data:
                 return {'ok': True, 'sent': False}
-            await event.reply_image(data, content='')
+            mention = f"<@{context.get('user_id')}>" if getattr(event, 'is_group', False) else ''
+            await event.reply_image(data, content=mention)
         return {'ok': True, 'sent': True}
     except Exception:  # Media failures are intentionally invisible to the user and model.
         return {'ok': True, 'sent': False}

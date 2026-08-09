@@ -137,7 +137,8 @@ async def run(arguments: dict, context: dict, config: dict) -> dict:
             result = await _generate(session, template, images, texts, bool(item.get('circle')))
         if not result:
             return {'ok': True, 'sent': False}
-        await event.reply_image(result, content='')
+        mention = f'<@{user_id}>' if getattr(event, 'is_group', False) else ''
+        await event.reply_image(result, content=mention)
         return {'ok': True, 'sent': True}
     except Exception:
         return {'ok': True, 'sent': False}

@@ -118,8 +118,14 @@ async def _save_config(request: web.Request) -> web.Response:
     body = await _body(request)
     try:
         value = await asyncio.to_thread(config.save, body)
-        provider_id, model = central.resolve_selection(
-            value.get('provider_id', ''), value.get('model_preference', ''),
+        requested_provider = str(value.get('provider_id') or '')
+        resolved_provider, model = central.resolve_selection(
+            requested_provider, value.get('model_preference', ''),
+        )
+        provider_id = (
+            requested_provider
+            if not requested_provider or resolved_provider == requested_provider
+            else ''
         )
         if value.get('provider_id') != provider_id or value.get('model_preference') != model:
             value = await asyncio.to_thread(config.save, {

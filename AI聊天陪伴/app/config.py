@@ -101,9 +101,8 @@ def _merge(defaults: dict, current: dict) -> dict:
         if key in current:
             result[key] = copy.deepcopy(current[key])
     if isinstance(current.get('personalities'), dict):
-        personalities = copy.deepcopy(BUILTIN_PERSONALITIES)
-        personalities.update(copy.deepcopy(current['personalities']))
-        result['personalities'] = personalities
+        # Persist the exact configured set so built-in personalities can be removed.
+        result['personalities'] = copy.deepcopy(current['personalities'])
     return result
 
 

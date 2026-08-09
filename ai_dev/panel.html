@@ -713,8 +713,12 @@ async function start(){
 }
 
 async function loadModels(){
-  const provider=(CFG.shared_ai?.providers||[]).find(p=>p.enabled&&p.id===(CFG.provider_id||''));
-  const list=provider?(provider.models||[]).filter(m=>!(provider.disabled_models||[]).includes(m)):[];
+  const providers=(CFG.shared_ai?.providers||[]).filter(p=>p.enabled&&(!(CFG.provider_id||'')||p.id===CFG.provider_id));
+  const list=[...new Set(providers.flatMap(p=>{
+    const disabled=new Set((p.disabled_models||[]).map(String));
+    return [...(p.model_priority||[]),...(p.models||[]),p.model]
+      .map(m=>String(m||'').trim()).filter(m=>m&&!disabled.has(m));
+  }))];
   const sel=$('#modelSel');sel.innerHTML='<option value="">自动模型</option>';
   list.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o);});
   MODEL=list.includes(CFG.model_preference)?CFG.model_preference:'';sel.value=MODEL;
