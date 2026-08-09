@@ -9,7 +9,7 @@ from PIL import Image, ImageOps
 
 from core.plugin.web_pages import register_route
 
-from . import agents, central, config, skills, store
+from . import central, config, skills, store
 
 PREFIX = '/api/ext/ai-companion'
 _registered = False
@@ -23,7 +23,7 @@ def register_routes() -> None:
     register_route('PUT', f'{PREFIX}/config')(_save_config)
     register_route('GET', f'{PREFIX}/stats')(_stats)
     register_route('GET', f'{PREFIX}/skills')(_skills)
-    register_route('GET', f'{PREFIX}/agents')(_agents)
+    register_route('GET', f'{PREFIX}/model-tools')(_model_tools)
     register_route('POST', f'{PREFIX}/skills')(_create_skill)
     register_route('POST', f'{PREFIX}/models/refresh')(_refresh_models)
     register_route('GET', f'{PREFIX}/reference-image')(_get_reference_image)
@@ -174,10 +174,18 @@ async def _skills(_request: web.Request) -> web.Response:
     return web.json_response({'success': True, 'data': data})
 
 
-async def _agents(_request: web.Request) -> web.Response:
+async def _model_tools(_request: web.Request) -> web.Response:
     current = config.load()
-    enabled = set(current.get('enabled_agents', []))
-    data = [{**item, 'enabled': item['id'] in enabled} for item in agents.catalog()]
+    enabled = set(current.get('enabled_model_tools', []))
+    service = central.get_service()
+    catalog = (
+        service.model_tool_catalog(consumer_plugin='ai_companion')
+        if service is not None and hasattr(service, 'model_tool_catalog') else []
+    )
+    data = [
+        {**item, 'id': str(item.get('key') or ''), 'enabled': item.get('key') in enabled}
+        for item in catalog if item.get('key')
+    ]
     return web.json_response({'success': True, 'data': data})
 
 

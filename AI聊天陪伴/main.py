@@ -12,7 +12,7 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .app import agents, central, config, safety, store, webpanel
+from .app import central, config, safety, store, webpanel
 
 __plugin_meta__ = {
     'name': 'AI 聊天陪伴',
@@ -234,7 +234,6 @@ async def cleanup() -> None:
             await _capability_task
         _capability_task = None
     central.unregister_capabilities()
-    await agents.close()
     unregister_page(PAGE_KEY)
     await asyncio.to_thread(store.close)
     _locks.clear()
