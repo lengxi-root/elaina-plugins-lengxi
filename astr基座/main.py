@@ -29,7 +29,7 @@ __plugin_meta__ = {
     "author": "冷曦",
     "description": "AstrBot 插件适配基座: 直接运行 AstrBot 框架插件 (可加载其插件与配置项)",
     "version": "1.0.5",
-    "github": "https://github.com/lengxi-plugins/elaina",
+    "github": "https://github.com/lengxi-root/elaina-plugins-lengxi",
     "homepage": "https://github.com/AstrBotDevs/AstrBot",
     "license": "AGPL-3.0",
 }

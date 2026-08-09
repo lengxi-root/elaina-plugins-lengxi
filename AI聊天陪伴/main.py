@@ -19,7 +19,7 @@ __plugin_meta__ = {
     'author': 'ElainaBot',
     'description': '支持多人格、中央 LLM、全入口用户独立上下文与 Web 面板',
     'version': '1.1.1',
-    'github': 'https://github.com/lengxi-plugins/elaina',
+    'github': 'https://github.com/lengxi-root/elaina-plugins-lengxi',
     'license': 'MIT',
 }
 
