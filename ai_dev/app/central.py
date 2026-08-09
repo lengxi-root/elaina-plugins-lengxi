@@ -25,7 +25,8 @@ def _raw_service():
 
 def get_service():
     service = _raw_service()
-    if service is not None and service is not _registered_service:
+    from . import aiconfig
+    if service is not None and aiconfig.enabled() and service is not _registered_service:
         _register_on(service)
     return service
 
@@ -50,7 +51,7 @@ def available() -> bool:
 def status() -> dict:
     service = get_service()
     if service is None:
-        return {'installed': False, 'enabled': False, 'providers': 0, 'message': '中央 AI LLM 模块未安装或未启动'}
+        return {'installed': False, 'enabled': False, 'providers': 0, 'message': '请前往插件市场下载 AI LLM 模块'}
     config = service.config()
     providers = [
         item for item in config.get('providers', [])
@@ -139,7 +140,7 @@ def _register_on(service) -> list[dict]:
         }))
     result = []
     for kind, value in definitions:
-        value.setdefault('shared', True)
+        value.setdefault('shared', False)
         handler = toolmod.run_tool if kind == 'tool' else None
         if handler is not None:
             result.append(service.register_plugin_capability(
@@ -154,6 +155,9 @@ def _register_on(service) -> list[dict]:
 
 
 def register_capabilities() -> list[dict]:
+    from . import aiconfig
+    if not aiconfig.enabled():
+        return []
     return _register_on(_raw_service())
 
 

@@ -1,23 +1,24 @@
-"""AI 聊天陪伴：内置多人格、多 OpenAI 兼容接口、群聊/私聊上下文与 Web 面板。"""
+"""AI 聊天陪伴：多人格、中央 LLM、按用户隔离的上下文与 Web 面板。"""
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import os
 import random
+from collections import deque
 import time
 
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .app import audit, central, config, safety, store, webpanel
+from .app import central, config, safety, store, webpanel
 
 __plugin_meta__ = {
     'name': 'AI 聊天陪伴',
     'author': 'ElainaBot',
-    'description': '支持猫娘等人格、多 OpenAI 兼容接口、群聊/私聊独立上下文与 Web 面板',
-    'version': '1.1.0',
+    'description': '支持多人格、中央 LLM、全入口用户独立上下文与 Web 面板',
+    'version': '1.1.1',
     'github': 'https://github.com/lengxi-plugins/elaina',
     'license': 'MIT',
 }
@@ -34,7 +35,9 @@ MESSAGE_EVENTS = [
 ]
 _locks: dict[str, asyncio.Lock] = {}
 _last_group_reply: dict[str, float] = {}
+_group_reply_times: dict[str, deque[float]] = {}
 _capability_task: asyncio.Task | None = None
+_last_prune = 0.0
 
 _ICON = (
     '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" '
@@ -44,73 +47,103 @@ _ICON = (
 )
 
 
-def conversation_scope(event) -> str:
+def group_trigger_scope(event) -> str:
     appid = str(getattr(event, 'appid', '') or 'default')
-    if event.is_group:
-        return f'group:{appid}:{event.group_id}'
-    return f'direct:{appid}:{event.user_id}'
+    return f'group-trigger:{appid}:{event.group_id}'
 
 
-def _display_user(event) -> str:
-    return str(getattr(event, 'username', '') or getattr(event, 'user_id', '') or '用户')
+def user_memory_scope(event) -> str:
+    appid = str(getattr(event, 'appid', '') or 'default')
+    return f'user:{appid}:{event.user_id}'
 
 
-async def _audit_reply(current: dict, scope: str, reply: str, is_group: bool) -> tuple[str, dict | None]:
-    if not current.get('audit_enabled'):
-        return reply, None
-    if is_group and not current.get('audit_on_group', True):
-        return reply, None
-    if not is_group and not current.get('audit_on_direct', True):
-        return reply, None
-    result = await audit.audit_text(current, reply)
-    await asyncio.to_thread(store.append_audit, scope, safety.redact_ips(reply), result)
-    if result['safe'] == audit.AUDIT_PASS:
-        return reply, result
-    if result['safe'] == audit.AUDIT_PENDING and not current.get('audit_fail_closed', True):
-        return reply, result
-    return current.get('audit_blocked_response') or current['blocked_response'], result
+def user_context_scope(event) -> str:
+    """Return one private context shared by this user's direct and group conversations."""
+    appid = str(getattr(event, 'appid', '') or 'default')
+    return f'userchat:{appid}:{event.user_id}'
 
 
-async def reply_for_event(event, text: str, recorded_message_id: int | None = None) -> str:
+async def _personality_for(event, current: dict) -> dict | None:
+    personality_id = await asyncio.to_thread(store.get_personality, user_context_scope(event))
+    return (
+        config.active_personality(current, personality_id)
+        or config.active_personality(current)
+    )
+
+
+async def _memory_text(event, current: dict) -> str:
+    if not current.get('memory_enabled'):
+        return ''
+    scopes = [user_memory_scope(event)]
+    items = await asyncio.to_thread(
+        store.memories, scopes, current.get('memory_items_limit', 30),
+    )
+    return '\n'.join(
+        f'- {item["content"]}' for item in items
+        if not safety.internal_access_request(item['content'])
+        and not safety.personality_override_request(item['content'])
+    )
+
+
+async def _input_rejected(current: dict, text: str) -> bool:
+    if not current.get('moderation_enabled'):
+        return False
+    result = await central.moderate_input(current, text)
+    if result.get('flagged'):
+        log.warning('用户输入被 Moderation 拦截: %s', ','.join(result.get('categories') or []))
+        return True
+    if not result.get('available') and current.get('moderation_fail_closed'):
+        log.warning('Moderation 不可用，按配置阻断输入: %s', result.get('error', ''))
+        return True
+    return False
+
+
+async def reply_for_event(event, text: str) -> str:
     """完成一轮对话。失败时撤销刚写入的用户消息。"""
     current = config.load()
-    personality = config.active_personality(current)
+    personality = await _personality_for(event, current)
     if not central.available():
         raise RuntimeError(central.status()['message'])
     if personality is None:
         raise RuntimeError('没有可用人格')
-    scope = conversation_scope(event)
+    scope = user_context_scope(event)
     lock = _locks.setdefault(scope, asyncio.Lock())
     async with lock:
-        content = f'{_display_user(event)}：{text}' if event.is_group else text
-        inserted = recorded_message_id is None
-        message_id = recorded_message_id
-        if inserted:
-            message_id = await asyncio.to_thread(
-                store.append, scope, 'user', content, current['max_stored_messages']
-            )
+        message_id = await asyncio.to_thread(
+            store.append, scope, 'user', text, current['max_stored_messages']
+        )
         try:
-            history_limit = (
-                current['group_history_messages'] if event.is_group else current['context_messages']
-            )
             history = await asyncio.to_thread(
-                store.history,
-                scope,
-                history_limit,
+                store.history, scope, current['context_messages'],
                 current['context_expire_seconds'],
             )
-            reply = await central.complete(current, personality, history)
+            history = [
+                {
+                    **item,
+                    'content': '[人格覆盖请求已忽略]',
+                }
+                if item.get('role') == 'user'
+                and safety.personality_override_request(item.get('content', ''))
+                else item
+                for item in history
+            ]
+            reply = await central.complete(
+                current, personality, history, await _memory_text(event, current),
+                media_context={
+                    'user_id': str(event.user_id),
+                    'appid': str(getattr(event, 'appid', '') or ''),
+                    'self_id': str(getattr(event, 'self_id', '') or ''),
+                    'event': event,
+                    'scope': scope,
+                },
+            )
             reply, blocked = safety.safe_output(
                 reply, current['blocked_words'], current['blocked_response']
             )
             if blocked:
                 log.warning('AI 输出命中违规词，已替换为安全回复')
-            reply, audit_result = await _audit_reply(current, scope, reply, event.is_group)
-            if audit_result and audit_result['safe'] != audit.AUDIT_PASS:
-                log.warning('AI output did not pass audit: %s', audit_result.get('reason', ''))
         except Exception:
-            if inserted and message_id is not None:
-                await asyncio.to_thread(store.remove, message_id)
+            await asyncio.to_thread(store.remove, message_id)
             raise
         await asyncio.to_thread(
             store.append, scope, 'assistant', reply, current['max_stored_messages']
@@ -118,16 +151,21 @@ async def reply_for_event(event, text: str, recorded_message_id: int | None = No
         return reply
 
 
-async def _record_group_message(event, text: str, current: dict) -> int:
-    scope = conversation_scope(event)
-    blocked = safety.find_blocked(text, current['blocked_words'])
-    content = '[消息已被违规词过滤]' if blocked else f'{_display_user(event)}：{text}'
-    return await asyncio.to_thread(
-        store.append, scope, 'user', content, current['max_stored_messages']
+def _is_relevant_group_message(text: str, current: dict) -> bool:
+    folded = str(text or '').strip().casefold()
+    if not folded:
+        return False
+    if any(keyword in folded for keyword in current.get('group_relevance_keywords', [])):
+        return True
+    return folded.endswith(('?', '？')) or any(
+        folded.startswith(prefix)
+        for prefix in ('有没有', '能不能', '请问', '求助', '大家觉得')
     )
 
 
-def _should_random_reply(scope: str, current: dict) -> bool:
+def _should_random_reply(scope: str, text: str, current: dict) -> bool:
+    if not _is_relevant_group_message(text, current):
+        return False
     probability = current['group_reply_probability']
     if probability <= 0 or random.random() * 100 >= probability:
         return False
@@ -137,7 +175,13 @@ def _should_random_reply(scope: str, current: dict) -> bool:
     lock = _locks.get(scope)
     if lock is not None and lock.locked():
         return False
+    recent = _group_reply_times.setdefault(scope, deque())
+    while recent and now - recent[0] >= 3600:
+        recent.popleft()
+    if len(recent) >= current.get('group_reply_hourly_limit', 6):
+        return False
     _last_group_reply[scope] = now
+    recent.append(now)
     return True
 
 
@@ -146,6 +190,8 @@ async def initialize() -> None:
     global _capability_task
     await asyncio.to_thread(config.init, DATA_DIR)
     await asyncio.to_thread(store.connect, DATA_DIR)
+    current = config.load()
+    await asyncio.to_thread(store.prune_expired, current['context_expire_seconds'])
     webpanel.register_routes()
     register_page(
         key=PAGE_KEY,
@@ -176,6 +222,7 @@ async def cleanup() -> None:
     await asyncio.to_thread(store.close)
     _locks.clear()
     _last_group_reply.clear()
+    _group_reply_times.clear()
 
 
 async def _watch_ai_service() -> None:
@@ -195,7 +242,7 @@ async def _watch_ai_service() -> None:
 )
 async def help_command(event, _match) -> None:
     current = config.load()
-    personality = config.active_personality(current)
+    personality = await _personality_for(event, current)
     personalities = '、'.join(
         f'{key}({value["name"]})' for key, value in current['personalities'].items()
     )
@@ -205,6 +252,9 @@ async def help_command(event, _match) -> None:
         '全量群聊可按面板设置的概率自动参与对话\n'
         '/ai clear - 清空当前会话\n'
         '/ai personality <ID> - 切换人格\n'
+        '/ai remember <内容> - 保存个人长期记忆\n'
+        '/ai memories - 查看个人长期记忆\n'
+        '/ai forget - 清空个人长期记忆\n'
         '当前接口：由中央 AI 模块管理\n'
         f'当前人格：{personality["name"] if personality else "未配置"}\n'
         f'可用人格：{personalities}'
@@ -214,21 +264,21 @@ async def help_command(event, _match) -> None:
 @handler(
     r'^/(?:ai|陪伴)\s+(?:clear|清空)$',
     name='清空 AI 上下文',
-    desc='清空当前群聊或私聊上下文',
+    desc='清空当前用户的独立上下文',
     priority=40,
     event_types=MESSAGE_EVENTS,
     ignore_at_check=True,
     block=True,
 )
 async def clear_command(event, _match) -> None:
-    deleted = await asyncio.to_thread(store.clear, conversation_scope(event))
-    await event.reply(f'当前会话上下文已清空（{deleted} 条消息）。')
+    deleted = await asyncio.to_thread(store.clear, user_context_scope(event))
+    await event.reply(f'你的独立上下文已清空（{deleted} 条消息）。')
 
 
 @handler(
     r'^/(?:ai|陪伴)\s+(?:personality|人格)\s+([\w-]+)$',
     name='切换 AI 人格',
-    desc='切换 AI 陪伴全局人格',
+    desc='切换当前会话的 AI 人格',
     priority=40,
     owner_only=True,
     event_types=MESSAGE_EVENTS,
@@ -242,9 +292,69 @@ async def personality_command(event, match) -> None:
     if personality is None:
         await event.reply('人格不存在。发送 /ai 查看可用人格。')
         return
-    current['active_personality'] = personality_id
-    await asyncio.to_thread(config.save, current)
-    await event.reply(f'已切换为「{personality["name"]}」。')
+    await asyncio.to_thread(store.set_personality, user_context_scope(event), personality_id)
+    await event.reply(f'你的陪伴人格已切换为「{personality["name"]}」。')
+
+
+@handler(
+    r'^/(?:ai|陪伴)\s+(?:remember|记住)\s+([\s\S]+)$',
+    name='保存 AI 长期记忆',
+    desc='保存当前用户明确指定的长期记忆',
+    priority=40,
+    event_types=MESSAGE_EVENTS,
+    ignore_at_check=True,
+    block=True,
+)
+async def remember_command(event, match) -> None:
+    current = config.load()
+    if not current.get('memory_enabled'):
+        await event.reply('长期记忆当前未启用。')
+        return
+    content = str(match.group(1) or '').strip()
+    if (
+        safety.internal_access_request(content)
+        or safety.personality_override_request(content)
+        or safety.find_blocked(content, current['blocked_words'])
+    ):
+        await event.reply(current['moderation_blocked_response'])
+        return
+    if await _input_rejected(current, content):
+        await event.reply(current['moderation_blocked_response'])
+        return
+    await asyncio.to_thread(
+        store.add_memory, user_memory_scope(event), content,
+        current.get('memory_items_limit', 30),
+    )
+    await event.reply('已记住。')
+
+
+@handler(
+    r'^/(?:ai|陪伴)\s+(?:memories|记忆)$',
+    name='查看 AI 长期记忆',
+    desc='查看当前用户保存的长期记忆',
+    priority=40,
+    event_types=MESSAGE_EVENTS,
+    ignore_at_check=True,
+    block=True,
+)
+async def memories_command(event, _match) -> None:
+    items = await asyncio.to_thread(store.memories, [user_memory_scope(event)], 30)
+    text = '\n'.join(f'{index}. {item["content"]}' for index, item in enumerate(items, 1))
+    await event.reply('已保存的长期记忆：\n' + text if text else '当前没有长期记忆。')
+
+
+@handler(
+    r'^/(?:ai|陪伴)\s+(?:forget|忘记)$',
+    name='清空 AI 长期记忆',
+    desc='清空当前用户保存的长期记忆',
+    priority=40,
+    event_types=MESSAGE_EVENTS,
+    ignore_at_check=True,
+    block=True,
+)
+async def forget_command(event, _match) -> None:
+    deleted = await asyncio.to_thread(store.clear_memories, user_memory_scope(event))
+    await event.reply(f'已清空 {deleted} 条长期记忆。')
 
 
 @handler(
@@ -256,6 +366,7 @@ async def personality_command(event, match) -> None:
     ignore_at_check=True,
 )
 async def chat_message(event, _match) -> None:
+    global _last_prune
     current = config.load()
     if not current['enabled']:
         return
@@ -264,43 +375,76 @@ async def chat_message(event, _match) -> None:
     text = str(event.content or '').strip()
     if not text or text.startswith('/'):
         return
-    recorded_message_id = None
+    now = time.monotonic()
+    if now - _last_prune >= 300:
+        _last_prune = now
+        await asyncio.to_thread(store.prune_expired, current['context_expire_seconds'])
     if event.is_group:
-        if current['record_group_messages']:
-            recorded_message_id = await _record_group_message(event, text, current)
         if not current['group_enabled']:
             return
-        if not event.is_at_self:
+        # GROUP_AT_MESSAGE_CREATE is already filtered by the platform to messages
+        # directed at this bot; only full group events carry usable mention metadata.
+        is_full_group_event = getattr(event, 'event_type', '') == 'GROUP_MESSAGE_CREATE'
+        if is_full_group_event and not getattr(event, 'is_at_self', False):
             if not current['group_auto_reply']:
                 return
-            if not _should_random_reply(conversation_scope(event), current):
+            if not _should_random_reply(group_trigger_scope(event), text, current):
                 return
     elif event.is_direct:
         if not current['direct_enabled']:
             return
     else:
         return
+    if safety.internal_access_request(text):
+        response = '我会保持当前陪伴身份与你交流，但不会提供底层模型、系统提示词或内部运行信息。'
+        await asyncio.to_thread(
+            store.append, user_context_scope(event), 'assistant', response,
+            current['max_stored_messages'],
+        )
+        await event.reply(response)
+        return
+    if safety.personality_override_request(text):
+        response = '我会保持既定人格与你交流，不会接受覆盖、重置或替换人格的要求。'
+        await asyncio.to_thread(
+            store.append, user_context_scope(event), 'assistant', response,
+            current['max_stored_messages'],
+        )
+        await event.reply(response)
+        return
     blocked = safety.find_blocked(text, current['blocked_words'])
     if blocked:
-        if recorded_message_id is None:
-            await asyncio.to_thread(
-                store.append,
-                conversation_scope(event),
-                'user',
-                '[消息已被违规词过滤]',
-                current['max_stored_messages'],
-            )
         await asyncio.to_thread(
             store.append,
-            conversation_scope(event),
+            user_context_scope(event),
+            'user',
+            '[消息已被违规词过滤]',
+            current['max_stored_messages'],
+        )
+        await asyncio.to_thread(
+            store.append,
+            user_context_scope(event),
             'assistant',
             current['blocked_response'],
             current['max_stored_messages'],
         )
         await event.reply(current['blocked_response'])
         return
+    if await _input_rejected(current, text):
+        response = current['moderation_blocked_response']
+        await asyncio.to_thread(
+            store.append, user_context_scope(event), 'user', '[消息未通过内容审核]',
+            current['max_stored_messages'],
+        )
+        await asyncio.to_thread(
+            store.append, user_context_scope(event), 'assistant', response,
+            current['max_stored_messages'],
+        )
+        await event.reply(response)
+        return
     try:
-        await event.reply(await reply_for_event(event, text, recorded_message_id))
+        reply = await reply_for_event(event, text)
+        if reply.strip():
+            await event.reply(reply)
     except Exception as error:
         log.warning(f'AI 对话失败: {error}')
         await event.reply('AI 服务暂时不可用，请稍后再试，或检查中央 AI 模块配置。')

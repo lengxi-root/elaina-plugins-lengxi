@@ -89,3 +89,42 @@ def load_skill(skill_id: str, enabled_ids: list[str]) -> dict:
     except OSError as error:
         return {'ok': False, 'error': str(error)}
     return {'ok': True, 'skill_id': skill_id, 'content': content}
+
+
+def create_skill(skill_id: str, name: str, description: str, content: str) -> dict:
+    """Create a local Markdown skill without allowing path traversal."""
+    skill_id = str(skill_id or '').strip()
+    name = str(name or '').strip()
+    description = str(description or '').strip()
+    content = str(content or '').strip()
+    if not _ID_RE.fullmatch(skill_id):
+        raise ValueError('Skill ID 只能包含字母、数字、下划线和短横线')
+    if not name or '\n' in name or '\r' in name:
+        raise ValueError('Skill 名称不能为空且不能换行')
+    if not description or '\n' in description or '\r' in description:
+        raise ValueError('Skill 描述不能为空且不能换行')
+    if not content:
+        raise ValueError('Skill 内容不能为空')
+    if len(name) > 120 or len(description) > 500 or len(content) > 20000:
+        raise ValueError('Skill 内容过长')
+    root = os.path.abspath(_ROOT)
+    path = os.path.abspath(os.path.join(root, skill_id))
+    if os.path.dirname(path) != root or os.path.exists(path):
+        raise ValueError('Skill 已存在或路径无效')
+    os.makedirs(path, exist_ok=False)
+    target = os.path.join(path, 'SKILL.md')
+    temporary = target + '.tmp'
+    text = f'---\nname: {name}\ndescription: {description}\n---\n\n{content}\n'
+    try:
+        with open(temporary, 'w', encoding='utf-8', newline='\n') as file:
+            file.write(text)
+        os.replace(temporary, target)
+    except Exception:
+        try:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+            os.rmdir(path)
+        except OSError:
+            pass
+        raise
+    return {'id': skill_id, 'name': name, 'description': description, 'enabled': False}

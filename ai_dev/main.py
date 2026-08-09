@@ -4,7 +4,7 @@
 读写框架配置、检查系统状态, 并以插件侧边栏页面提供一个亮色 Web 面板,
 可与 AI 对话、实时查看完整工具调用与日志。
 
-QQ 内使用 (仅主人): 发送  ai <你的需求>   即可触发 AI 开发助手。
+QQ 内使用 (仅主人): `ai <需求>` 新建任务；`ai 继续 <需求>` 续接上一任务。
 Web 面板:          登录框架后台 → 侧边栏「AI 开发」页面。
 """
 
@@ -16,7 +16,7 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .app import central
+from .app import aiconfig, central
 from .app import agent as agentmod
 from .app import webpanel
 from .app.store import AIStore
@@ -25,7 +25,7 @@ __plugin_meta__ = {
     'name': 'AI 开发助手',
     'author': '冷曦',
     'description': '通过中央 AI LLM 模块调用模型并自主编写/修改框架插件',
-    'version': '1.1.0',
+    'version': '1.1.1',
     'github': 'https://github.com/lengxi-root/elaina-plugins-lengxi',
 }
 
@@ -67,7 +67,7 @@ async def init():
     )
     # 注册插件自定义路由 (热重载即时生效, 卸载时由框架自动清理)
     webpanel.register_routes()
-    injected = central.register_capabilities()
+    injected = central.register_capabilities() if aiconfig.enabled() else []
     if injected:
         log.info('已向中央 AI LLM 注入 %s 个 AI 开发能力', len(injected))
     if _capability_task is None or _capability_task.done():
@@ -96,18 +96,25 @@ async def _watch_ai_service() -> None:
 @handler(r'^ai\s+([\s\S]+)$', name='ai', desc='AI 开发助手: ai <需求> (仅主人)', owner_only=True)
 async def handle_ai(event, match):
     """主人在 QQ 中直接驱动 AI 开发助手"""
+    if not aiconfig.enabled():
+        await event.reply('AI 开发助手已停用')
+        return
     if not central.available():
         await event.reply(central.status()['message'])
         return
-    prompt = match.group(1).strip()
+    raw_prompt = match.group(1).strip()
+    resume = raw_prompt.startswith('继续 ')
+    prompt = raw_prompt[3:].strip() if resume else raw_prompt
     from core.application import get_app
     store = getattr(get_app(), '_ai_dev_store', None)
     if store is None:
         await event.reply('AI 存储未初始化')
         return
-    sid = f'qq_{event.user_id}'
-    if store.get_session(sid) is None:
-        store._sessions[sid] = {'id': sid, 'title': f'QQ {event.user_id}', 'created': 0, 'updated': 0, 'messages': []}
+    source = f'qq:{event.user_id}'
+    session = store.latest_session(source) if resume else None
+    if session is None:
+        session = store.create_session(prompt[:24] or 'QQ 开发任务', source=source)
+    sid = session['id']
     await event.reply('已收到, AI 正在处理...')
     try:
         result = await agentmod.run_agent(store, sid, prompt)

@@ -1,4 +1,4 @@
-"""SQLite 会话存储，群聊按群共享，私聊按用户隔离。"""
+"""SQLite 会话存储：所有聊天入口统一按用户隔离上下文。"""
 from __future__ import annotations
 
 import os
@@ -29,18 +29,18 @@ def connect(data_dir: str) -> None:
                 created_at REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_ai_context_scope ON messages(scope, id);
-            CREATE TABLE IF NOT EXISTS audits (
+            CREATE TABLE IF NOT EXISTS conversation_settings (
+                scope TEXT PRIMARY KEY,
+                personality_id TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 scope TEXT NOT NULL,
                 content TEXT NOT NULL,
-                safe INTEGER NOT NULL,
-                reason TEXT NOT NULL,
-                violation_words TEXT NOT NULL,
-                score INTEGER NOT NULL,
-                model TEXT NOT NULL,
                 created_at REAL NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_ai_audits_scope ON audits(scope, id);
+            CREATE INDEX IF NOT EXISTS idx_ai_memories_scope ON memories(scope, id);
             """
         )
         _connection.commit()
@@ -107,57 +107,89 @@ def clear(scope: str = '') -> int:
         return cursor.rowcount
 
 
-def stats() -> dict:
+def prune_expired(expire_seconds: int) -> dict:
+    """Permanently remove expired transient conversation rows."""
+    seconds = max(0, int(expire_seconds or 0))
+    if seconds <= 0:
+        return {'messages': 0}
+    cutoff = time.time() - seconds
+    with _lock:
+        messages = _conn().execute(
+            'DELETE FROM messages WHERE created_at<?', (cutoff,),
+        ).rowcount
+        _conn().commit()
+    return {'messages': messages}
+
+
+def get_personality(scope: str) -> str:
     with _lock:
         row = _conn().execute(
-            'SELECT COUNT(*) AS messages, COUNT(DISTINCT scope) AS conversations FROM messages'
+            'SELECT personality_id FROM conversation_settings WHERE scope=?', (scope,),
         ).fetchone()
-        groups = _conn().execute(
-            "SELECT COUNT(DISTINCT scope) FROM messages WHERE scope LIKE 'group:%'"
-        ).fetchone()[0]
-        directs = _conn().execute(
-            "SELECT COUNT(DISTINCT scope) FROM messages WHERE scope LIKE 'direct:%'"
-        ).fetchone()[0]
-        audits = _conn().execute('SELECT COUNT(*) FROM audits').fetchone()[0]
-    return {
-        'messages': row['messages'],
-        'conversations': row['conversations'],
-        'group_conversations': groups,
-        'direct_conversations': directs,
-        'audits': audits,
-    }
+    return str(row['personality_id']) if row else ''
 
 
-def append_audit(scope: str, content: str, audit: dict, max_records: int = 1000) -> int:
-    import json
+def set_personality(scope: str, personality_id: str) -> None:
+    with _lock:
+        _conn().execute(
+            'INSERT INTO conversation_settings(scope, personality_id, updated_at) VALUES(?,?,?) '
+            'ON CONFLICT(scope) DO UPDATE SET personality_id=excluded.personality_id, '
+            'updated_at=excluded.updated_at',
+            (scope, str(personality_id), time.time()),
+        )
+        _conn().commit()
+
+
+def add_memory(scope: str, content: str, limit: int = 30) -> int:
+    value = str(content or '').strip()[:1000]
+    if not value:
+        raise ValueError('记忆内容不能为空')
     with _lock:
         cursor = _conn().execute(
-            'INSERT INTO audits(scope, content, safe, reason, violation_words, score, model, created_at) '
-            'VALUES(?,?,?,?,?,?,?,?)',
-            (
-                scope,
-                str(content)[:12000],
-                int(audit.get('safe', 0)),
-                str(audit.get('reason') or '')[:300],
-                json.dumps(audit.get('violation_words') or [], ensure_ascii=False)[:1000],
-                int(audit.get('score', 0)),
-                str(audit.get('model') or '')[:120],
-                time.time(),
-            ),
+            'INSERT INTO memories(scope, content, created_at) VALUES(?,?,?)',
+            (scope, value, time.time()),
         )
-        if max_records > 0:
+        if limit > 0:
             _conn().execute(
-                'DELETE FROM audits WHERE id NOT IN (SELECT id FROM audits ORDER BY id DESC LIMIT ?)',
-                (max_records,),
+                'DELETE FROM memories WHERE scope=? AND id NOT IN '
+                '(SELECT id FROM memories WHERE scope=? ORDER BY id DESC LIMIT ?)',
+                (scope, scope, limit),
             )
         _conn().commit()
         return int(cursor.lastrowid)
 
 
-def audit_recent(limit: int = 50) -> list[dict]:
+def memories(scopes: list[str], limit: int = 30) -> list[dict]:
+    values = list(dict.fromkeys(str(scope) for scope in scopes if str(scope)))
+    if not values:
+        return []
+    placeholders = ','.join('?' for _ in values)
+    params = [*values, max(1, min(100, int(limit)))]
     with _lock:
         rows = _conn().execute(
-            'SELECT id, scope, content, safe, reason, violation_words, score, model, created_at '
-            'FROM audits ORDER BY id DESC LIMIT ?', (max(1, min(200, int(limit))),)
+            f'SELECT id, scope, content, created_at FROM memories '
+            f'WHERE scope IN ({placeholders}) ORDER BY id DESC LIMIT ?',
+            params,
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [dict(row) for row in reversed(rows)]
+
+
+def clear_memories(scope: str) -> int:
+    with _lock:
+        cursor = _conn().execute('DELETE FROM memories WHERE scope=?', (scope,))
+        _conn().commit()
+        return cursor.rowcount
+
+
+def stats() -> dict:
+    with _lock:
+        row = _conn().execute(
+            "SELECT COUNT(*) AS messages, COUNT(DISTINCT CASE WHEN scope LIKE 'userchat:%' "
+            "THEN scope END) AS conversations FROM messages"
+        ).fetchone()
+        memories_count = _conn().execute('SELECT COUNT(*) FROM memories').fetchone()[0]
+    return {
+        'messages': row['messages'],
+        'conversations': row['conversations'],
+        'memories': memories_count,
+    }

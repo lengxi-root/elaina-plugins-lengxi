@@ -52,12 +52,16 @@ async def _set_config(request: web.Request):
     """保存 AI 开发运行参数；接口与密钥始终由中央 AI LLM 管理。"""
     body = await _json(request)
     updates = {}
-    for k in ('provider_id', 'model_preference', 'temperature', 'max_iterations',
+    for k in ('enabled', 'high_risk_tools_enabled', 'provider_id', 'model_preference', 'temperature', 'max_iterations',
               'history_limit', 'system_prompt', 'reasoning_effort', 'chat_system_prompt',
               'central_skills_enabled', 'central_mcp_enabled', 'central_agent_enabled'):
         if k in body:
             updates[k] = body[k]
     aiconfig.set_runtime(updates)
+    if aiconfig.enabled():
+        central.register_capabilities()
+    else:
+        central.unregister_capabilities()
     return await _get_config(request)
 
 
@@ -98,11 +102,13 @@ def _content_text(content):
 
 
 async def _post_chat(request: web.Request):
+    if not aiconfig.enabled():
+        return web.json_response({'success': False, 'error': 'AI 开发助手已停用'}, status=503)
     body = await _json(request)
     message = str(body.get('message', '')).strip()
     model = str(body.get('model', '') or '')
     sid = str(body.get('session_id', '') or '')
-    mode = 'chat' if str(body.get('mode', '') or '') == 'chat' else 'dev'
+    mode = 'analyze' if str(body.get('mode', '') or '') in {'analyze', 'chat'} else 'dev'
     raw_images = body.get('images') or []
     images = [u for u in raw_images if isinstance(u, str) and u.startswith('data:image')][:8] if isinstance(raw_images, list) else []
     if not message and not images:

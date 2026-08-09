@@ -8,11 +8,11 @@ from core.base.config import cfg
 
 DEFAULTS = {
     'enabled': True,
+    'high_risk_tools_enabled': False,
     'provider_id': '',
     'model_preference': '',
     'temperature': 0.3,
     'max_iterations': 50,
-    'request_timeout': 120,
     'system_prompt': '',
     'reasoning_effort': '',
     'history_limit': 50,
@@ -100,18 +100,19 @@ def max_iterations() -> int:
         return DEFAULTS['max_iterations']
 
 
+def enabled() -> bool:
+    return bool(_setting('enabled'))
+
+
+def high_risk_tools_enabled() -> bool:
+    return bool(_setting('high_risk_tools_enabled'))
+
+
 def history_limit() -> int:
     try:
         return int(_setting('history_limit'))
     except (TypeError, ValueError):
         return DEFAULTS['history_limit']
-
-
-def request_timeout() -> int:
-    try:
-        return min(600, max(5, int(_setting('request_timeout'))))
-    except (TypeError, ValueError):
-        return DEFAULTS['request_timeout']
 
 
 def system_prompt() -> str:
@@ -123,15 +124,25 @@ def reasoning_effort() -> str:
     return value if value in ('minimal', 'low', 'medium', 'high') else ''
 
 
-CHAT_SYSTEM_PROMPT = '你是一个有用、友好的 AI 助手。请用简洁、准确的中文回答用户的问题。'
+ANALYSIS_SYSTEM_PROMPT = (
+    '你是 ElainaBot 的只读开发分析助手。使用提供的只读工具收集证据，分析代码、配置和运行状态；'
+    '不得声称已修改任何内容，也不得给出未经工具验证的环境结论。用简洁、准确的中文回答。'
+)
+
+
+def analysis_system_prompt() -> str:
+    # 保留旧配置键，避免升级后丢失用户自定义提示词。
+    return str(_setting('chat_system_prompt') or '').strip() or ANALYSIS_SYSTEM_PROMPT
 
 
 def chat_system_prompt() -> str:
-    return str(_setting('chat_system_prompt') or '').strip() or CHAT_SYSTEM_PROMPT
+    return analysis_system_prompt()
 
 
 def runtime_capabilities() -> list[str]:
-    result = ['tool']
+    # AI 开发工具已通过 caller tools 直接传入。不要再从中央能力注册表
+    # 注入一份 plugin_ai_dev_* 副本，否则会绕过面板的实时工具事件。
+    result = []
     if bool(_setting('central_skills_enabled')):
         result.append('skill')
     if bool(_setting('central_mcp_enabled')):
@@ -144,12 +155,12 @@ def runtime_capabilities() -> list[str]:
 def public_config() -> dict:
     return {
         'enabled': bool(_setting('enabled')),
+        'high_risk_tools_enabled': high_risk_tools_enabled(),
         'provider_id': provider_id(),
         'model_preference': model_preference(),
         'temperature': temperature(),
         'max_iterations': max_iterations(),
         'history_limit': history_limit(),
-        'request_timeout': request_timeout(),
         'system_prompt': system_prompt(),
         'reasoning_effort': reasoning_effort(),
         'chat_system_prompt': str(_setting('chat_system_prompt') or ''),

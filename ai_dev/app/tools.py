@@ -1,4 +1,4 @@
-"""Agent 工具集: 文件读写/编辑、目录、插件热重载与指令测试、配置读写、运行 Python、发消息。文件操作沙箱限定在仓库内且禁访 .git。"""
+"""Agent 工具集：受限文件操作、插件管理、配置读写和消息发送。"""
 
 import asyncio
 import ast
@@ -6,28 +6,48 @@ import fnmatch
 import json
 import os
 import platform
-import sys
+import re
 import time
 
 from core.base.config import cfg
 
-# 仓库根目录: plugins/ai_dev/app/tools.py -> 上溯四层 (app -> ai_dev -> plugins -> 根)
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# 框架根目录: ElainaBot_v2/ai_dev/app/tools.py -> 上溯三层。
+# AI 开发工具的路径语义始终相对实际框架根，而不是外层聚合仓库。
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _MAX_READ_BYTES = 200_000
 _MAX_WRITE_BYTES = 1_000_000
-_PYTHON_TIMEOUT = 30
 _CONFIG_FILES = ('settings', 'bot')
+_HIGH_RISK_TOOL_NAMES = {'delete_file', 'test_command', 'send_qq_message'}
+_SENSITIVE_CONFIG_KEY = re.compile(
+    r'(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie|secret|password|passwd|app[_-]?secret)',
+    re.IGNORECASE,
+)
+
+
+def _redact_config(value, key: str = ''):
+    if _SENSITIVE_CONFIG_KEY.search(str(key)):
+        return '***'
+    if isinstance(value, dict):
+        return {str(name): _redact_config(item, str(name)) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_config(item) for item in value]
+    return value
 
 
 def _safe_path(rel: str) -> str:
-    """将相对路径解析为仓库内的绝对路径, 越界或访问 .git 则抛错"""
+    """解析仓库内真实路径，拒绝链接逃逸和 Git 元数据访问。"""
     rel = (rel or '').strip().lstrip('/').lstrip('\\')
-    target = os.path.abspath(os.path.join(ROOT, rel))
-    if target != ROOT and not target.startswith(ROOT + os.sep):
+    target = os.path.realpath(os.path.abspath(os.path.join(ROOT, rel)))
+    root = os.path.realpath(ROOT)
+    try:
+        inside = os.path.commonpath((os.path.normcase(root), os.path.normcase(target))) == os.path.normcase(root)
+    except ValueError:
+        inside = False
+    if not inside:
         raise ValueError(f'路径越界 (仅允许仓库内): {rel}')
-    parts = os.path.relpath(target, ROOT).split(os.sep)
-    if parts and parts[0] == '.git':
+    parts = os.path.relpath(target, root).split(os.sep)
+    if any(part.casefold() == '.git' for part in parts):
         raise ValueError('禁止访问 .git 目录')
     return target
 
@@ -118,13 +138,13 @@ async def _t_edit_file(path: str, old_string: str, new_string: str = '',
 
 async def _t_delete_file(path: str) -> dict:
     target = _safe_path(path)
+    if os.path.normcase(target) == os.path.normcase(os.path.realpath(ROOT)):
+        raise ValueError('禁止删除框架根目录')
     if os.path.isfile(target):
         os.remove(target)
         return {'path': _rel(target), 'deleted': True, 'type': 'file'}
     if os.path.isdir(target):
-        import shutil
-        await asyncio.to_thread(shutil.rmtree, target)
-        return {'path': _rel(target), 'deleted': True, 'type': 'dir'}
+        raise ValueError('禁止递归删除目录；请逐个删除明确文件后由管理员处理空目录')
     raise ValueError(f'路径不存在: {path}')
 
 
@@ -281,38 +301,6 @@ async def _t_test_command(text: str, user_id: str = '10000001', group_id=None,
     }
 
 
-async def _t_run_python(code: str, timeout: int = _PYTHON_TIMEOUT) -> dict:
-    """在仓库根以子进程运行 Python 代码, 带超时"""
-    if not code or not code.strip():
-        raise ValueError('缺少 code')
-    try:
-        to = min(int(timeout), 120)
-    except (TypeError, ValueError):
-        to = _PYTHON_TIMEOUT
-    start = time.time()
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, '-I', '-c', code,
-        cwd=ROOT,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env={**os.environ, 'PYTHONPATH': ROOT, 'PYTHONDONTWRITEBYTECODE': '1'},
-    )
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=to)
-        timed_out = False
-    except asyncio.TimeoutError:
-        proc.kill()
-        out, err = await proc.communicate()
-        timed_out = True
-    return {
-        'exit_code': proc.returncode,
-        'timed_out': timed_out,
-        'duration_ms': int((time.time() - start) * 1000),
-        'stdout': out.decode('utf-8', 'replace')[-8000:],
-        'stderr': err.decode('utf-8', 'replace')[-8000:],
-    }
-
-
 async def _t_search_code(query: str, path: str = '.', pattern: str = '*',
                          case_sensitive: bool = False, limit: int = 100) -> dict:
     """Search repository text without exposing files outside the workspace."""
@@ -365,13 +353,8 @@ async def _t_get_config(file: str = 'settings') -> dict:
     if file not in _CONFIG_FILES:
         raise ValueError(f"file 仅支持 {' 或 '.join(_CONFIG_FILES)}")
     data = cfg.get(file)
-    # 隐去敏感字段
     safe = json.loads(json.dumps(data, ensure_ascii=False, default=str))
-    if isinstance(safe, dict):
-        ai = safe.get('ai')
-        if isinstance(ai, dict) and ai.get('api_key'):
-            ai['api_key'] = '***'
-    return {'file': file, 'config': safe}
+    return {'file': file, 'config': _redact_config(safe)}
 
 
 async def _t_set_config(file: str, key: str, value) -> dict:
@@ -380,7 +363,7 @@ async def _t_set_config(file: str, key: str, value) -> dict:
     if not key:
         raise ValueError('缺少 key (点号路径, 如 web.framework_name)')
     cfg.set_value(file, key, value)
-    return {'file': file, 'key': key, 'value': value, 'saved': True}
+    return {'file': file, 'key': key, 'value': _redact_config(value, key), 'saved': True}
 
 
 async def _t_system_info() -> dict:
@@ -448,7 +431,6 @@ _DISPATCH = {
     'list_handlers': _t_list_handlers,
     'reload_plugin': _t_reload_plugin,
     'test_command': _t_test_command,
-    'run_python': _t_run_python,
     'search_code': _t_search_code,
     'check_python': _t_check_python,
     'get_config': _t_get_config,
@@ -633,21 +615,6 @@ TOOLS_SCHEMA = [
     {
         'type': 'function',
         'function': {
-            'name': 'run_python',
-            'description': '在仓库根目录以独立子进程运行一段 Python 代码并返回 stdout/stderr (带超时), 用于自测逻辑或验证导入。',
-            'parameters': {
-                'type': 'object',
-                'properties': {
-                    'code': {'type': 'string', 'description': 'Python 源码'},
-                    'timeout': {'type': 'integer', 'description': '超时秒数, 默认 30, 上限 120'},
-                },
-                'required': ['code'],
-            },
-        },
-    },
-    {
-        'type': 'function',
-        'function': {
             'name': 'get_config',
             'description': '读取框架配置 (settings 或 bot), api_key 会被隐去。',
             'parameters': {
@@ -697,3 +664,22 @@ TOOLS_SCHEMA = [
         },
     },
 ]
+
+
+_READ_ONLY_TOOL_NAMES = {
+    'search_code', 'check_python', 'list_dir', 'read_file', 'list_plugins',
+    'list_handlers', 'get_config', 'system_info',
+}
+
+
+def schemas_for_mode(mode: str, allow_high_risk: bool = False) -> list[dict]:
+    """Return the explicit tool surface for development or read-only analysis."""
+    if mode == 'dev':
+        return [
+            item for item in TOOLS_SCHEMA
+            if allow_high_risk or item.get('function', {}).get('name') not in _HIGH_RISK_TOOL_NAMES
+        ]
+    return [
+        item for item in TOOLS_SCHEMA
+        if item.get('function', {}).get('name') in _READ_ONLY_TOOL_NAMES
+    ]

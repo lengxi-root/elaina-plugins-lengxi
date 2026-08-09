@@ -4,12 +4,40 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import time
 import uuid
 from collections import deque
 
 _MAX_EVENTS = 2000              # 内存中保留的事件数
 _DEFAULT_HISTORY_ROUNDS = 50    # 单会话默认保留的对话轮数 (面板「设置」可改, 配置不可用时回退)
+_SENSITIVE_KEY = re.compile(
+    r'(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie|secret|password|passwd|app[_-]?secret)',
+    re.IGNORECASE,
+)
+_INLINE_SECRET = re.compile(
+    r'(?i)\b(api[_-]?key|token|secret|password|passwd|authorization)\b(\s*[:=]\s*)([^\s,;]+)'
+)
+_BEARER = re.compile(r'(?i)\bBearer\s+[A-Za-z0-9._~+\-/=]+')
+_PRIVATE_ADDRESS = re.compile(
+    r'(?<!\d)(?:127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(?!\d)'
+)
+
+
+def _safe_persist(value, key: str = ''):
+    if _SENSITIVE_KEY.search(str(key)):
+        return '[redacted]'
+    if isinstance(value, dict):
+        return {str(name): _safe_persist(item, str(name)) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_safe_persist(item) for item in value]
+    if isinstance(value, tuple):
+        return [_safe_persist(item) for item in value]
+    if isinstance(value, str):
+        text = _BEARER.sub('Bearer [redacted]', value)
+        text = _INLINE_SECRET.sub(lambda match: f'{match.group(1)}{match.group(2)}[redacted]', text)
+        return _PRIVATE_ADDRESS.sub('[private-address]', text)
+    return value
 
 
 class AIStore:
@@ -47,13 +75,23 @@ class AIStore:
     def get_session(self, sid: str) -> dict:
         return self._sessions.get(sid)
 
-    def create_session(self, title: str = '') -> dict:
+    def create_session(self, title: str = '', source: str = '') -> dict:
         sid = uuid.uuid4().hex[:12]
         now = time.time()
-        sess = {'id': sid, 'title': title, 'created': now, 'updated': now, 'messages': []}
+        sess = {
+            'id': sid, 'title': title, 'source': str(source or ''),
+            'created': now, 'updated': now, 'messages': [],
+        }
         self._sessions[sid] = sess
         self._save_sessions()
         return sess
+
+    def latest_session(self, source: str) -> dict | None:
+        candidates = [
+            item for item in self._sessions.values()
+            if item.get('source') == str(source or '')
+        ]
+        return max(candidates, key=lambda item: item.get('updated', 0), default=None)
 
     def ensure_session(self, sid: str) -> dict:
         if sid and sid in self._sessions:
@@ -113,7 +151,7 @@ class AIStore:
         try:
             tmp = self._sessions_file + '.tmp'
             with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(self._sessions, f, ensure_ascii=False)
+                json.dump(_safe_persist(self._sessions), f, ensure_ascii=False)
             os.replace(tmp, self._sessions_file)
         except Exception:
             pass
@@ -124,7 +162,7 @@ class AIStore:
                 with open(self._sessions_file, encoding='utf-8') as f:
                     data = json.load(f)
                     if isinstance(data, dict):
-                        self._sessions = data
+                        self._sessions = _safe_persist(data)
         with contextlib.suppress(Exception):
             if os.path.isfile(self._events_file):
                 with open(self._events_file, encoding='utf-8') as f:
@@ -133,7 +171,7 @@ class AIStore:
                     line = line.strip()
                     if line:
                         with contextlib.suppress(Exception):
-                            self._events.append(json.loads(line))
+                            self._events.append(_safe_persist(json.loads(line)))
         if self._events:
             self._seq = self._events[-1].get('seq', 0)
             self._compact_event_file()
@@ -145,7 +183,7 @@ class AIStore:
             with open(tmp, 'w', encoding='utf-8') as f:
                 for e in self._events:
                     if e.get('type') != 'delta':
-                        f.write(json.dumps(e, ensure_ascii=False) + '\n')
+                        f.write(json.dumps(_safe_persist(e), ensure_ascii=False) + '\n')
             os.replace(tmp, self._events_file)
 
     # ==================== 事件 ====================
@@ -181,7 +219,7 @@ class AIStore:
     def _append_event_file(self, event: dict):
         try:
             with open(self._events_file, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(event, ensure_ascii=False) + '\n')
+                f.write(json.dumps(_safe_persist(event), ensure_ascii=False) + '\n')
         except Exception:
             pass
 
