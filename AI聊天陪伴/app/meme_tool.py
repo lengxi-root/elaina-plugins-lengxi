@@ -10,38 +10,22 @@ _MEME_API = 'http://datukuai.top:2233/memes'
 
 # key, image count, label, text count, circle crop
 _ROWS = [
-    ('divorce',1,'离婚',0,False),('add_chaos',1,'添乱',0,False),('marriage',1,'结婚登记',0,False),
-    ('always_like',1,'我永远喜欢',0,False),('crawl',1,'爬',0,False),('decent_kiss',1,'像样的亲亲',0,False),
+    ('add_chaos',1,'添乱',0,False),('always_like',1,'我永远喜欢',0,False),
     ('eat',1,'吃',0,False),('zzdd',1,'指指点点',0,False),('kiss',2,'亲',0,False),
-    ('hutao_bite',1,'胡桃啃',0,False),('my_wife',1,'我老婆',0,False),('perfect',1,'完美',0,False),
-    ('adoption',1,'收养',0,False),('roll',1,'滚',0,False),('throw',1,'丢',0,False),
-    ('twist',1,'搓',0,False),('petpet',1,'摸',0,True),('a_jj_play_baseball',1,'打棒球',0,False),
-    ('alike',1,'一样',0,False),('all_the_days',2,'一生一世',0,False),('always',1,'一直',0,False),
-    ('xiatou',1,'下头',0,False),('arona_throw',1,'阿罗娜扔',0,False),('ask',1,'问问',0,False),
-    ('azur_lane_cheshire_thumbs_up',1,'柴郡点赞',0,False),('back_to_work',1,'继续干活',0,False),
-    ('beg_foster_care',1,'求收养',0,False),('beloveds',1,'亲亲抱抱举高高',0,False),
-    ('blood_pressure',1,'高血压',0,False),('bocchi_draft',1,'波奇手稿',0,False),
-    ('capoo_draw',1,'咖波画画',0,False),('capoo_love',1,'咖波爱你',0,False),
-    ('capoo_point',1,'咖波指',0,False),('capoo_rub',1,'咖波蹭',0,False),
-    ('capoo_take_sleep',1,'咖波睡觉',0,False),('cat_lick',1,'猫猫舔',0,False),
-    ('charpic',1,'字符画',0,False),('chillet_deer',1,'寒霜鹿',0,False),
-    ('cinderella_eat',1,'灰姑娘吃',0,False),('coupon',1,'陪睡券',0,False),
-    ('cover_face',1,'捂脸',0,False),('cyan',1,'群青',0,False),('dinosaur',1,'恐龙',0,False),
-    ('distracted',1,'分心',0,False),('dog_girl',1,'狗狗女孩',0,False),('dog_of_vtb',1,'vtb的狗',0,False),
-    ('fight_with_sunuo',1,'与宿傩战斗',0,False),('funny_mirror',1,'哈哈镜',0,False),
-    ('guichu',1,'鬼畜',0,False),('hammer',1,'锤',0,False),('ignite',1,'燃起来了',0,False),
-    ('kurogames_jinhsi_eat',1,'今汐吃',0,False),('kurogames_lupa_eat',1,'露帕吃',0,False),
-    ('kurogames_phoebe_score_sheet',1,'菲比评分表',0,False),('kurogames_phrolova_eat',1,'芙洛洛吃',0,False),
-    ('left_right_jump',1,'左右横跳',0,False),('let_me_in',1,'让我进去',0,False),
-    ('listen_music',1,'听音乐',0,False),('louvre',1,'卢浮宫',0,False),
-    ('mygo_sakiko_togawa',1,'祥子',0,False),('my_friend',1,'我朋友说',1,False),
-    ('myplay',1,'笨死了',0,False),('no_response',1,'没有反应',0,False),('paint',1,'这像画吗',0,False),
-    ('xile',1,'洗了',0,False),('oshi_no_ko',1,'推的孩子',0,False),('punch',1,'打拳',0,False),
-    ('potato_mines',1,'土豆地雷',0,False),('sekaiichi_kawaii',1,'世界第一可爱',0,False),
-    ('worship',1,'膜拜',0,False),('shake_head',1,'摇头',0,False),('shock',1,'震惊',0,False),
-    ('speechless',1,'无语',0,False),('stare_at_you',1,'盯着你',0,False),('stew',1,'炖',0,False),
-    ('thermometer_gun',1,'体温枪',0,False),('trance',1,'恍惚',0,False),
-    ('upside_down',1,'我看你们是反了',0,False),('what_I_want_to_do',1,'我想要做的事',0,False),
+    ('perfect',1,'完美',0,False),('throw',1,'丢',0,False),('twist',1,'搓',0,False),
+    ('petpet',1,'摸摸头',0,True),('ask',1,'问问',0,False),
+    ('azur_lane_cheshire_thumbs_up',1,'点赞',0,False),('back_to_work',1,'继续干活',0,False),
+    ('blood_pressure',1,'高血压',0,False),('capoo_draw',1,'画画',0,False),
+    ('capoo_love',1,'喜欢你',0,False),('capoo_point',1,'指你',0,False),
+    ('capoo_rub',1,'蹭蹭',0,False),('capoo_take_sleep',1,'睡觉',0,False),
+    ('cover_face',1,'捂脸',0,False),('distracted',1,'分心',0,False),
+    ('funny_mirror',1,'哈哈镜',0,False),('hammer',1,'锤',0,False),
+    ('ignite',1,'燃起来了',0,False),('left_right_jump',1,'左右横跳',0,False),
+    ('listen_music',1,'听音乐',0,False),('my_friend',1,'我朋友说',1,False),
+    ('no_response',1,'没有反应',0,False),('sekaiichi_kawaii',1,'世界第一可爱',0,False),
+    ('worship',1,'膜拜',0,False),('shake_head',1,'摇头',0,False),
+    ('shock',1,'震惊',0,False),('speechless',1,'无语',0,False),
+    ('stare_at_you',1,'盯着你',0,False),('trance',1,'恍惚',0,False),
 ]
 COMMAND_CONFIG = {key: {'images': images, 'keywords': label, 'texts': texts, 'circle': circle}
                   for key, images, label, texts, circle in _ROWS}
@@ -57,14 +41,6 @@ TOOL = {'type': 'function', 'function': {
         'texts': {'type': 'array', 'description': '需要文字时按当前语境填写',
                   'items': {'type': 'string', 'maxLength': 80}, 'maxItems': 4}},
         'required': ['template'], 'additionalProperties': False}}}
-
-_CUES = ('表情包','meme','摸摸','摸头','亲亲','抱抱','哈哈','笑死','好笑','可爱','完美','厉害',
-         '加油','辛苦','离谱','尴尬','捂脸','震惊','无语','盯着','摇头','点赞','喜欢','结婚','吃掉')
-
-def should_offer(text: str) -> bool:
-    value = str(text or '').casefold()
-    return any(cue in value for cue in _CUES)
-
 
 def _bot_avatar_url(appid: str, fallback_self_id: str = '') -> str:
     try:

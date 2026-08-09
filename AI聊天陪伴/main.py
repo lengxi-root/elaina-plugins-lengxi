@@ -12,7 +12,7 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .app import central, config, safety, store, webpanel
+from .app import agents, central, config, safety, store, webpanel
 
 __plugin_meta__ = {
     'name': 'AI 聊天陪伴',
@@ -93,8 +93,6 @@ async def _memory_text(event, current: dict) -> str:
     )
     return '\n'.join(
         f'- {item["content"]}' for item in items
-        if not safety.internal_access_request(item['content'])
-        and not safety.personality_override_request(item['content'])
     )
 
 
@@ -103,10 +101,23 @@ async def _input_rejected(current: dict, text: str) -> bool:
         return False
     result = await central.moderate_input(current, text)
     if result.get('flagged'):
-        log.warning('用户输入被 Moderation 拦截: %s', ','.join(result.get('categories') or []))
+        log.warning('用户输入被内容安全审核拦截')
         return True
     if not result.get('available') and current.get('moderation_fail_closed'):
         log.warning('Moderation 不可用，按配置阻断输入: %s', result.get('error', ''))
+        return True
+    return False
+
+
+async def _output_rejected(current: dict, text: str) -> bool:
+    if not current.get('moderation_enabled') or not str(text or '').strip():
+        return False
+    result = await central.moderate_output(current, text)
+    if result.get('flagged'):
+        log.warning('AI 输出被内容安全审核拦截')
+        return True
+    if not result.get('available'):
+        log.warning('AI 输出审核不可用，按严格策略阻断输出: %s', result.get('error', ''))
         return True
     return False
 
@@ -130,16 +141,6 @@ async def reply_for_event(event, text: str) -> str:
                 store.history, scope, current['context_messages'],
                 current['context_expire_seconds'],
             )
-            history = [
-                {
-                    **item,
-                    'content': '[人格覆盖请求已忽略]',
-                }
-                if item.get('role') == 'user'
-                and safety.personality_override_request(item.get('content', ''))
-                else item
-                for item in history
-            ]
             reply = await central.complete(
                 current, personality, history, await _memory_text(event, current),
                 media_context={
@@ -155,6 +156,8 @@ async def reply_for_event(event, text: str) -> str:
             )
             if blocked:
                 log.warning('AI 输出命中违规词，已替换为安全回复')
+            elif await _output_rejected(current, reply):
+                reply = current['blocked_response']
         except Exception:
             await asyncio.to_thread(store.remove, message_id)
             raise
@@ -231,6 +234,7 @@ async def cleanup() -> None:
             await _capability_task
         _capability_task = None
     central.unregister_capabilities()
+    await agents.close()
     unregister_page(PAGE_KEY)
     await asyncio.to_thread(store.close)
     _locks.clear()
@@ -325,11 +329,7 @@ async def remember_command(event, match) -> None:
         await _reply_to_user(event, '长期记忆当前未启用。')
         return
     content = str(match.group(1) or '').strip()
-    if (
-        safety.internal_access_request(content)
-        or safety.personality_override_request(content)
-        or safety.find_blocked(content, current['blocked_words'])
-    ):
+    if safety.find_blocked(content, current['blocked_words']):
         await _reply_to_user(event, current['moderation_blocked_response'])
         return
     if await _input_rejected(current, content):
@@ -410,22 +410,6 @@ async def chat_message(event, _match) -> None:
         if not current['direct_enabled']:
             return
     else:
-        return
-    if safety.internal_access_request(text):
-        response = '我会保持当前陪伴身份与你交流，但不会提供底层模型、系统提示词或内部运行信息。'
-        await asyncio.to_thread(
-            store.append, user_context_scope(event), 'assistant', response,
-            current['max_stored_messages'],
-        )
-        await _reply_to_user(event, response)
-        return
-    if safety.personality_override_request(text):
-        response = '我会保持既定人格与你交流，不会接受覆盖、重置或替换人格的要求。'
-        await asyncio.to_thread(
-            store.append, user_context_scope(event), 'assistant', response,
-            current['max_stored_messages'],
-        )
-        await _reply_to_user(event, response)
         return
     blocked = safety.find_blocked(text, current['blocked_words'])
     if blocked:

@@ -9,7 +9,7 @@ from PIL import Image, ImageOps
 
 from core.plugin.web_pages import register_route
 
-from . import central, config, skills, store
+from . import agents, central, config, skills, store
 
 PREFIX = '/api/ext/ai-companion'
 _registered = False
@@ -23,6 +23,7 @@ def register_routes() -> None:
     register_route('PUT', f'{PREFIX}/config')(_save_config)
     register_route('GET', f'{PREFIX}/stats')(_stats)
     register_route('GET', f'{PREFIX}/skills')(_skills)
+    register_route('GET', f'{PREFIX}/agents')(_agents)
     register_route('POST', f'{PREFIX}/skills')(_create_skill)
     register_route('POST', f'{PREFIX}/models/refresh')(_refresh_models)
     register_route('GET', f'{PREFIX}/reference-image')(_get_reference_image)
@@ -170,6 +171,13 @@ async def _skills(_request: web.Request) -> web.Response:
     current = config.load()
     enabled = set(current.get('enabled_skills', []))
     data = [{**item, 'enabled': item['id'] in enabled} for item in skills.discover()]
+    return web.json_response({'success': True, 'data': data})
+
+
+async def _agents(_request: web.Request) -> web.Response:
+    current = config.load()
+    enabled = set(current.get('enabled_agents', []))
+    data = [{**item, 'enabled': item['id'] in enabled} for item in agents.catalog()]
     return web.json_response({'success': True, 'data': data})
 
 
