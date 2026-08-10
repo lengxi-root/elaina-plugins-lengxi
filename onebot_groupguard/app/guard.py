@@ -14,6 +14,27 @@ _URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+_REJOIN_BAN_PENALTY_SECONDS = 24 * 60 * 60
+_MAX_GROUP_BAN_SECONDS = 30 * 24 * 60 * 60
+
+
+async def handle_rejoin_ban(group_id, user_id) -> bool:
+    """重新禁言退群避罚的用户，并额外增加一天。"""
+    remaining = store.get_pending_rejoin_ban(group_id, user_id)
+    if not remaining:
+        return False
+    duration = min(remaining + _REJOIN_BAN_PENALTY_SECONDS, _MAX_GROUP_BAN_SECONDS)
+    await call_api('set_group_ban', {
+        'group_id': int(group_id),
+        'user_id': int(user_id),
+        'duration': duration,
+    })
+    log.info(
+        f'退群禁言恢复: 用户 {user_id}@{group_id}, '
+        f'剩余 {remaining} 秒 + 1 天, 实际禁言 {duration} 秒'
+    )
+    return True
+
 
 async def handle_card_lock_on_message(group_id, user_id, sender_card) -> None:
     key = f'{group_id}:{user_id}'

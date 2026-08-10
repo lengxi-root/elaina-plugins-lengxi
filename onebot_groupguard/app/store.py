@@ -7,6 +7,7 @@
 
 import copy
 import json
+import math
 import os
 import threading
 import time
@@ -16,6 +17,7 @@ from core.base.config import cfg
 _DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 _CONFIG_FILE = os.path.join(_DATA_DIR, 'config.json')
 _ACTIVITY_FILE = os.path.join(_DATA_DIR, 'activity.json')
+_MUTE_RECORDS_FILE = os.path.join(_DATA_DIR, 'mute_records.json')
 
 DEFAULT_MSG_FILTER = {
     'blockVideo': False,
@@ -84,6 +86,9 @@ _config: dict | None = None
 _activity_lock = threading.Lock()
 _activity: dict = {}
 _activity_dirty = False
+
+_mute_lock = threading.RLock()
+_mute_records: dict = {'active': {}, 'pending': {}}
 
 
 def _merge_defaults(data: dict) -> dict:
@@ -186,6 +191,96 @@ def is_whitelisted(user_id) -> bool:
 
 def is_blacklisted(user_id) -> bool:
     return str(user_id) in (load().get('blacklist') or [])
+
+
+# ── 退群禁言恢复 ──
+def _mute_key(group_id, user_id) -> str:
+    return f'{group_id}:{user_id}'
+
+
+def load_mute_records() -> None:
+    """加载当前禁言及退群时冻结的剩余禁言时长。"""
+    global _mute_records
+    with _mute_lock:
+        data = {}
+        try:
+            if os.path.exists(_MUTE_RECORDS_FILE):
+                with open(_MUTE_RECORDS_FILE, encoding='utf-8') as f:
+                    data = json.load(f)
+        except Exception:  # noqa: BLE001
+            data = {}
+        active = data.get('active', {}) if isinstance(data, dict) else {}
+        pending = data.get('pending', {}) if isinstance(data, dict) else {}
+        _mute_records = {
+            'active': active if isinstance(active, dict) else {},
+            'pending': pending if isinstance(pending, dict) else {},
+        }
+
+
+def _save_mute_records_locked() -> None:
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    tmp = _MUTE_RECORDS_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(_mute_records, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, _MUTE_RECORDS_FILE)
+
+
+def record_group_ban(group_id, user_id, duration: int, now: float | None = None) -> None:
+    """根据 OneBot 禁言通知记录到期时间；解禁通知会清除记录。"""
+    key = _mute_key(group_id, user_id)
+    duration = max(0, int(duration or 0))
+    now = time.time() if now is None else now
+    with _mute_lock:
+        active = _mute_records.setdefault('active', {})
+        pending = _mute_records.setdefault('pending', {})
+        if duration:
+            active[key] = {'expiresAt': now + duration}
+        else:
+            active.pop(key, None)
+        pending.pop(key, None)
+        _save_mute_records_locked()
+
+
+def freeze_group_ban_on_leave(group_id, user_id, now: float | None = None) -> int:
+    """用户主动退群时冻结其尚未执行完的禁言秒数。"""
+    key = _mute_key(group_id, user_id)
+    now = time.time() if now is None else now
+    with _mute_lock:
+        active = _mute_records.setdefault('active', {})
+        record = active.pop(key, None)
+        if not isinstance(record, dict):
+            return 0
+        try:
+            remaining = max(0, math.ceil(float(record.get('expiresAt', 0)) - now))
+        except (TypeError, ValueError):
+            remaining = 0
+        if remaining:
+            _mute_records.setdefault('pending', {})[key] = {
+                'duration': remaining,
+                'leftAt': int(now),
+            }
+        _save_mute_records_locked()
+        return remaining
+
+
+def get_pending_rejoin_ban(group_id, user_id) -> int:
+    key = _mute_key(group_id, user_id)
+    with _mute_lock:
+        record = _mute_records.setdefault('pending', {}).get(key)
+        if not isinstance(record, dict):
+            return 0
+        try:
+            return max(0, int(record.get('duration', 0)))
+        except (TypeError, ValueError):
+            return 0
+
+
+def clear_pending_rejoin_ban(group_id, user_id) -> None:
+    key = _mute_key(group_id, user_id)
+    with _mute_lock:
+        pending = _mute_records.setdefault('pending', {})
+        if pending.pop(key, None) is not None:
+            _save_mute_records_locked()
 
 
 # ── 活跃统计 ──

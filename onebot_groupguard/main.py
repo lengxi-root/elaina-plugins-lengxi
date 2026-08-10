@@ -57,6 +57,7 @@ async def _probe_bot_id(rt):
 async def init():
     store.load()
     store.load_activity()
+    store.load_mute_records()
     logbuf.install(log)
     rt = get_runtime()
     register_page(
@@ -186,6 +187,8 @@ async def on_group_increase(event, match):
     if not await is_bot_admin(group_id, bot_id):
         log.warning(f'新成员 {user_id}@{group_id}: 机器人 {bot_id or "(未知QQ)"} 非管理员, 跳过入群验证/欢迎')
         return
+    if await guard.handle_rejoin_ban(group_id, user_id):
+        return
 
     settings = store.get_group_settings(group_id)
     if not settings.get('enableVerify'):
@@ -219,6 +222,12 @@ async def on_group_card(event, match):
     await guard.handle_card_lock_check(str(event.group_id), str(event.user_id))
 
 
+@handler(r'.*', name='groupguard_ban', event_types=['notice.group_ban'], priority=50)
+async def on_group_ban(event, match):
+    duration = event.raw_data.get('duration', 0) if event.sub_type == 'ban' else 0
+    store.record_group_ban(str(event.group_id), str(event.user_id), duration)
+
+
 @handler(r'.*', name='groupguard_decrease', event_types=['notice.group_decrease'], priority=50)
 async def on_group_decrease(event, match):
     group_id = str(event.group_id)
@@ -228,6 +237,9 @@ async def on_group_decrease(event, match):
     verify.cancel_session(group_id, user_id)
     if event.sub_type != 'leave':
         return
+    remaining = store.freeze_group_ban_on_leave(group_id, user_id)
+    if remaining:
+        log.info(f'禁言用户退群: 用户 {user_id}@{group_id}, 冻结剩余 {remaining} 秒')
     conf = store.config()
     settings = store.get_group_settings(group_id)
     group_enabled = bool(settings.get('leaveBlacklist'))
