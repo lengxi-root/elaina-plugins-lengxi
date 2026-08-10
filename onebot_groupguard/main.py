@@ -1,10 +1,4 @@
-"""群管插件 — 从 NapCat groupguard 迁移到 ElainaBot OneBot v11 框架。
-
-集成入群验证、违禁词过滤、防撤回、刷屏检测、问答系统、黑白名单、名片锁定、
-回应表情、活跃统计、退群拉黑等功能, 并内置侧边栏 Web 面板 (所有配置项可在面板编辑)。
-
-QQ 内发送「群管帮助」查看全部指令。
-"""
+"""OneBot 群管理插件。"""
 
 import asyncio
 import os
@@ -96,50 +90,39 @@ async def on_group_message(event, match):
     segments = getattr(event, 'message', []) or []
     self_id = str(getattr(event, 'self_id', '') or '')
     is_white = store.is_whitelisted(user_id)
+    settings = store.get_group_settings(group_id)
 
-    # 0. 名片锁定被动检查
     await guard.handle_card_lock_on_message(group_id, user_id, event.sender_card)
 
-    # 1. 黑名单检查 (白名单豁免)
-    if not is_white and await guard.handle_blacklist(group_id, user_id, message_id):
+    if not is_white and await guard.handle_blacklist(group_id, user_id, message_id, settings):
         return
 
-    # 2. 群管指令
     if await commands.handle_command(event):
         return
 
-    # 2.5 问答自动回复
-    if await guard.handle_qa(group_id, user_id, text):
+    if await guard.handle_qa(group_id, user_id, text, settings):
         store.record_activity(group_id, user_id)
         guard.cache_message(message_id, user_id, group_id, text, segments)
         return
 
-    # 3. 针对撤回 (白名单豁免)
-    if not is_white and await guard.handle_auto_recall(group_id, user_id, message_id):
+    if not is_white and await guard.handle_auto_recall(group_id, user_id, message_id, settings):
         return
 
-    # 4. 违禁词过滤 (白名单豁免)
-    if not is_white and await guard.handle_filter_keywords(group_id, user_id, message_id, text):
+    if not is_white and await guard.handle_filter_keywords(group_id, user_id, message_id, text, settings):
         return
 
-    # 4.5 消息类型过滤 (白名单豁免)
-    if not is_white and await guard.handle_msg_type_filter(group_id, user_id, message_id, text, segments):
+    if not is_white and await guard.handle_msg_type_filter(group_id, user_id, message_id, text, segments, settings):
         return
 
-    # 5. 刷屏检测 (白名单豁免)
     if not is_white:
-        await guard.handle_spam_detect(group_id, user_id)
+        await guard.handle_spam_detect(group_id, user_id, settings)
 
-    # 6. 活跃统计
     store.record_activity(group_id, user_id)
 
-    # 7. 缓存消息 (防撤回)
     guard.cache_message(message_id, user_id, group_id, text, segments)
 
-    # 8. 回应表情
     await guard.handle_emoji_react(group_id, user_id, message_id, self_id)
 
-    # 9. 验证答题 (不依赖 enableVerify 开关, 已存在的会话始终可答题)
     await verify.handle_verify_answer(group_id, user_id, text, message_id)
 
 
@@ -247,13 +230,13 @@ async def on_group_decrease(event, match):
         return
     conf = store.config()
     settings = store.get_group_settings(group_id)
-    global_enabled = bool(conf.get('leaveBlacklist'))
     group_enabled = bool(settings.get('leaveBlacklist'))
-    if (not global_enabled and not group_enabled) or store.is_owner(user_id):
+    if (not conf.get('leaveBlacklist') and not group_enabled) or store.is_owner(user_id):
         return
-    bl = (store.ensure_group(group_id).setdefault('groupBlacklist', [])
-          if group_enabled else conf.setdefault('blacklist', []))
+    target = store.ensure_group(group_id) if group_enabled else conf
+    key = 'groupBlacklist' if group_enabled else 'blacklist'
+    bl = target.setdefault(key, [])
     if user_id not in bl:
         bl.append(user_id)
         store.save()
-        log.info(f'退群拉黑: 用户 {user_id} 退出群 {group_id} ({"本群" if group_enabled else "全局"})')
+        log.info(f'退群拉黑: 用户 {user_id} 退出群 {group_id}')

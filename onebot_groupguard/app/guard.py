@@ -1,4 +1,4 @@
-"""被动防护逻辑: 黑名单/违禁词/刷屏/消息类型过滤/针对撤回/名片锁定/防撤回/回应表情/问答/欢迎词。"""
+"""群消息防护与自动处理。"""
 
 import re
 import time
@@ -25,11 +25,11 @@ async def handle_card_lock_on_message(group_id, user_id, sender_card) -> None:
         await call_api('set_group_card', {'group_id': int(group_id), 'user_id': int(user_id), 'card': locked})
 
 
-async def handle_blacklist(group_id, user_id, message_id) -> bool:
+async def handle_blacklist(group_id, user_id, message_id, settings=None) -> bool:
     if store.is_owner(user_id):
         return False
     is_global = store.is_blacklisted(user_id)
-    settings = store.get_group_settings(group_id)
+    settings = settings or store.get_group_settings(group_id)
     is_group = str(user_id) in (settings.get('groupBlacklist') or [])
     if not is_global and not is_group:
         return False
@@ -39,17 +39,17 @@ async def handle_blacklist(group_id, user_id, message_id) -> bool:
     return True
 
 
-async def handle_auto_recall(group_id, user_id, message_id) -> bool:
-    settings = store.get_group_settings(group_id)
+async def handle_auto_recall(group_id, user_id, message_id, settings=None) -> bool:
+    settings = settings or store.get_group_settings(group_id)
     if str(user_id) not in (settings.get('targetUsers') or []):
         return False
     await call_api('delete_msg', {'message_id': message_id})
     return True
 
 
-async def handle_filter_keywords(group_id, user_id, message_id, text) -> bool:
+async def handle_filter_keywords(group_id, user_id, message_id, text, settings=None) -> bool:
     conf = store.config()
-    settings = store.get_group_settings(group_id)
+    settings = settings or store.get_group_settings(group_id)
     group_kw = settings.get('filterKeywords')
     keywords = group_kw if group_kw else (conf.get('filterKeywords') or [])
     if not keywords:
@@ -77,22 +77,19 @@ async def handle_filter_keywords(group_id, user_id, message_id, text) -> bool:
     if level >= 3:
         await call_api('set_group_kick', {'group_id': int(group_id), 'user_id': int(user_id), 'reject_add_request': False})
         await send_group_text(group_id, f'⚠️ {user_id} 已被移出群聊，原因：触发违禁词「{masked}」')
-    if level >= 4:
-        if store.is_owner(user_id):
-            await send_group_text(group_id, f'⚠️ {user_id} 是机器人主人，已跳过加黑')
-        else:
-            bl = (store.ensure_group(group_id).setdefault('groupBlacklist', [])
-                  if group_kw else conf.setdefault('blacklist', []))
-            if str(user_id) not in bl:
-                bl.append(str(user_id))
-                store.save()
-            scope = '本群' if group_kw else '全局'
-            await send_group_text(group_id, f'⚠️ {user_id} 已被加入{scope}黑名单，原因：触发违禁词「{masked}」')
+    if level >= 4 and not store.is_owner(user_id):
+        target = store.ensure_group(group_id) if group_kw else conf
+        key = 'groupBlacklist' if group_kw else 'blacklist'
+        blacklist = target.setdefault(key, [])
+        if str(user_id) not in blacklist:
+            blacklist.append(str(user_id))
+            store.save()
+        await send_group_text(group_id, f'⚠️ {user_id} 已被加入黑名单，原因：触发违禁词「{masked}」')
     return True
 
 
-async def handle_msg_type_filter(group_id, user_id, message_id, text, segments) -> bool:
-    settings = store.get_group_settings(group_id)
+async def handle_msg_type_filter(group_id, user_id, message_id, text, segments, settings=None) -> bool:
+    settings = settings or store.get_group_settings(group_id)
     flt = settings.get('msgFilter') or store.config().get('msgFilter')
     if not flt:
         return False
@@ -128,9 +125,9 @@ def _is_contact_share(segments) -> bool:
     return False
 
 
-async def handle_spam_detect(group_id, user_id) -> bool:
+async def handle_spam_detect(group_id, user_id, settings=None) -> bool:
     conf = store.config()
-    settings = store.get_group_settings(group_id)
+    settings = settings or store.get_group_settings(group_id)
     spam_on = settings.get('spamDetect') if 'spamDetect' in settings else conf.get('spamDetect')
     if not spam_on:
         return False
@@ -165,8 +162,12 @@ def cache_message(message_id, user_id, group_id, raw, segments=None) -> None:
         'raw': raw, 'segments': segments or [], 'time': int(time.time() * 1000),
     }
     now = int(time.time() * 1000)
-    for k in [k for k, v in rt.msg_cache.items() if now - v['time'] > 600000]:
-        rt.msg_cache.pop(k, None)
+    if now - rt.last_cache_cleanup < 60000 and len(rt.msg_cache) < 2000:
+        return
+    rt.last_cache_cleanup = now
+    for key, value in list(rt.msg_cache.items()):
+        if now - value['time'] > 600000:
+            rt.msg_cache.pop(key, None)
 
 
 async def handle_anti_recall(group_id, message_id, user_id) -> None:
@@ -235,9 +236,9 @@ async def send_welcome_message(group_id, user_id) -> None:
     })
 
 
-async def handle_qa(group_id, user_id, text) -> bool:
+async def handle_qa(group_id, user_id, text, settings=None) -> bool:
     conf = store.config()
-    settings = store.get_group_settings(group_id)
+    settings = settings or store.get_group_settings(group_id)
     gid = str(group_id)
     is_group_custom = bool(conf.get('groups', {}).get(gid) and not conf['groups'][gid].get('useGlobal'))
     qa_list = (settings.get('qaList') or []) if is_group_custom else (conf.get('qaList') or [])

@@ -44,8 +44,6 @@ DEFAULT_GROUP_SETTINGS = {
     'leaveBlacklist': False,
 }
 
-# 全局配置中这些字段也有对应的单群覆盖项。创建单群配置时一并复制，
-# 避免管理员修改当前群时意外回写全局配置。
 _GROUP_OVERRIDE_KEYS = (
     'filterKeywords', 'filterPunishLevel', 'filterBanMinutes',
     'welcomeMessage', 'spamWindow', 'spamThreshold', 'spamDetect',
@@ -150,7 +148,7 @@ def get_group_settings(group_id) -> dict:
 
 
 def ensure_group(group_id) -> dict:
-    """确保存在可写的群独立设置 (从当前生效设置复制一份)。"""
+    """确保存在可写的群独立设置，避免本群操作影响全局配置。"""
     conf = load()
     gid = str(group_id)
     groups = conf.setdefault('groups', {})
@@ -161,7 +159,6 @@ def ensure_group(group_id) -> dict:
             if key not in local and key in conf:
                 local[key] = copy.deepcopy(conf[key])
         local['useGlobal'] = False
-        # 全局黑名单不应被复制到单群黑名单。
         local['groupBlacklist'] = copy.deepcopy(
             current.get('groupBlacklist', []) if isinstance(current, dict) else []
         )
