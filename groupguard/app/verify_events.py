@@ -25,9 +25,14 @@ async def on_member_add(event, match):
 async def on_verify_click(event, match):
     event.set_callback_code(0)
     parts = (event.content or '').split('|')
-    if len(parts) < 3:
+    if len(parts) not in (3, 4):
         return
     gid = event.group_id
     if not gid or parts[1] != gid:
         return
-    await handle_verify_answer(event, gid, event.user_id, int(parts[2]))
+    try:
+        chosen = int(parts[-1])
+    except (TypeError, ValueError):
+        return
+    verify_id = parts[2] if len(parts) == 4 else None
+    await handle_verify_answer(event, gid, event.user_id, chosen, verify_id=verify_id)

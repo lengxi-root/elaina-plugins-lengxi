@@ -44,6 +44,15 @@ DEFAULT_GROUP_SETTINGS = {
     'leaveBlacklist': False,
 }
 
+# 全局配置中这些字段也有对应的单群覆盖项。创建单群配置时一并复制，
+# 避免管理员修改当前群时意外回写全局配置。
+_GROUP_OVERRIDE_KEYS = (
+    'filterKeywords', 'filterPunishLevel', 'filterBanMinutes',
+    'welcomeMessage', 'spamWindow', 'spamThreshold', 'spamDetect',
+    'spamBanMinutes', 'msgFilter', 'qaList', 'rejectKeywords',
+    'leaveBlacklist',
+)
+
 DEFAULT_CONFIG = {
     'debug': False,
     'ownerQQs': '',
@@ -141,12 +150,23 @@ def get_group_settings(group_id) -> dict:
 
 
 def ensure_group(group_id) -> dict:
-    """确保存在群独立设置 (从当前生效设置复制一份)。"""
+    """确保存在可写的群独立设置 (从当前生效设置复制一份)。"""
     conf = load()
     gid = str(group_id)
-    if gid not in conf.setdefault('groups', {}):
-        conf['groups'][gid] = copy.deepcopy(get_group_settings(gid))
-    return conf['groups'][gid]
+    groups = conf.setdefault('groups', {})
+    current = groups.get(gid)
+    if not isinstance(current, dict) or current.get('useGlobal'):
+        local = copy.deepcopy(get_group_settings(gid))
+        for key in _GROUP_OVERRIDE_KEYS:
+            if key not in local and key in conf:
+                local[key] = copy.deepcopy(conf[key])
+        local['useGlobal'] = False
+        # 全局黑名单不应被复制到单群黑名单。
+        local['groupBlacklist'] = copy.deepcopy(
+            current.get('groupBlacklist', []) if isinstance(current, dict) else []
+        )
+        groups[gid] = local
+    return groups[gid]
 
 
 def owner_list() -> list:

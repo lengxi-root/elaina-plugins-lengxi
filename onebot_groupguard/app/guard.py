@@ -26,6 +26,8 @@ async def handle_card_lock_on_message(group_id, user_id, sender_card) -> None:
 
 
 async def handle_blacklist(group_id, user_id, message_id) -> bool:
+    if store.is_owner(user_id):
+        return False
     is_global = store.is_blacklisted(user_id)
     settings = store.get_group_settings(group_id)
     is_group = str(user_id) in (settings.get('groupBlacklist') or [])
@@ -76,11 +78,16 @@ async def handle_filter_keywords(group_id, user_id, message_id, text) -> bool:
         await call_api('set_group_kick', {'group_id': int(group_id), 'user_id': int(user_id), 'reject_add_request': False})
         await send_group_text(group_id, f'⚠️ {user_id} 已被移出群聊，原因：触发违禁词「{masked}」')
     if level >= 4:
-        bl = conf.setdefault('blacklist', [])
-        if str(user_id) not in bl:
-            bl.append(str(user_id))
-            store.save()
-        await send_group_text(group_id, f'⚠️ {user_id} 已被加入黑名单，原因：触发违禁词「{masked}」')
+        if store.is_owner(user_id):
+            await send_group_text(group_id, f'⚠️ {user_id} 是机器人主人，已跳过加黑')
+        else:
+            bl = (store.ensure_group(group_id).setdefault('groupBlacklist', [])
+                  if group_kw else conf.setdefault('blacklist', []))
+            if str(user_id) not in bl:
+                bl.append(str(user_id))
+                store.save()
+            scope = '本群' if group_kw else '全局'
+            await send_group_text(group_id, f'⚠️ {user_id} 已被加入{scope}黑名单，原因：触发违禁词「{masked}」')
     return True
 
 
@@ -135,6 +142,9 @@ async def handle_spam_detect(group_id, user_id) -> bool:
     stamps = [t for t in rt.spam_cache.get(key, []) if now - t < window]
     stamps.append(now)
     rt.spam_cache[key] = stamps
+    if len(rt.spam_cache) > 1000:
+        for k in [k for k, v in rt.spam_cache.items() if not v or now - v[-1] >= window]:
+            rt.spam_cache.pop(k, None)
     if len(stamps) >= threshold:
         ban_min = int((settings.get('spamBanMinutes') if settings.get('spamBanMinutes') is not None else conf.get('spamBanMinutes')) or 5)
         await call_api('set_group_ban', {'group_id': int(group_id), 'user_id': int(user_id), 'duration': ban_min * 60})

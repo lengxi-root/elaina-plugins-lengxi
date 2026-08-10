@@ -501,7 +501,7 @@ const TOKEN = new URLSearchParams(location.search).get('access_token')
 function headers(){ const h={'Content-Type':'application/json'}; const t=TOKEN||localStorage.getItem('access_token')||''; if(t) h['Authorization']='Bearer '+t; return h; }
 function qs(u){ const t=TOKEN||localStorage.getItem('access_token')||''; return u+(t?(u.includes('?')?'&':'?')+'access_token='+encodeURIComponent(t):''); }
 function $(id){ return document.getElementById(id); }
-function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function toast(m,err){ const el=$('toast'); el.textContent=m; el.className='toast show'+(err?' err':''); setTimeout(()=>el.className='toast',2200); }
 async function af(path,method='GET',body=null){
   const o={method,headers:headers()}; if(body) o.body=JSON.stringify(body);
@@ -622,10 +622,17 @@ function collectGroup(gid){
   };
 }
 
+function collectCurrent(){
+  if(editMode){
+    if(chk('grp-ug')){ C.groups=C.groups||{}; C.groups[editMode]={useGlobal:true}; }
+    else collectGroup(editMode);
+  } else collectGlobal();
+}
+
 async function doSave(){
   C.ownerQQs=$('d-owner').value||'';
   C.globalAntiRecall=chk('a-gar'); C.globalEmojiReact=chk('a-ger');
-  if(editMode) collectGroup(editMode); else collectGlobal();
+  collectCurrent();
   try{ const d=await af('/config','POST',C); if(d.success){ toast('配置已保存'); if(d.config) C=d.config; } else toast('保存失败: '+(d.error||''),true); }
   catch(e){ toast('保存出错: '+e,true); }
 }
@@ -647,7 +654,7 @@ function updDash(){
 // ── group selector / per-group ──
 function popGrpSel(){ const s=$('grpSel'); const cv=s.value; s.innerHTML='<option value="">全局配置（默认）</option>'+GL.map(g=>`<option value="${g.group_id}">${esc(g.group_name||g.group_id)} (${g.group_id})</option>`).join(''); if(cv) s.value=cv; popPresetSel(); }
 function onGrp(){
-  if(editMode) collectGroup(editMode); else collectGlobal();
+  collectCurrent();
   const gid=$('grpSel').value;
   if(!gid){ editMode=''; $('grpUgWrap').style.display='none'; fillGlobal(); setFormDisabled(false); return; }
   editMode=gid;
@@ -760,8 +767,8 @@ function popPresetSel(){ const s=$('presetSel'); if(!s) return; const presets=C.
 function showSavePreset(){ $('presetSaveRow').style.display='flex'; $('presetMgrRow').style.display='none'; $('presetName').value=''; $('presetName').focus(); }
 async function doSavePreset(){
   const name=$('presetName').value.trim(); if(!name){ toast('请输入预设名称',true); return; }
-  if(editMode) collectGroup(editMode); else collectGlobal();
-  const settings=editMode?JSON.parse(JSON.stringify(C.groups[editMode]||C.global)):JSON.parse(JSON.stringify(C.global));
+  collectCurrent();
+  const settings=editMode&&!chk('grp-ug')?JSON.parse(JSON.stringify(C.groups[editMode]||C.global)):JSON.parse(JSON.stringify(C.global));
   const gf=editMode?undefined:{
     filterKeywords:(C.filterKeywords||[]).slice(),filterPunishLevel:C.filterPunishLevel||1,filterBanMinutes:C.filterBanMinutes||10,
     blacklist:(C.blacklist||[]).slice(),whitelist:(C.whitelist||[]).slice(),leaveBlacklist:C.leaveBlacklist||false,

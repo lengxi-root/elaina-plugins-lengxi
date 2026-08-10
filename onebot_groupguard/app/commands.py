@@ -10,13 +10,8 @@ _MODE_LABEL = {'exact': '精确', 'contains': '模糊', 'regex': '正则'}
 
 
 def _group_editable(group_id) -> dict:
-    """获取当前群用于写入的设置对象 (群独立则用群设置, 否则用全局)。"""
-    conf = store.config()
-    gid = str(group_id)
-    gc = conf.get('groups', {}).get(gid)
-    if gc and not gc.get('useGlobal'):
-        return gc
-    return conf['global']
+    """获取当前群的独立可写设置，绝不回写全局配置。"""
+    return store.ensure_group(group_id)
 
 
 async def handle_command(event) -> bool:
@@ -78,7 +73,7 @@ async def handle_command(event) -> bool:
             return True
         # 去掉可能出现的 QQ 号后再取时长
         dm = re.search(r'(\d+)', re.sub(r'\d{5,}', '', rest))
-        duration = int(dm.group(1)) if dm else 10
+        duration = min(int(dm.group(1)) if dm else 10, 43199)  # OneBot 禁言上限约 30 天
         await call_api('set_group_ban', {'group_id': int(group_id), 'user_id': int(target), 'duration': duration * 60})
         await send_group_text(group_id, f'已禁言 {target}，时长 {duration} 分钟')
         return True
@@ -257,36 +252,61 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, '已清除当前群所有针对')
         return True
 
-    # ===== 全局黑名单 =====
-    if text.startswith('拉黑'):
-        if not store.is_owner(user_id):
-            await send_group_text(group_id, '需要主人权限')
+    # ===== 黑名单 (主人操作全局，二级管理员仅操作当前群) =====
+    if text.startswith(('拉黑', '加黑')):
+        actor_is_owner = store.is_owner(user_id)
+        if not actor_is_owner and not await is_admin_or_owner(group_id, user_id):
+            await send_group_text(group_id, '需要主人或本群二级管理员权限')
             return True
-        target = get_target(event, text[2:].strip())
+        cmd_len = 2
+        target = get_target(event, text[cmd_len:].strip())
         if not target:
             await send_group_text(group_id, '请指定目标：拉黑@某人 或 拉黑QQ号')
             return True
-        bl = conf.setdefault('blacklist', [])
+        if store.is_owner(target):
+            await send_group_text(group_id, '无法将机器人主人加入黑名单')
+            return True
+        if actor_is_owner:
+            bl = conf.setdefault('blacklist', [])
+            scope = '全局'
+        else:
+            bl = _group_editable(group_id).setdefault('groupBlacklist', [])
+            scope = '本群'
         if target not in bl:
             bl.append(target)
             store.save()
-        await send_group_text(group_id, f'已将 {target} 加入全局黑名单')
+        await send_group_text(group_id, f'已将 {target} 加入{scope}黑名单')
         return True
-    if text.startswith('取消拉黑'):
-        if not store.is_owner(user_id):
-            await send_group_text(group_id, '需要主人权限')
+    if text.startswith(('取消拉黑', '取消加黑')):
+        actor_is_owner = store.is_owner(user_id)
+        if not actor_is_owner and not await is_admin_or_owner(group_id, user_id):
+            await send_group_text(group_id, '需要主人或本群二级管理员权限')
             return True
-        target = get_target(event, text[4:].strip())
+        cmd_len = 4
+        target = get_target(event, text[cmd_len:].strip())
         if not target:
             await send_group_text(group_id, '请指定目标')
             return True
-        conf['blacklist'] = [q for q in conf.get('blacklist', []) if q != target]
+        if actor_is_owner:
+            conf['blacklist'] = [q for q in conf.get('blacklist', []) if q != target]
+            scope = '全局'
+        else:
+            gs = _group_editable(group_id)
+            gs['groupBlacklist'] = [q for q in gs.get('groupBlacklist', []) if q != target]
+            scope = '本群'
         store.save()
-        await send_group_text(group_id, f'已将 {target} 移出黑名单')
+        await send_group_text(group_id, f'已将 {target} 移出{scope}黑名单')
         return True
     if text == '黑名单列表':
-        lst = conf.get('blacklist', [])
-        await send_group_text(group_id, f'全局黑名单：\n{chr(10).join(lst)}' if lst else '黑名单为空')
+        actor_is_owner = store.is_owner(user_id)
+        if not actor_is_owner and not await is_admin_or_owner(group_id, user_id):
+            await send_group_text(group_id, '需要主人或本群二级管理员权限')
+            return True
+        if actor_is_owner:
+            lst, scope = conf.get('blacklist', []), '全局'
+        else:
+            lst, scope = store.get_group_settings(group_id).get('groupBlacklist', []), '本群'
+        await send_group_text(group_id, f'{scope}黑名单：\n{chr(10).join(lst)}' if lst else f'{scope}黑名单为空')
         return True
 
     # ===== 群独立黑名单 =====
@@ -297,6 +317,9 @@ async def handle_command(event) -> bool:
         target = get_target(event, text[3:].strip())
         if not target:
             await send_group_text(group_id, '请指定目标：群拉黑@某人 或 群拉黑QQ号')
+            return True
+        if store.is_owner(target):
+            await send_group_text(group_id, '无法将机器人主人加入黑名单')
             return True
         gs = store.ensure_group(group_id)
         lst = gs.setdefault('groupBlacklist', [])
@@ -313,10 +336,9 @@ async def handle_command(event) -> bool:
         if not target:
             await send_group_text(group_id, '请指定目标')
             return True
-        gc = conf.get('groups', {}).get(group_id)
-        if gc:
-            gc['groupBlacklist'] = [q for q in gc.get('groupBlacklist', []) if q != target]
-            store.save()
+        gc = store.ensure_group(group_id)
+        gc['groupBlacklist'] = [q for q in gc.get('groupBlacklist', []) if q != target]
+        store.save()
         await send_group_text(group_id, f'已将 {target} 移出本群黑名单')
         return True
     if text == '群黑名单列表':

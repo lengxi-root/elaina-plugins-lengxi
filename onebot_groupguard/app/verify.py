@@ -161,6 +161,14 @@ async def handle_verify_answer(group_id, user_id, raw_message: str, message_id) 
     return True
 
 
+def cancel_session(group_id, user_id) -> None:
+    """静默取消验证会话 (成员退群/被踢时调用, 避免超时任务误发提示)."""
+    rt = get_runtime()
+    session = rt.sessions.pop(_session_key(group_id, user_id), None)
+    if session and session.get('task'):
+        session['task'].cancel()
+
+
 def skip_verify_session(group_id, user_id) -> bool:
     """管理员主动跳过某用户的入群验证, 返回该用户是否处于验证中。"""
     rt = get_runtime()

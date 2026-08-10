@@ -61,6 +61,11 @@ async def is_admin_or_owner(group_id, user_id) -> bool:
     from . import store
     if store.is_owner(user_id):
         return True
+    return await is_secondary_admin(group_id, user_id)
+
+
+async def is_secondary_admin(group_id, user_id) -> bool:
+    """当前群的群主/管理员自动拥有二级管理员权限。"""
     role = await get_member_role(group_id, user_id)
     return role in ('admin', 'owner')
 

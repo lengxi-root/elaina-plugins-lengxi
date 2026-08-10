@@ -336,7 +336,7 @@ async def complete(
                 name, arguments, consumer_plugin='ai_companion', context=media_context,
             )
         if name == 'read_companion_resource':
-            return await resources.run(arguments, config.get('resources', []))
+            return await resources.run(arguments, config.get('resources', []), media_context)
         if name == 'generate_meme' and media_context:
             if not _media_ready(
                 'meme', media_context, config.get('meme_cooldown_seconds', 300)

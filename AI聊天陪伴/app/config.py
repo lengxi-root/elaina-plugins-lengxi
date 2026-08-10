@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import threading
@@ -300,11 +301,23 @@ def validate(value: dict) -> dict:
         description = str(item.get('description') or '').strip()[:500]
         content = str(item.get('content') or '').strip()[:12000]
         url = str(item.get('url') or '').strip()[:2000]
+        media_type = str(item.get('media_type') or '').strip().casefold()
+        if media_type not in {'', 'image', 'voice', 'video'}:
+            media_type = ''
+        file_name = os.path.basename(str(item.get('file_name') or '').strip())[:160]
+        expected_prefix = hashlib.sha256(resource_id.encode('utf-8')).hexdigest()
+        if file_name and not file_name.startswith(expected_prefix + '.'):
+            file_name = ''
+            media_type = ''
         if url and not url.startswith(('http://', 'https://')):
             raise ValueError(f'资源 {name} 的 URL 必须是 HTTP(S) 地址')
         normalized_resources.append({
             'id': resource_id, 'name': name, 'description': description,
             'content': content, 'url': url, 'enabled': bool(item.get('enabled', True)),
+            'media_type': media_type, 'file_name': file_name,
+            'original_name': str(item.get('original_name') or '').strip()[:255] if file_name else '',
+            'mime_type': str(item.get('mime_type') or '').strip()[:100] if file_name else '',
+            'size': max(0, int(item.get('size') or 0)) if file_name else 0,
         })
         seen_resource_ids.add(resource_id)
     value['resources'] = normalized_resources
@@ -347,3 +360,24 @@ def reference_image_path() -> str:
     if not _path:
         return ''
     return os.path.join(os.path.dirname(_path), 'persona_reference.png')
+
+
+def resource_dir() -> str:
+    if not _path:
+        return ''
+    path = os.path.join(os.path.dirname(_path), 'resources')
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def resource_file_name(resource_id: str, extension: str) -> str:
+    digest = hashlib.sha256(str(resource_id).encode('utf-8')).hexdigest()
+    suffix = str(extension or '').casefold().lstrip('.')[:10]
+    return f'{digest}.{suffix}'
+
+
+def resource_file_path(file_name: str) -> str:
+    root = os.path.realpath(resource_dir())
+    name = os.path.basename(str(file_name or ''))
+    path = os.path.realpath(os.path.join(root, name))
+    return path if name and path.startswith(root + os.sep) else ''

@@ -139,9 +139,8 @@ async def on_group_message(event, match):
     # 8. 回应表情
     await guard.handle_emoji_react(group_id, user_id, message_id, self_id)
 
-    # 9. 验证答题
-    if store.get_group_settings(group_id).get('enableVerify'):
-        await verify.handle_verify_answer(group_id, user_id, text, message_id)
+    # 9. 验证答题 (不依赖 enableVerify 开关, 已存在的会话始终可答题)
+    await verify.handle_verify_answer(group_id, user_id, text, message_id)
 
 
 @handler(r'.*', name='groupguard_join_request', event_types=['request.group'], priority=50)
@@ -152,14 +151,14 @@ async def on_group_request(event, match):
     user_id = str(event.user_id)
     flag = event.flag
 
-    if store.is_blacklisted(user_id):
+    if not store.is_owner(user_id) and store.is_blacklisted(user_id):
         log.info(f'黑名单用户 {user_id} 申请加入群 {group_id}, 自动拒绝(全局黑名单)')
         if flag:
             await call_api('set_group_add_request', {'flag': flag, 'sub_type': 'add', 'approve': False, 'reason': '你已被列入黑名单'})
         return
 
     settings = store.get_group_settings(group_id)
-    if user_id in (settings.get('groupBlacklist') or []):
+    if not store.is_owner(user_id) and user_id in (settings.get('groupBlacklist') or []):
         log.info(f'黑名单用户 {user_id} 申请加入群 {group_id}, 自动拒绝(群独立黑名单)')
         if flag:
             await call_api('set_group_add_request', {'flag': flag, 'sub_type': 'add', 'approve': False, 'reason': '你已被列入黑名单'})
@@ -194,9 +193,15 @@ async def on_group_increase(event, match):
     user_id = str(event.user_id)
     rt = get_runtime()
 
-    if user_id == rt.bot_id:
+    self_id = str(getattr(event, 'self_id', '') or '')
+    if self_id and not rt.bot_id:
+        rt.bot_id = self_id
+    bot_id = rt.bot_id or self_id
+
+    if user_id == bot_id:
         return
-    if not await is_bot_admin(group_id, rt.bot_id):
+    if not await is_bot_admin(group_id, bot_id):
+        log.warning(f'新成员 {user_id}@{group_id}: 机器人 {bot_id or "(未知QQ)"} 非管理员, 跳过入群验证/欢迎')
         return
 
     settings = store.get_group_settings(group_id)
@@ -233,16 +238,22 @@ async def on_group_card(event, match):
 
 @handler(r'.*', name='groupguard_decrease', event_types=['notice.group_decrease'], priority=50)
 async def on_group_decrease(event, match):
-    if event.sub_type != 'leave':
-        return
     group_id = str(event.group_id)
     user_id = str(event.user_id)
+    rt = get_runtime()
+    rt.pending_comments.pop(f'{group_id}:{user_id}', None)
+    verify.cancel_session(group_id, user_id)
+    if event.sub_type != 'leave':
+        return
     conf = store.config()
     settings = store.get_group_settings(group_id)
-    if not conf.get('leaveBlacklist') and not settings.get('leaveBlacklist'):
+    global_enabled = bool(conf.get('leaveBlacklist'))
+    group_enabled = bool(settings.get('leaveBlacklist'))
+    if (not global_enabled and not group_enabled) or store.is_owner(user_id):
         return
-    bl = conf.setdefault('blacklist', [])
+    bl = (store.ensure_group(group_id).setdefault('groupBlacklist', [])
+          if group_enabled else conf.setdefault('blacklist', []))
     if user_id not in bl:
         bl.append(user_id)
         store.save()
-        log.info(f'退群拉黑: 用户 {user_id} 退出群 {group_id}')
+        log.info(f'退群拉黑: 用户 {user_id} 退出群 {group_id} ({"本群" if group_enabled else "全局"})')

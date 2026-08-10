@@ -129,13 +129,15 @@ async def monitor_group_messages(event):
     # 1. 入群验证（未通过成员任何消息都撤回）
     if feat['join_verify']:
         is_verified = user_id in state.verified_users.get(gid, set())
+        state.expire_pending(gid, user_id)
         is_unverified = user_id in state.unverified.get(gid, set())
         has_pending = user_id in state.pending_verify.get(gid, {})
         cooldown = state.verify_cooldown.get(gid, {}).get(user_id)
         if is_unverified and not is_verified:
             await _recall_safe(event)
-            if not has_pending and cooldown and time.time() >= cooldown['next_time']:
-                await send_verify(event, gid, user_id, retry_count=cooldown['retry_count'])
+            if not has_pending and (not cooldown or time.time() >= cooldown['next_time']):
+                retry_count = cooldown['retry_count'] if cooldown else 0
+                await send_verify(event, gid, user_id, retry_count=retry_count)
             return True
 
     content = (event.content or '').strip()

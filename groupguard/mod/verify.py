@@ -1,6 +1,7 @@
 """入群验证 — 出题与答案判定"""
 
 import random
+import secrets
 import time
 
 from . import state
@@ -23,18 +24,21 @@ async def send_verify(event, group_id, member_id, retry_count=0):
     options = list(options)
     random.shuffle(options)
     correct_idx = options.index(answer)
+    verify_id = secrets.token_hex(4)
 
     wait = min(VERIFY_INITIAL_WAIT * (2 ** retry_count), VERIFY_MAX_WAIT)
 
     state.pending_verify.setdefault(group_id, {})[member_id] = {
         'answer': correct_idx,
+        'verify_id': verify_id,
         'expire': time.time() + wait,
         'retry_count': retry_count,
         'next_wait': min(wait * 2, VERIFY_MAX_WAIT),
     }
+    state.verify_cooldown.get(group_id, {}).pop(member_id, None)
 
     buttons = [[
-        {'text': str(opt), 'data': f'verify|{group_id}|{idx}', 'type': 1,
+        {'text': str(opt), 'data': f'verify|{group_id}|{verify_id}|{idx}', 'type': 1,
          'limit': 1, 'tips': '当前客户端不支持'}
         for idx, opt in enumerate(options)
     ]]
@@ -44,20 +48,27 @@ async def send_verify(event, group_id, member_id, retry_count=0):
         buttons=buttons)
 
 
-async def handle_verify_answer(event, group_id, user_id, chosen):
+async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None):
     pending = state.pending_verify.get(group_id, {}).get(user_id)
     if not pending:
-        await event.reply(f'<@{user_id}> ❌ 验证已过期或已完成，请等待下次验证')
+        if user_id in state.unverified.get(group_id, set()):
+            cooldown = state.verify_cooldown.get(group_id, {}).get(user_id, {})
+            remaining = cooldown.get('next_time', 0) - time.time()
+            if remaining <= 0:
+                await send_verify(event, group_id, user_id, cooldown.get('retry_count', 0))
+            else:
+                await event.reply(
+                    f'<@{user_id}> ❌ 验证暂不可用，请等待{max(1, int(remaining // 60) + 1)}分钟后重试')
+        else:
+            await event.reply(f'<@{user_id}> ❌ 验证已过期或已完成')
+        return
+    if verify_id != pending.get('verify_id'):
+        await event.reply(f'<@{user_id}> ❌ 该验证题已失效，请使用最新验证题')
         return
     if time.time() > pending['expire']:
         retry_count = pending.get('retry_count', 0) + 1
-        del state.pending_verify[group_id][user_id]
-        state.unverified.setdefault(group_id, set()).add(user_id)
-        state.verify_cooldown.setdefault(group_id, {})[user_id] = {
-            'retry_count': retry_count,
-            'next_time': time.time() + pending.get('next_wait', VERIFY_INITIAL_WAIT * 2),
-        }
-        await event.reply(f'<@{user_id}> ❌ 验证已过期或已完成，请等待下次验证')
+        state.expire_pending(group_id, user_id)
+        await send_verify(event, group_id, user_id, retry_count)
         return
     if chosen == pending['answer']:
         del state.pending_verify[group_id][user_id]
