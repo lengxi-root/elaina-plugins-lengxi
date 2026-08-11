@@ -63,6 +63,7 @@ DEFAULT_CONFIG = {
     'privacy_defaults_version': 2,
     'safety_prompt_version': 3,
     'enabled': True,
+    'fallback_reply': True,
     'group_enabled': True,
     'direct_enabled': True,
     'group_auto_reply': False,
@@ -330,6 +331,7 @@ def validate(value: dict) -> dict:
     value['blocked_response'] = str(value.get('blocked_response') or DEFAULT_CONFIG['blocked_response']).strip()[:500]
     for key in (
         'enabled',
+        'fallback_reply',
         'group_enabled',
         'direct_enabled',
         'group_auto_reply',

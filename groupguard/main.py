@@ -18,16 +18,19 @@
   - 机器人：群管理员 + 已开启群全量消息和主动消息
 
 目录结构：
-  main.py             入口 (元数据 + 生命周期)
-  mod/db.py           SQLite 持久化 (配置/违禁词/发言撤回/刷屏/消息记录)
-  mod/state.py        运行时状态 (入群验证) + 过期清理
-  mod/perms.py        权限检查 (群管理员 / 机器人管理员 / 全量消息)
-  mod/panel.py        群管控制面板 (主菜单 + 分类菜单)
-  mod/verify.py       入群验证出题与判题
-  mod/utils.py        时长解析/格式化
-  app/commands.py     管理命令 handler
-  app/verify_events.py 入群/按钮回调事件 handler
-  app/monitor.py      消息监控拦截器
+  main.py                  入口、元数据与生命周期
+  app/commands.py          管理命令兼容入口
+  app/command_handlers/    按菜单、禁言、审批等职责拆分的命令处理器
+  app/verify_events.py     入群与验证答案事件
+  app/monitor.py           消息监控拦截器
+  mod/db.py                数据库兼容入口
+  mod/storage/             按配置、违禁词、处罚等职责拆分的 SQLite 存储
+  mod/panel.py             面板兼容入口
+  mod/panels/              面板组件、分类菜单与禁言菜单
+  mod/perms.py             权限、机器人群状态与可操作成员筛选
+  mod/state.py             入群验证运行时状态与过期清理
+  mod/verify.py            入群验证出题与判题
+  mod/utils.py             时长解析与格式化
 """
 
 from core.base.logger import PLUGIN, get_logger
@@ -40,7 +43,7 @@ __plugin_meta__ = {
     'name': '群管',
     'author': '冷曦',
     'description': '违禁词过滤、入群验证、禁言、入群审批、消息撤回等群管理功能',
-    'version': '1.2.0',
+    'version': '1.3.0',
     'license': 'MIT',
 }
 

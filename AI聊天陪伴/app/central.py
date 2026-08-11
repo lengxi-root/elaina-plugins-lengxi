@@ -166,6 +166,22 @@ async def refresh_models(provider_id: str = '') -> dict:
     }
 
 
+async def set_default_model(provider_id: str, model: str) -> list[dict]:
+    """Persist an enabled provider's default model in the central service."""
+    service = get_service()
+    if service is None:
+        raise RuntimeError(status()['message'])
+    providers = service.config().get('providers', [])
+    provider = next((item for item in providers if item.get('id') == provider_id), None)
+    if provider is None or not provider.get('enabled'):
+        raise ValueError('所选接口不存在或未启用')
+    if model not in _provider_models(provider):
+        raise ValueError('所选模型不在该接口的可用目录中')
+    provider['model'] = model
+    result = await service.save({'providers': providers}, section='providers')
+    return result.get('providers', [])
+
+
 def resolve_selection(provider_id: str = '', model: str = '') -> tuple[str, str]:
     providers = [item for item in public_config().get('providers', []) if item.get('enabled')]
     if provider_id:
@@ -370,6 +386,10 @@ async def complete(
     request_hint = _request_style_hint(latest_text)
     if request_hint:
         system_prompt += f'\n\n本轮回复要求：{request_hint}'
+    system_prompt += (
+        '\n\n只输出准备发送给用户的最终答复。不要输出思考、分析、推理过程，'
+        '也不要输出 <think>、<analysis> 或同类内部标签。'
+    )
     if tools:
         system_prompt += (
             '\n\n工具只在自然且必要时调用。头像 meme 与生图不要频繁使用。'
@@ -390,4 +410,4 @@ async def complete(
         enable_runtime_tools=False,
         prepare_context=False,
     )
-    return safety.redact_ips(result['text'])
+    return str(result.get('text') or '')

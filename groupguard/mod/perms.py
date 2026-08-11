@@ -139,10 +139,24 @@ async def ensure_admin_env(event):
     return True
 
 
-def mention_user_ids(event):
-    """提取被@的普通用户 (openid, member_role)，排除机器人自身。"""
+def get_operable_members(event):
+    """提取可被群管操作的普通成员艾特。"""
     ids = []
+    seen = set()
     for mention in event.mentions or []:
-        if isinstance(mention, dict) and not mention.get('is_you') and mention.get('id'):
-            ids.append((str(mention['id']), mention.get('member_role', '')))
+        if (
+            isinstance(mention, dict)
+            and mention.get('id')
+            and not mention.get('is_you')
+            and not mention.get('bot')
+            and mention.get('scope') != 'all'
+            and mention.get('member_role') == 'member'
+        ):
+            member_id = str(mention['id'])
+            if member_id not in seen:
+                seen.add(member_id)
+                ids.append((member_id, 'member'))
     return ids
+
+
+mention_user_ids = get_operable_members

@@ -18,7 +18,7 @@ __plugin_meta__ = {
     'name': 'AI 聊天陪伴',
     'author': 'ElainaBot',
     'description': '支持多人格、中央 LLM、全入口用户独立上下文与 Web 面板',
-    'version': '1.2.0',
+    'version': '1.2.1',
     'github': 'https://github.com/lengxi-plugins/elaina',
     'license': 'MIT',
 }
@@ -154,6 +154,8 @@ async def reply_for_event(event, text: str) -> str:
             reply, blocked = safety.safe_output(
                 reply, current['blocked_words'], current['blocked_response']
             )
+            if not reply:
+                raise RuntimeError('模型没有返回可发送的最终答复')
             if blocked:
                 log.warning('AI 输出命中违规词，已替换为安全回复')
             elif await _output_rejected(current, reply):
@@ -379,6 +381,7 @@ async def forget_command(event, _match) -> None:
     priority=-50,
     event_types=MESSAGE_EVENTS,
     ignore_at_check=True,
+    fallback=lambda _event: config.load().get('fallback_reply', True),
 )
 async def chat_message(event, _match) -> None:
     global _last_prune

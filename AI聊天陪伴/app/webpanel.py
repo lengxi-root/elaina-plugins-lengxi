@@ -33,6 +33,7 @@ def register_routes() -> None:
     register_route('GET', f'{PREFIX}/model-tools')(_model_tools)
     register_route('POST', f'{PREFIX}/skills')(_create_skill)
     register_route('POST', f'{PREFIX}/models/refresh')(_refresh_models)
+    register_route('PUT', f'{PREFIX}/providers/default-model')(_set_default_model)
     register_route('GET', f'{PREFIX}/reference-image')(_get_reference_image)
     register_route('POST', f'{PREFIX}/reference-image')(_upload_reference_image)
     register_route('DELETE', f'{PREFIX}/reference-image')(_delete_reference_image)
@@ -280,6 +281,18 @@ async def _refresh_models(request: web.Request) -> web.Response:
         return web.json_response({'success': True, 'data': result})
     except (RuntimeError, ValueError, OSError) as error:
         return web.json_response({'success': False, 'error': str(error)}, status=502)
+
+
+async def _set_default_model(request: web.Request) -> web.Response:
+    body = await _body(request)
+    try:
+        providers = await central.set_default_model(
+            str(body.get('provider_id') or ''),
+            str(body.get('model') or ''),
+        )
+        return web.json_response({'success': True, 'data': {'providers': providers}})
+    except (RuntimeError, ValueError, OSError) as error:
+        return web.json_response({'success': False, 'error': str(error)}, status=400)
 
 
 async def _stats(_request: web.Request) -> web.Response:
