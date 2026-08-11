@@ -3,11 +3,28 @@
 import random
 import secrets
 import time
+from datetime import datetime, timedelta
 
 from . import state
 
 VERIFY_INITIAL_WAIT = 300   # 首次验证5分钟
 VERIFY_MAX_WAIT = 3600      # 最大等待1小时
+VERIFY_FAILURE_MUTE = 600   # 答错后禁言并等待10分钟
+
+
+async def _mute_failed_user(event, group_id, user_id):
+    expire_at = (
+        datetime.now().astimezone() + timedelta(seconds=VERIFY_FAILURE_MUTE)
+    ).isoformat(timespec='seconds')
+    try:
+        success, _response = await event.sender.set_group_member_mute(group_id, [{
+            'op': 'add',
+            'member_openid': user_id,
+            'mute_expire_at': expire_at,
+        }])
+    except Exception:
+        return False
+    return bool(success)
 
 
 async def send_verify(event, group_id, member_id, retry_count=0):
@@ -78,13 +95,20 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
         await event.reply(f'<@{user_id}> ✅ 验证通过！欢迎入群～')
     else:
         retry_count = pending.get('retry_count', 0) + 1
-        next_wait = min(pending.get('next_wait', VERIFY_INITIAL_WAIT * 2), VERIFY_MAX_WAIT)
         del state.pending_verify[group_id][user_id]
         state.verify_cooldown.setdefault(group_id, {})[user_id] = {
             'retry_count': retry_count,
-            'next_time': time.time() + next_wait,
+            'next_time': time.time() + VERIFY_FAILURE_MUTE,
         }
-        await event.reply(f'<@{user_id}> ❌ 答案错误，{int(next_wait // 60)}分钟后发消息可再次验证')
+        muted = await _mute_failed_user(event, group_id, user_id)
+        if muted:
+            attempt = f'，已连续失败 {retry_count} 次' if retry_count >= 3 else ''
+            await event.reply(
+                f'<@{user_id}> ❌ 答案错误{attempt}，已禁言10分钟；'
+                '解禁后发送消息可再次验证')
+        else:
+            await event.reply(
+                f'<@{user_id}> ❌ 答案错误，禁言操作失败；10分钟后发送消息可再次验证')
 
 
 def pass_verify(group_id, user_id):

@@ -1,4 +1,7 @@
-"""权限检查"""
+"""群管权限检查与机器人群状态读取。"""
+
+import asyncio
+import time
 
 from core.base.config import cfg
 
@@ -9,47 +12,100 @@ def is_bot_owner(event):
 
 
 def is_group_admin(event):
-    """用户是否有管理权限：机器人主人，或群管理员/群主"""
+    """用户是否有管理权限：机器人主人，或群管理员/群主。"""
     if event.member_role in ('admin', 'owner'):
         return True
     return is_bot_owner(event)
 
 
-def _get_log_service(event):
-    from core.bot.manager import _bot_manager_ref
-    bot = _bot_manager_ref.get_bot(event.appid) if _bot_manager_ref else None
-    return bot.log_service if bot else None
+_state_locks = {}
+_state_last_request = {}
+_STATE_REQUEST_INTERVAL = 60
 
 
-async def check_bot_is_admin(event):
-    """检查机器人是否为群管理员
+def _normalize_state(row):
+    if not isinstance(row, dict):
+        return None
+    return {
+        'is_admin': bool(row.get('is_admin')),
+        'is_full_access': bool(row.get('is_full_access')),
+        'allow_proactive_msg': bool(row.get('allow_proactive_msg')),
+        'in_group': bool(row.get('in_group')),
+    }
 
-    1. event.bot_member_role — 框架从 mentions 里 is_you 项解析的机器人自身角色
-       (仅在有人 @ 机器人时有值)
-    2. 框架 data.db 的 group_bot_admin 表 — 框架在收到 @机器人消息且
-       bot_member_role 为 admin/owner 时会将群号记录到该表
-    都取不到时默认放行, 实际权限以撤回 API 调用结果为准。
+
+def _state_from_api(data):
+    if not isinstance(data, dict):
+        return None
+    return {
+        'is_admin': str(data.get('member_role') or '') in ('admin', 'owner'),
+        'is_full_access': data.get('recv_msg_setting') == 'all',
+        'allow_proactive_msg': bool(data.get('allow_proactive_msg')),
+        'in_group': True,
+    }
+
+
+async def _read_group_state(event):
+    """通过框架公开方法读取 data.db，不调用任何群接口。"""
+    if not event.group_id:
+        return None
+    try:
+        return _normalize_state(await event.get_group_record(event.group_id))
+    except Exception:
+        return None
+
+
+async def get_bot_group_state(event, *, refresh=False):
+    """读取机器人权限；仅在数据库未确认管理员时请求 bot_state。
+
+    数据库已确认机器人是管理员时直接使用数据库。数据库无记录或显示
+    非管理员时，最多每群每分钟调用一次 GET /v2/groups/{group_id}/bot_state。
+    refresh 仅为兼容旧调用保留，不会绕过管理员缓存或一分钟限频。
     """
-    # 获取自身机器人信息接口目前无权限, 后续开放后可恢复:
-    # member = await event.sender.get_bot_member(event.group_id)
-    # return bool(member) and member.get('member_role') in ('admin', 'owner')
-    role = getattr(event, 'bot_member_role', '') or ''
-    if role:
-        return role in ('admin', 'owner')
-    ls = _get_log_service(event)
-    if ls and event.group_id:
+    del refresh
+    if not event.group_id:
+        return None
+
+    cached = await _read_group_state(event)
+    if cached and cached['is_admin'] and cached['in_group']:
+        return cached
+
+    key = (str(event.appid), str(event.group_id))
+    lock = _state_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        cached = await _read_group_state(event)
+        if cached and cached['is_admin'] and cached['in_group']:
+            return cached
+
+        now = time.monotonic()
+        if now - _state_last_request.get(key, float('-inf')) < _STATE_REQUEST_INTERVAL:
+            return cached
+
+        # 请求开始前记时，失败请求也占用这一分钟额度。
+        _state_last_request[key] = now
         try:
-            rows = ls.query_data('SELECT 1 FROM group_bot_admin WHERE group_id = ?', (event.group_id,))
-            if rows:
-                return True
+            data = await event.sender.get_group_bot_state(event.group_id)
         except Exception:
-            pass
-    return True
+            data = None
+        state = _state_from_api(data)
+        if state is None:
+            return cached
+        # get_group_bot_state 成功后框架会同步 data.db；回读失败时用接口结果兜底。
+        return await _read_group_state(event) or state
 
 
-def check_has_full_msg(event):
-    """检查是否有全量消息权限（看当前接收的消息事件类型）"""
-    return event.event_type == 'GROUP_MESSAGE_CREATE'
+async def check_bot_is_admin(event, state=None):
+    """检查机器人是否为群管理员。"""
+    state = state if state is not None else await get_bot_group_state(event)
+    return bool(state and state['is_admin'] and state['in_group'])
+
+
+async def check_has_full_msg(event, state=None):
+    """检查全量消息与主动消息能力。"""
+    state = state if state is not None else await get_bot_group_state(event)
+    if not state or not state['in_group']:
+        return False
+    return state['is_full_access'] and state['allow_proactive_msg']
 
 
 FULL_MSG_TIP = (
@@ -61,27 +117,32 @@ FULL_MSG_TIP = (
     '> 需要9.2.90以上版本QQ设置哦！'
 )
 BOT_NO_ADMIN_TIP = '机器人暂无管理权限，请联系群主给机器人管理员权限。'
+BOT_STATE_FAILED_TIP = '暂时无法获取机器人在本群的权限状态，请稍后重试。'
 USER_NO_PERM_TIP = '你暂无本群管理权限，无权操作该命令。'
 
 
 async def ensure_admin_env(event):
-    """群管指令统一前置检查: 全量消息 → 用户权限 → 机器人管理员, 不满足时回复对应提示"""
-    if not check_has_full_msg(event):
+    """群管指令前置检查：机器人能力、用户权限和机器人管理权限。"""
+    state = await get_bot_group_state(event)
+    if state is None:
+        await event.reply(f'<@{event.user_id}> {BOT_STATE_FAILED_TIP}')
+        return False
+    if not await check_has_full_msg(event, state):
         await event.reply(f'<@{event.user_id}> {FULL_MSG_TIP}')
         return False
     if not is_group_admin(event):
         await event.reply(f'<@{event.user_id}> {USER_NO_PERM_TIP}')
         return False
-    if not await check_bot_is_admin(event):
+    if not await check_bot_is_admin(event, state):
         await event.reply(f'<@{event.user_id}> {BOT_NO_ADMIN_TIP}')
         return False
     return True
 
 
 def mention_user_ids(event):
-    """提取被@的普通用户 (openid, member_role) 列表 (排除机器人自身)"""
+    """提取被@的普通用户 (openid, member_role)，排除机器人自身。"""
     ids = []
-    for m in event.mentions or []:
-        if isinstance(m, dict) and not m.get('is_you') and m.get('id'):
-            ids.append((str(m['id']), m.get('member_role', '')))
+    for mention in event.mentions or []:
+        if isinstance(mention, dict) and not mention.get('is_you') and mention.get('id'):
+            ids.append((str(mention['id']), mention.get('member_role', '')))
     return ids

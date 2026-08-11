@@ -1,17 +1,30 @@
-"""管理命令 — 菜单/开关/违禁词/发言撤回/撤回最近/处罚列表/刷屏/授权"""
+"""管理命令 — 菜单、内容治理、禁言、入群审批与授权。"""
 
 import asyncio
+import json
 import re
 import time
+from datetime import datetime, timedelta
 
 from core.plugin.decorators import handler
 
 from ..mod import db, fw_render, verify
 from ..mod.panel import show_category, show_gm_panel
-from ..mod.perms import ensure_admin_env, mention_user_ids
+from ..mod.perms import (
+    ensure_admin_env,
+    get_bot_group_state,
+    is_group_admin,
+    mention_user_ids,
+)
 from ..mod.utils import format_remaining, parse_duration, reply_at
 
 _H = dict(group_only=True, ignore_at_check=True, priority=5)
+
+
+def _api_error(data):
+    if isinstance(data, dict):
+        return str(data.get('message') or data.get('msg') or json.dumps(data, ensure_ascii=False))
+    return str(data or '未知错误')
 
 
 # ==================== 菜单 ====================
@@ -23,7 +36,7 @@ async def cmd_show_panel(event, match):
     await show_gm_panel(event)
 
 
-@handler(r'^/?群管(?:分类)?\s*(用户处理|违禁词|消息过滤|刷屏检测)\s*$', name='群管分类', desc='查看群管分类菜单 (群管 违禁词)', **_H)
+@handler(r'^/?群管(?:分类)?\s*(用户处理|群管理|违禁词|消息过滤|刷屏检测)\s*$', name='群管分类', desc='查看群管分类菜单 (群管 群管理)', **_H)
 async def cmd_category(event, match):
     if not await ensure_admin_env(event):
         return
@@ -326,7 +339,220 @@ async def cmd_spam_punish(event, match):
     await reply_at(event, f'✅ 已设置刷屏处罚：{_punish_text(minutes)}')
 
 
+# ==================== 禁言 / 入群审批 ====================
+
+async def _ensure_join_reviewer(event):
+    """审批命令必须使用群消息事件携带的 member_role 判权。"""
+    if event.member_role not in ('admin', 'owner'):
+        await reply_at(event, '❌ 仅群管理员或群主可以审批入群申请')
+        return False
+    return await ensure_admin_env(event)
+
+
+def _join_review_buttons(requests):
+    """生成输入指令按钮，让点击者发送带 member_role 的群消息。"""
+    rows = []
+    for index, item in enumerate(requests, 1):
+        member_id = str(item.get('member_openid') or '')
+        request_id = str(item.get('join_request_id') or '')
+        if not member_id or not request_id:
+            continue
+        rows.append([
+            {
+                'text': f'通过 {index}',
+                'data': f'通过入群 {member_id} {request_id}',
+                'type': 2,
+                'enter': True,
+                'admin': True,
+                'style': 4,
+                'tips': '当前客户端不支持',
+            },
+            {
+                'text': f'拒绝 {index}',
+                'data': f'拒绝入群 {member_id} {request_id}',
+                'type': 2,
+                'enter': True,
+                'admin': True,
+                'style': 3,
+                'tips': '当前客户端不支持',
+            },
+        ])
+    return rows
+
+def _parse_member_and_minutes(event, arg):
+    """兼容“禁言 @用户 10”和“禁言 成员ID 10”。"""
+    tokens = str(arg or '').split()
+    mentions = mention_user_ids(event)
+    if mentions:
+        member_id, member_role = mentions[0]
+        minutes_text = tokens[-1] if tokens and tokens[-1].isdigit() else '10'
+    elif len(tokens) == 2 and tokens[1].isdigit():
+        member_id, minutes_text = tokens
+        member_role = ''
+    else:
+        return None, '', 0
+    return member_id, member_role, int(minutes_text)
+
+
+def _parse_member(event, arg):
+    mentions = mention_user_ids(event)
+    if mentions:
+        return mentions[0]
+    member_id = str(arg or '').strip()
+    return (member_id, '') if member_id else (None, '')
+
+
+@handler(r'^/?禁言(?:成员)?(?:\s+(.*?))?\s*$', name='禁言成员',
+         desc='禁言群成员（禁言 @用户 10）', **_H)
+async def cmd_mute_member(event, match):
+    if not await ensure_admin_env(event):
+        return
+    member_id, member_role, minutes = _parse_member_and_minutes(event, match.group(1))
+    if not member_id:
+        return await reply_at(event, '❌ 请@成员并填写分钟数，或发送：禁言 成员ID 分钟')
+    if member_id == event.user_id:
+        return await reply_at(event, '⛔ 不能禁言命令发起者')
+    if member_role in ('admin', 'owner'):
+        return await reply_at(event, '⛔ 不能禁言群管理员或群主')
+    if not 1 <= minutes <= 43200:
+        return await reply_at(event, '❌ 禁言时长需为 1 至 43200 分钟')
+
+    expire_at = (datetime.now().astimezone() + timedelta(minutes=minutes)).isoformat(timespec='seconds')
+    success, response = await event.sender.set_group_member_mute(event.group_id, [{
+        'op': 'add',
+        'member_openid': member_id,
+        'mute_expire_at': expire_at,
+    }])
+    if success:
+        await reply_at(event, f'✅ 已禁言 <@{member_id}> {minutes} 分钟')
+    else:
+        await reply_at(event, f'❌ 禁言失败：{_api_error(response)}')
+
+
+@handler(r'^/?解除禁言(?:\s+(.*?))?\s*$', name='解除禁言',
+         desc='解除群成员禁言', **_H)
+async def cmd_unmute_member(event, match):
+    if not await ensure_admin_env(event):
+        return
+    member_id, _member_role = _parse_member(event, match.group(1))
+    if not member_id:
+        return await reply_at(event, '❌ 请@成员，或发送：解除禁言 成员ID')
+    success, response = await event.sender.set_group_member_mute(event.group_id, [{
+        'op': 'del',
+        'member_openid': member_id,
+    }])
+    if success:
+        await reply_at(event, f'✅ 已解除 <@{member_id}> 的禁言')
+    else:
+        await reply_at(event, f'❌ 解除禁言失败：{_api_error(response)}')
+
+
+@handler(r'^/?群禁言状态\s*$', name='群禁言状态', desc='查看本群禁言状态', **_H)
+async def cmd_mute_status(event, match):
+    if not await ensure_admin_env(event):
+        return
+    setting, error = await event.sender.get_group_restrict_chat_setting(
+        event.group_id, return_error=True)
+    if setting is None:
+        return await reply_at(event, f'❌ 获取禁言状态失败：{_api_error(error)}')
+
+    mode_names = {'none': '未开启', 'always': '始终禁言', 'schedule': '定时禁言'}
+    global_rule = setting.get('global_rule') or {}
+    members = setting.get('members') or []
+    lines = [
+        f'全员禁言：{mode_names.get(global_rule.get("mode"), global_rule.get("mode") or "未知")}',
+        f'已禁言成员：{len(members)} 人',
+    ]
+    for item in members[:10]:
+        name = item.get('username') or '未知用户'
+        member_id = item.get('member_openid') or ''
+        expire_at = item.get('mute_expire_at') or '未知时间'
+        lines.append(f'- {name}（{member_id}）至 {expire_at}')
+    if len(members) > 10:
+        lines.append(f'- 另有 {len(members) - 10} 人未展示')
+    await reply_at(event, '\n'.join(lines))
+
+
+@handler(r'^/?(?:入群申请|待审批入群)(?:\s+(\S+))?\s*$', name='入群申请',
+         desc='查看待审批入群申请', **_H)
+async def cmd_join_requests(event, match):
+    if not await ensure_admin_env(event):
+        return
+    page, error = await event.sender.get_group_join_requests(
+        event.group_id, cursor=match.group(1) or '', limit=5, return_error=True)
+    if page is None:
+        return await reply_at(event, f'❌ 获取入群申请失败：{_api_error(error)}')
+    requests = page.get('list') or []
+    if not requests:
+        return await reply_at(event, '📋 当前没有待审批的入群申请')
+
+    lines = [f'📋 待审批入群申请（本页 {len(requests)} 条）']
+    for index, item in enumerate(requests, 1):
+        verify_info = item.get('verify_info') or {}
+        lines.extend([
+            f'{index}. {item.get("username") or "未知用户"}',
+            f'成员ID：{item.get("member_openid") or ""}',
+            f'申请ID：{item.get("join_request_id") or ""}',
+            f'验证消息：{verify_info.get("verify_message") or "无"}',
+        ])
+    next_cursor = page.get('next_cursor') or ''
+    if next_cursor:
+        lines.append(f'下一页：入群申请 {next_cursor}')
+    await reply_at(event, '\n'.join(lines), buttons=_join_review_buttons(requests))
+
+
+@handler(r'^/?通过入群\s+(\S+)\s+(\S+)\s*$', name='通过入群',
+         desc='通过入群申请', **_H)
+async def cmd_approve_join(event, match):
+    if not await _ensure_join_reviewer(event):
+        return
+    member_id, request_id = match.group(1), match.group(2)
+    success, response = await event.sender.review_group_join_request(
+        event.group_id, member_id, 'approve', join_request_id=request_id)
+    if success:
+        await reply_at(event, '✅ 已通过该入群申请')
+    else:
+        await reply_at(event, f'❌ 审批失败：{_api_error(response)}')
+
+
+@handler(r'^/?(拒绝入群|拒绝并拉黑)\s+(\S+)\s+(\S+)(?:\s+(.+))?\s*$',
+         name='拒绝入群', desc='拒绝入群申请，可选择拉黑', **_H)
+async def cmd_decline_join(event, match):
+    if not await _ensure_join_reviewer(event):
+        return
+    command, member_id, request_id = match.group(1), match.group(2), match.group(3)
+    reason = (match.group(4) or '不符合入群要求').strip()
+    success, response = await event.sender.review_group_join_request(
+        event.group_id,
+        member_id,
+        'decline',
+        join_request_id=request_id,
+        reject_reason=reason,
+        add_to_member_blacklist=command == '拒绝并拉黑',
+    )
+    if success:
+        action = '已拒绝并拉黑该申请人' if command == '拒绝并拉黑' else '已拒绝该入群申请'
+        await reply_at(event, f'✅ {action}')
+    else:
+        await reply_at(event, f'❌ 审批失败：{_api_error(response)}')
+
+
 # ==================== 授权 / 缓存 / 验证 ====================
+
+@handler(r'^/?刷新群权限\s*$', name='刷新群权限', desc='重新获取机器人群权限', **_H)
+async def cmd_refresh_group_state(event, match):
+    if not is_group_admin(event):
+        return await reply_at(event, '❌ 仅群管理员、群主或机器人主人可刷新')
+    state = await get_bot_group_state(event)
+    if state is None:
+        return await reply_at(event, '❌ 获取机器人群权限失败，请稍后重试')
+    await reply_at(
+        event,
+        '✅ 当前群权限状态\n'
+        f'机器人管理员：{"是" if state["is_admin"] else "否"}\n'
+        f'全量消息：{"是" if state["is_full_access"] else "否"}\n'
+        f'主动消息：{"是" if state["allow_proactive_msg"] else "否"}',
+    )
 
 @handler(r'^/?群管授权\s*$', name='群管授权', desc='查看群管授权指南', **_H)
 async def cmd_auth(event, match):

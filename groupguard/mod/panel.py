@@ -45,6 +45,23 @@ def _category_md(category, gc):
             ),
             back,
         ])
+    if category == '群管理':
+        return '\n'.join([
+            _row(
+                _cmd('禁言成员', '禁言 @用户 10', enter=False),
+                _cmd('解除禁言', '解除禁言 @用户', enter=False),
+                _cmd('禁言状态', '群禁言状态'),
+            ),
+            _row(
+                _cmd('入群申请', '入群申请'),
+                _cmd('通过申请', '通过入群 成员ID 申请ID', enter=False),
+            ),
+            _row(
+                _cmd('拒绝申请', '拒绝入群 成员ID 申请ID 理由', enter=False),
+                _cmd('拒绝并拉黑', '拒绝并拉黑 成员ID 申请ID', enter=False),
+            ),
+            back,
+        ])
     if category == '违禁词':
         fw_on = feat['forbidden_words']
         return '\n'.join([
@@ -109,12 +126,17 @@ async def show_gm_panel(event):
     buttons = [
         [
             _btn('用户处理', '群管 用户处理'),
+            _btn('群管理', '群管 群管理'),
             _btn('违禁词管理', '群管 违禁词'),
-            _btn('刷屏设置', '群管 刷屏检测'),
         ],
         [
+            _btn('消息过滤', '群管 消息过滤'),
+            _btn('刷屏设置', '群管 刷屏检测'),
             _btn('群管授权', '群管授权'),
+        ],
+        [
             _btn('清除缓存', '清除缓存'),
+            _btn('查看群权限', '刷新群权限'),
         ],
     ]
     await event.reply(text, buttons=buttons)
