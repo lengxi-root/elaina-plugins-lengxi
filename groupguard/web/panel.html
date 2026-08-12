@@ -121,19 +121,12 @@
                 <div class="template-meta-grid">
                   <label class="field"><span>显示名称</span><input id="tpl-label" maxlength="120"></label>
                   <label class="field"><span>分类</span><input id="tpl-category" maxlength="80"></label>
-                  <label class="field"><span>按钮尺寸</span><select id="tpl-font-size"><option value="">默认</option><option value="small">小按钮</option><option value="middle">中按钮</option><option value="large">大按钮</option></select></label>
                   <label class="field"><span>消息类型</span><select id="tpl-msg-type"><option value="">跟随框架</option><option value="2">Markdown</option><option value="0">纯文本</option></select></label>
                 </div>
+                <label class="switch template-switch"><span><b>小按钮</b><small>开启后下方按钮以小按钮发送</small></span><input id="tpl-small-buttons" type="checkbox"></label>
                 <label class="switch template-switch"><span><b>自动 @ 触发者</b><small>关闭后模板自行处理提及文本</small></span><input id="tpl-at-user" type="checkbox"></label>
                 <label class="field"><span>发送正文</span><textarea id="tpl-content" rows="12" spellcheck="false"></textarea></label>
-                <div class="template-two-col">
-                  <label class="field"><span>普通按钮 JSON</span><textarea id="tpl-buttons" rows="11" spellcheck="false" placeholder="null 或二维按钮数组"></textarea></label>
-                  <label class="field"><span>输入区小按钮 JSON</span><textarea id="tpl-prompt-buttons" rows="11" spellcheck="false" placeholder="null、字符串、数组或对象"></textarea></label>
-                </div>
-                <div class="template-two-col">
-                  <label class="field"><span>按钮样式 JSON</span><textarea id="tpl-button-style" rows="5" spellcheck="false" placeholder="{}"></textarea></label>
-                  <label class="field"><span>发送选项 JSON</span><textarea id="tpl-send-kwargs" rows="5" spellcheck="false" placeholder="{}"></textarea></label>
-                </div>
+                <label class="field"><span>按钮 JSON</span><textarea id="tpl-buttons" rows="11" spellcheck="false" placeholder='[{"text":"娱乐菜单","data":"/娱乐菜单","enter":true,"style":1},{"text":"邀我进群","link":"https://qun.qq.com/...","style":1}]'></textarea></label>
                 <details class="advanced-editor">
                   <summary>完整模板 JSON</summary>
                   <p>动态列表的行模板、动作名称和其他高级字段可在这里修改。</p>

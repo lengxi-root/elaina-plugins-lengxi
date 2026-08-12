@@ -3,7 +3,7 @@
 import json
 import string
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 from .reply_templates import _get_cached_template
@@ -18,22 +18,18 @@ class ReplyMessage:
 
     content: str
     buttons: object = None
-    prompt_buttons: object = None
-    button_font_size: str | None = None
-    button_style: dict | None = None
-    send_kwargs: dict = field(default_factory=dict)
+    small_buttons: bool = False
+    msg_type: int | None = None
     at_user: bool = True
 
     def delivery_kwargs(self):
-        kwargs = dict(self.send_kwargs)
+        kwargs = {}
         if self.buttons:
             kwargs['buttons'] = self.buttons
-        if self.prompt_buttons:
-            kwargs['prompt_buttons'] = self.prompt_buttons
-        if self.button_font_size:
-            kwargs['button_font_size'] = self.button_font_size
-        if self.button_style:
-            kwargs['button_style'] = self.button_style
+        if self.small_buttons:
+            kwargs['button_font_size'] = 'small'
+        if self.msg_type is not None:
+            kwargs['msg_type'] = self.msg_type
         return kwargs
 
 
@@ -41,24 +37,12 @@ def _apply_delivery_overrides(
     message,
     *,
     buttons=_UNSET,
-    prompt_buttons=_UNSET,
     small_buttons=_UNSET,
-    button_font_size=_UNSET,
-    button_style=_UNSET,
-    send_kwargs=None,
 ):
     if buttons is not _UNSET:
         message.buttons = buttons
-    if prompt_buttons is not _UNSET:
-        message.prompt_buttons = prompt_buttons
     if small_buttons is not _UNSET:
-        message.button_font_size = 'small' if small_buttons else None
-    if button_font_size is not _UNSET:
-        message.button_font_size = button_font_size
-    if button_style is not _UNSET:
-        message.button_style = button_style
-    if send_kwargs:
-        message.send_kwargs.update(send_kwargs)
+        message.small_buttons = bool(small_buttons)
     return message
 
 
@@ -170,6 +154,15 @@ def _render_value(value, variables):
     return value
 
 
+def _button_rows(buttons, columns=3):
+    """Convert the editable flat button list into framework keyboard rows."""
+    if not buttons:
+        return None
+    if all(isinstance(row, list) for row in buttons):
+        return buttons
+    return [buttons[index:index + columns] for index in range(0, len(buttons), columns)]
+
+
 def _base_variables(data):
     variables = {
         'count': 0,
@@ -240,7 +233,7 @@ def _dynamic_template(key, template, data):
         requests = data['requests']
         item_template = template.get('item_content', '')
         button_template = template.get('buttons') or []
-        rows, buttons = [], []
+        rows, button_rows = [], []
         for index, item in enumerate(requests, 1):
             verify_info = item.get('verify_info')
             verify_info = verify_info if isinstance(verify_info, dict) else {}
@@ -254,7 +247,7 @@ def _dynamic_template(key, template, data):
             rows.append(_render_value(item_template, item_vars))
             if (template.get('button_mode') == 'join_requests'
                     and item_vars['member_id'] and item_vars['request_id']):
-                buttons.extend(_render_value(button_template, item_vars))
+                button_rows.append(_render_value(button_template, item_vars))
         variables.update(
             request_count=len(requests), request_rows='\n'.join(rows),
             next_page=_render_value(template.get('next_page_content', ''), {
@@ -262,7 +255,7 @@ def _dynamic_template(key, template, data):
             }) if data.get('next_cursor') else '',
         )
         if template.get('button_mode') == 'join_requests':
-            template = {**template, 'buttons': buttons[:5]}
+            template = {**template, 'buttons': button_rows[:5]}
     elif key == 'management_stats':
         variables.update(data['stats'])
     elif key == 'audit_list':
@@ -304,7 +297,7 @@ def _dynamic_template(key, template, data):
         )
     elif key == 'verify_question':
         if template.get('button_mode') == 'verify_options':
-            prototype = ((template.get('buttons') or [[]])[0] or [{}])[0]
+            prototype = (template.get('buttons') or [{}])[0]
             buttons = [[
                 _render_value(prototype, {
                     **variables, 'option': option, 'option_index': index,
@@ -362,11 +355,9 @@ def _build(key, data):
     template, variables = _dynamic_template(key, template, data)
     message = ReplyMessage(
         content=str(_render_value(template.get('content', ''), variables)),
-        buttons=_render_value(template.get('buttons'), variables),
-        prompt_buttons=_render_value(template.get('prompt_buttons'), variables),
-        button_font_size=template.get('button_font_size') or None,
-        button_style=_render_value(template.get('button_style'), variables),
-        send_kwargs=_render_value(template.get('send_kwargs') or {}, variables),
+        buttons=_button_rows(_render_value(template.get('buttons'), variables)),
+        small_buttons=bool(template.get('small_buttons')),
+        msg_type=template.get('msg_type'),
         at_user=template.get('at_user', True),
     )
     if message.buttons is None and data.get('buttons'):
@@ -381,11 +372,7 @@ async def respond(
     at_user=_UNSET,
     audit_action=None,
     buttons=_UNSET,
-    prompt_buttons=_UNSET,
     small_buttons=_UNSET,
-    button_font_size=_UNSET,
-    button_style=_UNSET,
-    send_kwargs=None,
     **data,
 ):
     """Render, send and audit every GroupGuard user-visible reply."""
@@ -403,11 +390,7 @@ async def respond(
     message = _apply_delivery_overrides(
         _build(key, data),
         buttons=buttons,
-        prompt_buttons=prompt_buttons,
         small_buttons=small_buttons,
-        button_font_size=button_font_size,
-        button_style=button_style,
-        send_kwargs=send_kwargs,
     )
     should_at_user = bool(message.at_user if at_user is _UNSET else at_user)
     if should_at_user:
@@ -425,7 +408,6 @@ async def respond(
                      'reply_key': key,
                      'length': len(message.content),
                      'buttons': bool(message.buttons),
-                     'prompt_buttons': bool(message.prompt_buttons),
-                     'button_font_size': message.button_font_size or '',
+                     'small_buttons': message.small_buttons,
                  })
     return result

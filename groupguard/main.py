@@ -32,7 +32,7 @@
   mod/perms.py             权限、机器人群状态与可操作成员筛选
   mod/state.py             入群验证运行时状态与过期清理
   mod/reply_templates.py   JSON 消息模板的校验、热加载与原子保存
-  reply_templates.json     全部回复正文、按钮和发送选项
+  reply_templates.json     全部回复正文、按钮和小按钮开关
   mod/verify.py            入群验证出题与判题
   mod/utils.py             时长解析与格式化
 """

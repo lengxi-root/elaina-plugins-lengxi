@@ -95,15 +95,15 @@ function renderTemplateForm(){
   const item=selectedTemplate(),has=!!item;$('template-form').hidden=!has;$('template-empty').hidden=has;$('save-template').disabled=!has;
   if(!has){$('template-title').textContent='选择模板';$('template-key').textContent='全部模板保存在 reply_templates.json';return}
   $('template-title').textContent=templateLabel(selectedTemplateKey,item);$('template-key').textContent=selectedTemplateKey;
-  $('tpl-label').value=item.label||'';$('tpl-category').value=item.category||'';$('tpl-font-size').value=item.button_font_size||'';$('tpl-at-user').checked=item.at_user!==false;
-  const msgType=item.send_kwargs?.msg_type;$('tpl-msg-type').value=msgType===0||msgType===2?String(msgType):'';
-  $('tpl-content').value=item.content||'';$('tpl-buttons').value=pretty(item.buttons);$('tpl-prompt-buttons').value=pretty(item.prompt_buttons);$('tpl-button-style').value=pretty(item.button_style||{});$('tpl-send-kwargs').value=pretty(item.send_kwargs||{});$('tpl-raw').value=pretty(item);
+  $('tpl-label').value=item.label||'';$('tpl-category').value=item.category||'';$('tpl-small-buttons').checked=!!item.small_buttons;$('tpl-at-user').checked=item.at_user!==false;
+  $('tpl-msg-type').value=item.msg_type===0||item.msg_type===2?String(item.msg_type):'';
+  $('tpl-content').value=item.content||'';$('tpl-buttons').value=pretty(item.buttons);$('tpl-raw').value=pretty(item);
 }
 function formTemplate(){
   const current=selectedTemplate();if(!current)throw new Error('请先选择模板');
-  const item=structuredClone(current),sendKwargs=parseJsonField('tpl-send-kwargs','发送选项')||{};
-  item.label=$('tpl-label').value.trim()||selectedTemplateKey;item.category=$('tpl-category').value.trim()||'未分类';item.content=$('tpl-content').value;item.buttons=parseJsonField('tpl-buttons','普通按钮');item.prompt_buttons=parseJsonField('tpl-prompt-buttons','输入区小按钮');item.button_font_size=$('tpl-font-size').value;item.button_style=parseJsonField('tpl-button-style','按钮样式')||{};item.at_user=$('tpl-at-user').checked;
-  const msgType=$('tpl-msg-type').value;if(msgType==='')delete sendKwargs.msg_type;else sendKwargs.msg_type=Number(msgType);item.send_kwargs=sendKwargs;return item;
+  const item=structuredClone(current);
+  item.label=$('tpl-label').value.trim()||selectedTemplateKey;item.category=$('tpl-category').value.trim()||'未分类';item.content=$('tpl-content').value;item.buttons=parseJsonField('tpl-buttons','按钮');item.small_buttons=$('tpl-small-buttons').checked;item.at_user=$('tpl-at-user').checked;
+  const msgType=$('tpl-msg-type').value;if(msgType==='')delete item.msg_type;else item.msg_type=Number(msgType);return item;
 }
 function applyRawTemplate(){try{const item=JSON.parse($('tpl-raw').value);if(!item||Array.isArray(item)||typeof item!=='object')throw new Error();templates[selectedTemplateKey]=item;renderTemplateForm();toast('完整 JSON 已应用到表单')}catch(_){toast('完整模板 JSON 格式无效',true)}}
 function syncRawTemplate(){try{$('tpl-raw').value=pretty(formTemplate());toast('表单内容已同步到完整 JSON')}catch(error){toast(error.message,true)}}
