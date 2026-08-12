@@ -490,7 +490,6 @@
           <tbody id="rec-body"></tbody>
         </table>
         <div id="rec-empty" class="empty hidden">暂无记录</div>
-        <div class="pager" id="rec-pager"></div>
       </div>
 
     </div>
@@ -511,7 +510,7 @@ const PAGE_SIZE = 1000;
 
 let STATE = {
   monitor: false, allGroups: false, listMode: 'blacklist', mergeWelcome: false,
-  pendingPage:1, recPage:1, wlPage:1, dbPage:1, blPage:1
+  pendingPage:1, wlPage:1, dbPage:1, blPage:1
 };
 
 function $(id){ return document.getElementById(id); }
@@ -927,13 +926,11 @@ function stopDelayTimer(){
 
 // ==================== Records ====================
 
-async function loadRecords(page){
-  if(page) STATE.recPage = page;
-  const j = await api('/records?page='+STATE.recPage,'GET');
+async function loadRecords(){
+  const j = await api('/records','GET');
   const rows = (j.data||[]); const total = j.total!=null ? j.total : rows.length;
-  STATE.recPage = j.page || STATE.recPage;
-  if(!rows.length && STATE.recPage>1){ return loadRecords(STATE.recPage-1); }
-  $('rec-stat').textContent = `共 ${total} 条`;
+  const limit = j.display_limit || 1000;
+  $('rec-stat').textContent = total>limit ? `共 ${total} 条，仅显示最新 ${limit} 条` : `共 ${total} 条`;
   $('rec-empty').classList.toggle('hidden', total>0);
   $('rec-body').innerHTML = rows.map(r=>{
     const ok = r.status==='success';
@@ -943,13 +940,12 @@ async function loadRecords(page){
       <td class="resp mono">${esc(r.response)}</td>
     </tr>`;
   }).join('');
-  renderPager('rec', STATE.recPage, total, j.page_size, 'loadRecords');
 }
 
 async function clearRecords(){
   if(!confirm('确定清空全部发送记录?')) return;
   const j = await api('/records_clear','POST',{});
-  toast(j.message||'已清空'); loadRecords(1); loadStatus();
+  toast(j.message||'已清空'); loadRecords(); loadStatus();
 }
 
 // ==================== Init ====================

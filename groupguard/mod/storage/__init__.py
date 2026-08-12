@@ -28,5 +28,16 @@ from .messages import (
 )
 from .spam import check_spam, get_spam_config, record_spam, save_spam_config
 from .targets import add_target, delete_target, get_targets, purge_expired_targets
+from .audit import (
+    current_action,
+    current_source,
+    ensure_trace,
+    get_management_stats,
+    get_recent_audit,
+    record_audit,
+    record_received,
+    record_result,
+    record_web_action,
+)
 
 __all__ = [name for name in globals() if not name.startswith('_')]

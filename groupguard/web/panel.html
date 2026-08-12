@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>群管</title>
+  <link rel="stylesheet" href="/api/ext/groupguard/assets/panel.css">
+</head>
+<body>
+  <div class="app sidebar-collapsed" id="app">
+    <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="关闭侧边栏"></button>
+    <aside class="sidebar" aria-label="群管导航">
+      <div class="brand"><div class="logo">GG</div><div><strong>群管</strong><small>GroupGuard</small></div></div>
+      <nav class="nav">
+        <button class="active" data-page="overview" type="button"><i>01</i><span>概览</span></button>
+        <button data-page="config" type="button"><i>02</i><span>功能设置</span></button>
+        <button data-page="forbidden" type="button"><i>03</i><span>违禁词</span></button>
+        <button data-page="targets" type="button"><i>04</i><span>发言撤回</span></button>
+        <button data-page="templates" type="button"><i>05</i><span>消息模板</span></button>
+        <button data-page="audit" type="button"><i>06</i><span>审计日志</span></button>
+      </nav>
+      <div class="service-state"><span class="pulse"></span><span>群管服务运行中</span></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div class="heading">
+          <button class="icon-btn" id="sidebar-toggle" type="button" title="展开侧边栏" aria-label="展开侧边栏">☰</button>
+          <div><h1 id="page-title">概览</h1><p id="group-caption">选择群聊后查看管理状态</p></div>
+        </div>
+        <div class="actions">
+          <label class="select-control"><span>群聊</span><select id="group-select"><option value="">暂无群聊</option></select></label>
+          <label class="select-control"><span>周期</span><select id="days-select"><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option><option value="365">365 天</option></select></label>
+          <button class="icon-btn" id="reload" type="button" title="刷新数据" aria-label="刷新数据">↻</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="loading" id="loading">正在读取群管数据</div>
+        <div class="empty-state" id="empty-state" hidden><strong>暂无可管理群聊</strong><span>机器人收到群消息或群管产生配置后，此处会自动显示。</span></div>
+
+        <section class="page active" id="page-overview">
+          <div class="metrics">
+            <article class="metric primary"><span>管理操作</span><b id="m-management">0</b><small id="m-source">手动 0 / 自动 0</small></article>
+            <article class="metric success"><span>禁言人次</span><b id="m-mute">0</b><small id="m-unmute">解禁 0</small></article>
+            <article class="metric warning"><span>撤回消息</span><b id="m-recall">0</b><small id="m-punish">处罚 0</small></article>
+            <article class="metric danger"><span>失败操作</span><b id="m-failed">0</b><small id="m-approval">审批 0</small></article>
+          </div>
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head"><div><h2>运行状态</h2><p>当前群配置与管理对象</p></div><span class="state-badge" id="guard-state">未启用</span></div>
+              <div class="panel-body compact-grid">
+                <div class="summary-row"><span>群管总开关</span><b id="s-enabled">关闭</b></div>
+                <div class="summary-row"><span>刷屏检测</span><b id="s-spam">关闭</b></div>
+                <div class="summary-row"><span>违禁词</span><b id="s-forbidden">0 个</b></div>
+                <div class="summary-row"><span>发言撤回成员</span><b id="s-targets">0 人</b></div>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><div><h2>最近管理</h2><p>当前群最近 5 条管理结果</p></div><button class="btn" data-open-page="audit" type="button">查看全部</button></div>
+              <div class="panel-body activity-list" id="recent-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="page-config">
+          <section class="panel">
+            <div class="panel-head"><div><h2>功能开关</h2><p>配置仅作用于当前群</p></div><button class="btn primary" id="save-config" type="button">保存配置</button></div>
+            <div class="panel-body switches">
+              <label class="switch"><span><b>群管总开关</b><small>执行自动监管规则</small></span><input id="cfg-enabled" type="checkbox"></label>
+              <label class="switch"><span><b>撤回提醒</b><small>自动处理后发送提示</small></span><input id="cfg-notify" type="checkbox"></label>
+              <label class="switch"><span><b>入群验证</b><small>新成员完成算术验证</small></span><input id="cfg-join-verify" type="checkbox"></label>
+              <label class="switch"><span><b>禁发链接</b><small>撤回文本链接</small></span><input id="cfg-block-links" type="checkbox"></label>
+              <label class="switch"><span><b>禁发卡片</b><small>撤回 Ark 卡片</small></span><input id="cfg-block-cards" type="checkbox"></label>
+              <label class="switch"><span><b>禁止转发</b><small>撤回合并转发</small></span><input id="cfg-block-forward" type="checkbox"></label>
+              <label class="switch"><span><b>违禁词过滤</b><small>撤回命中的消息</small></span><input id="cfg-forbidden" type="checkbox"></label>
+              <label class="switch"><span><b>刷屏检测</b><small>超限后执行处罚</small></span><input id="cfg-spam-enabled" type="checkbox"></label>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><div><h2>刷屏策略</h2><p>统计窗口固定为 60 秒</p></div></div>
+            <div class="panel-body form-grid">
+              <label class="field"><span>消息上限</span><input id="cfg-spam-limit" type="number" min="3" max="100"></label>
+              <label class="field"><span>处罚时长</span><select id="cfg-spam-punish"><option value="0">仅撤回消息</option><option value="5">发言撤回 5 分钟</option><option value="10">发言撤回 10 分钟</option><option value="30">发言撤回 30 分钟</option><option value="60">发言撤回 60 分钟</option><option value="-1">永久发言撤回</option></select></label>
+            </div>
+          </section>
+        </section>
+
+        <section class="page" id="page-forbidden">
+          <section class="panel">
+            <div class="panel-head"><div><h2>违禁词</h2><p id="forbidden-count">共 0 个</p></div></div>
+            <div class="panel-body">
+              <form class="inline-form" id="forbidden-form"><label class="field grow"><span>新增违禁词</span><input id="forbidden-input" maxlength="64" autocomplete="off"></label><button class="btn primary" type="submit">添加</button></form>
+              <div class="tag-list" id="forbidden-list"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="page" id="page-targets">
+          <section class="panel">
+            <div class="panel-head"><div><h2>发言撤回成员</h2><p id="target-count">共 0 人</p></div></div>
+            <div class="table-wrap"><table><thead><tr><th>成员 ID</th><th>到期时间</th><th>状态</th><th class="action-col">操作</th></tr></thead><tbody id="target-list"></tbody></table></div>
+          </section>
+        </section>
+
+        <section class="page" id="page-templates">
+          <div class="template-layout">
+            <section class="panel template-browser">
+              <div class="panel-head"><div><h2>发送模板</h2><p id="template-count">正在读取</p></div></div>
+              <div class="panel-body template-filter">
+                <label class="field"><span>筛选模板</span><input id="template-search" autocomplete="off" placeholder="名称、键或分类"></label>
+              </div>
+              <div class="template-list" id="template-list"></div>
+            </section>
+            <section class="panel template-editor">
+              <div class="panel-head">
+                <div><h2 id="template-title">选择模板</h2><p id="template-key">全部模板保存在 reply_templates.json</p></div>
+                <button class="btn primary" id="save-template" type="button" disabled>保存模板</button>
+              </div>
+              <div class="panel-body template-form" id="template-form" hidden>
+                <div class="template-meta-grid">
+                  <label class="field"><span>显示名称</span><input id="tpl-label" maxlength="120"></label>
+                  <label class="field"><span>分类</span><input id="tpl-category" maxlength="80"></label>
+                  <label class="field"><span>按钮尺寸</span><select id="tpl-font-size"><option value="">默认</option><option value="small">小按钮</option><option value="middle">中按钮</option><option value="large">大按钮</option></select></label>
+                  <label class="field"><span>消息类型</span><select id="tpl-msg-type"><option value="">跟随框架</option><option value="2">Markdown</option><option value="0">纯文本</option></select></label>
+                </div>
+                <label class="switch template-switch"><span><b>自动 @ 触发者</b><small>关闭后模板自行处理提及文本</small></span><input id="tpl-at-user" type="checkbox"></label>
+                <label class="field"><span>发送正文</span><textarea id="tpl-content" rows="12" spellcheck="false"></textarea></label>
+                <div class="template-two-col">
+                  <label class="field"><span>普通按钮 JSON</span><textarea id="tpl-buttons" rows="11" spellcheck="false" placeholder="null 或二维按钮数组"></textarea></label>
+                  <label class="field"><span>输入区小按钮 JSON</span><textarea id="tpl-prompt-buttons" rows="11" spellcheck="false" placeholder="null、字符串、数组或对象"></textarea></label>
+                </div>
+                <div class="template-two-col">
+                  <label class="field"><span>按钮样式 JSON</span><textarea id="tpl-button-style" rows="5" spellcheck="false" placeholder="{}"></textarea></label>
+                  <label class="field"><span>发送选项 JSON</span><textarea id="tpl-send-kwargs" rows="5" spellcheck="false" placeholder="{}"></textarea></label>
+                </div>
+                <details class="advanced-editor">
+                  <summary>完整模板 JSON</summary>
+                  <p>动态列表的行模板、动作名称和其他高级字段可在这里修改。</p>
+                  <textarea id="tpl-raw" rows="20" spellcheck="false"></textarea>
+                  <div class="advanced-actions"><button class="btn" id="apply-template-json" type="button">应用到表单</button><button class="btn" id="sync-template-json" type="button">从表单更新 JSON</button></div>
+                </details>
+              </div>
+              <div class="empty" id="template-empty">从左侧选择一个消息模板进行编辑</div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="page-audit">
+          <section class="panel">
+            <div class="panel-head"><div><h2>管理审计</h2><p>按完整操作链路聚合显示</p></div></div>
+            <div class="panel-body filters">
+              <select id="filter-source"><option value="">全部来源</option><option value="command">群命令</option><option value="automatic">自动监管</option><option value="verification">入群验证</option><option value="web">Web 面板</option></select>
+              <select id="filter-status"><option value="">全部状态</option><option value="1">成功</option><option value="0">失败</option></select>
+              <select id="filter-action"><option value="">全部操作</option></select>
+            </div>
+            <div class="table-wrap"><table><thead><tr><th>时间</th><th>操作</th><th>来源</th><th>操作者</th><th>目标</th><th>数量</th><th>结果</th><th>Trace</th></tr></thead><tbody id="audit-list"></tbody></table></div>
+          </section>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script type="module" src="/api/ext/groupguard/assets/panel.js"></script>
+</body>
+</html>

@@ -35,7 +35,7 @@ __plugin_meta__ = {
     'name': '群成员入群欢迎',
     'author': 'ElainaBot',
     'description': '群成员入群自动欢迎推送, 支持召回模式/欢迎模式、黑白名单、每日上限, 含 Web 面板',
-    'version': '1.4.0',
+    'version': '1.4.1',
     'github': 'https://github.com/ElainaCore/Elaina-plugins',
     'license': 'MIT',
 }
@@ -141,6 +141,12 @@ def _ensure_db() -> sqlite3.Connection:
         )
         _conn.commit()
     return _conn
+
+
+async def _run_db(func, *args):
+    """在线程中执行可能较慢的 SQLite 查询。"""
+    async with _conn_lock:
+        return await asyncio.to_thread(func, _ensure_db(), *args)
 
 
 def _now() -> str:
@@ -265,19 +271,14 @@ async def _add_record(group_id: str, status: str, response, source: str) -> None
         _ensure_db().commit()
 
 
-async def _list_records(limit: int = PAGE_SIZE, offset: int = 0) -> list:
-    async with _conn_lock:
-        rows = _ensure_db().execute(
-            'SELECT id, group_id, status, response, source, created_at '
-            'FROM sent_records ORDER BY id DESC LIMIT ? OFFSET ?',
-            (limit, offset),
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-async def _count_records() -> int:
-    async with _conn_lock:
-        return _ensure_db().execute('SELECT COUNT(*) AS c FROM sent_records').fetchone()['c']
+def _records_snapshot(conn: sqlite3.Connection, limit: int) -> tuple[list, int]:
+    total = conn.execute('SELECT COUNT(*) AS c FROM sent_records').fetchone()['c']
+    rows = conn.execute(
+        'SELECT id, group_id, status, response, source, created_at '
+        'FROM sent_records ORDER BY id DESC LIMIT ?',
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows], total
 
 
 async def _clear_records() -> int:
@@ -407,14 +408,18 @@ async def _check_daily_group_limit(group_id: str) -> bool:
     return await _daily_group_count(group_id) < limit
 
 
-async def _daily_total_count() -> int:
-    today = datetime.now().strftime('%Y-%m-%d')
-    async with _conn_lock:
-        row = _ensure_db().execute(
-            'SELECT COALESCE(SUM(count), 0) AS total FROM daily_group_counts WHERE date=?',
-            (today,),
-        ).fetchone()
-    return row['total'] if row else 0
+def _status_counts(conn: sqlite3.Connection, today: str) -> dict:
+    daily_row = conn.execute(
+        'SELECT COALESCE(SUM(count), 0) AS total FROM daily_group_counts WHERE date=?',
+        (today,),
+    ).fetchone()
+    return {
+        'daily_total_count': daily_row['total'] if daily_row else 0,
+        'whitelist_count': conn.execute('SELECT COUNT(*) AS c FROM whitelist_groups').fetchone()['c'],
+        'pending_count': conn.execute('SELECT COUNT(*) AS c FROM pending_groups').fetchone()['c'],
+        'sent_count': conn.execute('SELECT COUNT(*) AS c FROM sent_records').fetchone()['c'],
+        'disabled_count': conn.execute('SELECT COUNT(*) AS c FROM disabled_groups').fetchone()['c'],
+    }
 
 
 # ==================== 框架数据访问 ====================
@@ -971,6 +976,7 @@ async def _body(request):
 @register_route('GET', f'{_API}/status')
 async def api_status(request):
     cfg = await _all_cfg()
+    counts = await _run_db(_status_counts, datetime.now().strftime('%Y-%m-%d'))
     return _json({
         'success': True,
         'data': {
@@ -985,13 +991,13 @@ async def api_status(request):
             'welcome_template': cfg.get('welcome_template', DEFAULT_TEMPLATE),
             'welcome_buttons': _parse_buttons(cfg.get('welcome_buttons', '[]')),
             'daily_group_limit': int(cfg.get('daily_group_limit', '0') or '0'),
-            'daily_total_count': await _daily_total_count(),
+            'daily_total_count': counts['daily_total_count'],
             'merge_welcome': cfg.get('merge_welcome', '0') == '1',
             'merge_template': cfg.get('merge_template', '欢迎 {user_ids} 加入本群！'),
-            'whitelist_count': await _count_whitelist(),
-            'pending_count': await _count_pending(),
-            'sent_count': await _count_records(),
-            'disabled_count': await _count_disabled(),
+            'whitelist_count': counts['whitelist_count'],
+            'pending_count': counts['pending_count'],
+            'sent_count': counts['sent_count'],
+            'disabled_count': counts['disabled_count'],
             'delay_count': len(_delay_queue),
         },
     })
@@ -1140,10 +1146,13 @@ async def api_pending_delete(request):
 
 @register_route('GET', f'{_API}/records')
 async def api_records(request):
-    page = _page_param(request)
-    total = await _count_records()
-    data = await _list_records(PAGE_SIZE, (page - 1) * PAGE_SIZE)
-    return _json({'success': True, 'data': data, 'total': total, 'page': page, 'page_size': PAGE_SIZE})
+    data, total = await _run_db(_records_snapshot, PAGE_SIZE)
+    return _json({
+        'success': True,
+        'data': data,
+        'total': total,
+        'display_limit': PAGE_SIZE,
+    })
 
 
 @register_route('POST', f'{_API}/records_clear')

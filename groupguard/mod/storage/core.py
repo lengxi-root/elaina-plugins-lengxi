@@ -21,8 +21,9 @@ _initialized = False
 def get_db():
     global _initialized
     os.makedirs(DATA_DIR, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
+    connection = sqlite3.connect(DB_PATH, timeout=5)
     connection.row_factory = sqlite3.Row
+    connection.execute('PRAGMA busy_timeout = 5000')
     if not _initialized:
         init_tables(connection)
         migrate_legacy_json(connection)
@@ -31,6 +32,7 @@ def get_db():
 
 
 def init_tables(connection):
+    connection.execute('PRAGMA journal_mode = WAL')
     connection.executescript("""
         CREATE TABLE IF NOT EXISTS group_config (
             group_id TEXT PRIMARY KEY,
@@ -72,12 +74,34 @@ def init_tables(connection):
             username TEXT DEFAULT '',
             time INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trace_id TEXT NOT NULL,
+            time INTEGER NOT NULL,
+            appid TEXT DEFAULT '',
+            group_id TEXT DEFAULT '',
+            operator_id TEXT DEFAULT '',
+            target_id TEXT DEFAULT '',
+            message_id TEXT DEFAULT '',
+            source TEXT NOT NULL,
+            action TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            success INTEGER,
+            affected_count INTEGER DEFAULT 0,
+            duration_ms INTEGER DEFAULT 0,
+            details TEXT DEFAULT '{}'
+        );
         CREATE INDEX IF NOT EXISTS idx_forbidden_group ON forbidden_words(group_id);
         CREATE INDEX IF NOT EXISTS idx_targets_group ON targets(group_id);
         CREATE INDEX IF NOT EXISTS idx_spam_log_group_user ON spam_log(group_id, user_id);
         CREATE INDEX IF NOT EXISTS idx_spam_log_time ON spam_log(time);
         CREATE INDEX IF NOT EXISTS idx_message_log_group_user ON message_log(group_id, user_id);
         CREATE INDEX IF NOT EXISTS idx_message_log_time ON message_log(time);
+        CREATE INDEX IF NOT EXISTS idx_audit_group_time ON audit_log(group_id, time DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(time);
+        CREATE INDEX IF NOT EXISTS idx_audit_action_result
+            ON audit_log(group_id, action, phase, success);
+        CREATE INDEX IF NOT EXISTS idx_audit_trace ON audit_log(trace_id, id);
     """)
     connection.commit()
 

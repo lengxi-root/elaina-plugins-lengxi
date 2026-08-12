@@ -8,7 +8,7 @@ from core.plugin.decorators import handler
 from ...mod import db
 from ...mod.perms import ensure_admin_env, get_operable_members
 from ...mod.utils import reply_at
-from .common import HANDLER_OPTIONS
+from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
 
 
 async def recall_batch(event, message_ids, limit):
@@ -20,8 +20,15 @@ async def recall_batch(event, message_ids, limit):
         for _retry in range(3):
             try:
                 ok = await event.recall(message_id=message_id)
-            except Exception:
+                error = ''
+            except Exception as exc:
                 ok = False
+                error = type(exc).__name__
+            trace_phase(
+                event, 'recall', 'api', success=bool(ok),
+                details={'message_id': str(message_id), 'retry': _retry + 1,
+                         'error': error},
+            )
             if ok:
                 break
             await asyncio.sleep(0.3)
@@ -38,6 +45,7 @@ async def recall_batch(event, message_ids, limit):
 @handler(r'^/?撤回最近(?:\s|$|@|\d)', name='撤回最近',
          desc='撤回最近消息, 可@用户或指定条数', **HANDLER_OPTIONS)
 async def cmd_recall_recent(event, match):
+    begin_action(event, 'recall')
     if not await ensure_admin_env(event):
         return
     group_id = event.group_id
@@ -50,9 +58,11 @@ async def cmd_recall_recent(event, match):
     if members:
         messages = db.get_user_messages(group_id, members[0][0], limit * 2)
         if not messages:
-            return await reply_at(event, '未找到该用户最近的消息记录')
+            finish_action(event, 'recall', False, details={'reason': 'user_messages_empty'})
+            return await reply_at(event, 'recall_user_empty')
         total, failed = await recall_batch(event, messages, limit)
-        reply = f'✅ 已撤回该用户的最近 {total} 条消息'
+        user_scope = True
+        target_id = members[0][0]
     else:
         infos = db.get_group_messages(group_id, limit)
         messages = [
@@ -60,9 +70,11 @@ async def cmd_recall_recent(event, match):
             if item['role'] not in ('admin', 'owner') and item['user_id'] != event.user_id
         ]
         if not messages:
-            return await reply_at(event, '未找到可撤回的消息')
+            finish_action(event, 'recall', False, details={'reason': 'group_messages_empty'})
+            return await reply_at(event, 'recall_group_empty')
         total, failed = await recall_batch(event, messages, limit)
-        reply = f'✅ 已撤回最近 {total} 条消息'
-    if failed:
-        reply += f'（失败 {failed} 条，可能消息已被撤回或过期）'
-    await reply_at(event, reply)
+        user_scope = False
+        target_id = ''
+    finish_action(event, 'recall', total > 0, affected_count=total, target_id=target_id,
+                  details={'failed': failed, 'limit': limit, 'user_scope': user_scope})
+    await reply_at(event, 'recall_done', user_scope=user_scope, count=total, failed=failed)

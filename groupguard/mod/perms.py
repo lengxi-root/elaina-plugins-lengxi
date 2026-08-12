@@ -5,6 +5,9 @@ import time
 
 from core.base.config import cfg
 
+from .replies import respond
+from .storage.audit import current_action, record_audit
+
 
 def is_bot_owner(event):
     bot_cfg = cfg.get_bot_config(event.appid)
@@ -108,34 +111,39 @@ async def check_has_full_msg(event, state=None):
     return state['is_full_access'] and state['allow_proactive_msg']
 
 
-FULL_MSG_TIP = (
-    '1.请群主点击我的头像→\n'
-    '2.点击右上角齿轮设置→\n'
-    '3.点击可获取的群聊消息范围设置为获取群内全部消息→\n'
-    '4.勾选主动在群聊内发言即可\n\n'
-    '> 授权后无需@伊蕾娜也可以处理指令\n'
-    '> 需要9.2.90以上版本QQ设置哦！'
-)
-BOT_NO_ADMIN_TIP = '机器人暂无管理权限，请联系群主给机器人管理员权限。'
-BOT_STATE_FAILED_TIP = '暂时无法获取机器人在本群的权限状态，请稍后重试。'
-USER_NO_PERM_TIP = '你暂无本群管理权限，无权操作该命令。'
-
-
 async def ensure_admin_env(event):
     """群管指令前置检查：机器人能力、用户权限和机器人管理权限。"""
     state = await get_bot_group_state(event)
+    action = current_action(event, 'permission_check')
     if state is None:
-        await event.reply(f'<@{event.user_id}> {BOT_STATE_FAILED_TIP}')
+        record_audit(event, action, 'permission', success=False,
+                     details={'reason': 'bot_state_unavailable'})
+        record_audit(event, action, 'result', success=False,
+                     details={'reason': 'bot_state_unavailable'})
+        await respond(event, 'bot_state_failed', audit_action=action)
         return False
     if not await check_has_full_msg(event, state):
-        await event.reply(f'<@{event.user_id}> {FULL_MSG_TIP}')
+        record_audit(event, action, 'permission', success=False,
+                     details={'reason': 'full_message_unavailable'})
+        record_audit(event, action, 'result', success=False,
+                     details={'reason': 'full_message_unavailable'})
+        await respond(event, 'full_message_required', audit_action=action)
         return False
     if not is_group_admin(event):
-        await event.reply(f'<@{event.user_id}> {USER_NO_PERM_TIP}')
+        record_audit(event, action, 'permission', success=False,
+                     details={'reason': 'operator_denied'})
+        record_audit(event, action, 'result', success=False,
+                     details={'reason': 'operator_denied'})
+        await respond(event, 'user_no_permission', audit_action=action)
         return False
     if not await check_bot_is_admin(event, state):
-        await event.reply(f'<@{event.user_id}> {BOT_NO_ADMIN_TIP}')
+        record_audit(event, action, 'permission', success=False,
+                     details={'reason': 'bot_not_admin'})
+        record_audit(event, action, 'result', success=False,
+                     details={'reason': 'bot_not_admin'})
+        await respond(event, 'bot_no_admin', audit_action=action)
         return False
+    record_audit(event, action, 'permission', success=True)
     return True
 
 
