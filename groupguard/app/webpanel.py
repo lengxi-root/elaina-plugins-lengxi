@@ -75,17 +75,8 @@ def _group_catalog():
     now = time.monotonic()
     if now < _catalog_expires:
         return [dict(item) for item in _catalog_cache]
-    groups = {
-        group_id: {
-            'group_id': group_id,
-            'group_name': '',
-            'member_count': 0,
-            'in_group': False,
-            'appid': '',
-            'configured': True,
-        }
-        for group_id in _managed_group_ids()
-    }
+    managed_group_ids = _managed_group_ids()
+    groups = {}
     try:
         from core.application import get_app
 
@@ -94,7 +85,7 @@ def _group_catalog():
         for appid, bot in bots.items():
             try:
                 rows = bot.log_service.query_data(
-                    'SELECT group_id, group_name, group_member_num, in_group '
+                    'SELECT group_id, group_name, group_member_num, in_group, is_admin '
                     'FROM groups_users WHERE group_id != ? ',
                     ('',),
                 )
@@ -103,7 +94,8 @@ def _group_catalog():
                 continue
             for row in rows:
                 group_id = str(row.get('group_id') or '')
-                if not group_id:
+                if (not group_id or not bool(row.get('in_group', 1))
+                        or not bool(row.get('is_admin'))):
                     continue
                 current = groups.setdefault(group_id, {
                     'group_id': group_id,
@@ -111,7 +103,7 @@ def _group_catalog():
                     'member_count': 0,
                     'in_group': False,
                     'appid': '',
-                    'configured': False,
+                    'configured': group_id in managed_group_ids,
                 })
                 current.update({
                     'group_name': str(row.get('group_name') or ''),
@@ -151,6 +143,32 @@ def _require_bool(value, name):
     if not isinstance(value, bool):
         raise ValueError(f'{name}必须是布尔值')
     return value
+
+
+def _require_action(value, name):
+    action = str(value or '')
+    if action not in db.ACTION_KEYS:
+        raise ValueError(f'{name}处理方式无效')
+    return action
+
+
+def _require_policies(value):
+    if not isinstance(value, dict):
+        raise ValueError('自动处理策略无效')
+    if set(value) != set(db.POLICY_KEYS):
+        raise ValueError('自动处理策略字段不完整')
+    policies = {}
+    for key in db.POLICY_KEYS:
+        policy = value[key]
+        if not isinstance(policy, dict):
+            raise ValueError(f'{key} 处理策略无效')
+        policies[key] = {
+            'action': _require_action(policy.get('action'), key),
+            'mute_minutes': _clamp_int(
+                policy.get('mute_minutes'), 1, 43200, f'{key} 禁言时长',
+            ),
+        }
+    return policies
 
 
 async def _json(request):
@@ -200,8 +218,10 @@ async def _get_dashboard(request):
         'config': config,
         'spam': {
             'enabled': bool(spam['enabled']),
+            'window_seconds': int(spam['window_seconds']),
             'limit_count': int(spam['limit_count']),
-            'punish_minutes': int(spam['punish_minutes']),
+            'action': spam['action'],
+            'mute_minutes': int(spam['mute_minutes']),
         },
         'forbidden_words': db.get_forbidden(group_id),
         'targets': [
@@ -266,9 +286,17 @@ async def _save_config(request):
         missing_features = set(db.FEATURE_KEYS) - set(features)
         if missing_features:
             raise ValueError('功能配置缺少必要字段')
-        limit_count = _clamp_int(body.get('limit_count'), 3, 100, '刷屏限制')
-        punish_minutes = _clamp_int(
-            body.get('punish_minutes'), -1, 43200, '刷屏处罚时长'
+        policies = _require_policies(body.get('policies'))
+        spam = body.get('spam')
+        if not isinstance(spam, dict):
+            raise ValueError('刷屏配置无效')
+        window_seconds = _clamp_int(
+            spam.get('window_seconds'), 5, 3600, '刷屏统计窗口',
+        )
+        limit_count = _clamp_int(spam.get('limit_count'), 3, 100, '刷屏限制')
+        spam_action = _require_action(spam.get('action'), '刷屏')
+        spam_mute_minutes = _clamp_int(
+            spam.get('mute_minutes'), 1, 43200, '刷屏禁言时长',
         )
         current = db.get_group_cfg(group_id)
         previous_spam = db.get_spam_config(group_id)
@@ -280,11 +308,13 @@ async def _save_config(request):
                 key: _require_bool(features[key], f'{key} 开关')
                 for key in db.FEATURE_KEYS
             },
+            'policies': policies,
         }
-        spam_enabled = _require_bool(body.get('spam_enabled'), '刷屏检测开关')
+        spam_enabled = _require_bool(spam.get('enabled'), '刷屏检测开关')
         db.save_group_cfg(updated)
         db.save_spam_config(
-            group_id, int(spam_enabled), limit_count, punish_minutes
+            group_id, int(spam_enabled), window_seconds, limit_count,
+            spam_action, spam_mute_minutes,
         )
         changed = []
         if current['enabled'] != updated['enabled']:
@@ -295,12 +325,19 @@ async def _save_config(request):
             key for key in db.FEATURE_KEYS
             if current['features'][key] != updated['features'][key]
         )
+        changed.extend(
+            f'{key}_policy' for key in db.POLICY_KEYS
+            if current['policies'][key] != updated['policies'][key]
+        )
         if bool(previous_spam['enabled']) != spam_enabled:
             changed.append('spam_enabled')
         if int(previous_spam['limit_count']) != limit_count:
             changed.append('spam_limit')
-        if int(previous_spam['punish_minutes']) != punish_minutes:
-            changed.append('spam_punish')
+        if int(previous_spam['window_seconds']) != window_seconds:
+            changed.append('spam_window')
+        if (previous_spam['action'] != spam_action
+                or int(previous_spam['mute_minutes']) != spam_mute_minutes):
+            changed.append('spam_policy')
         db.record_web_action(
             group_id, 'config_change', True, affected_count=len(changed),
             details={'changed': changed},

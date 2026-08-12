@@ -12,10 +12,13 @@ from .config import (
 from .core import (
     DB_PATH,
     DATA_DIR,
+    ACTION_KEYS,
     FEATURE_KEYS,
     MESSAGE_LOG_TTL,
+    POLICY_KEYS,
     RECALL_WINDOW,
-    SPAM_WINDOW,
+    SPAM_DEFAULT_WINDOW,
+    SPAM_LOG_TTL,
     get_db,
 )
 from .forbidden import (

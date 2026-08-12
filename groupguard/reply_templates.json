@@ -153,11 +153,14 @@
     "forbidden_list_image": {"label": "违禁词图片列表", "category": "违禁词", "content": "![违禁词列表 {px}]({url})", "buttons": null, "at_user": true},
     "forbidden_list_text": {"label": "违禁词文本列表", "category": "违禁词", "content": "📋 违禁词列表（共 {word_count} 个，已脱敏）：\n```\n{word_rows}\n```", "item_content": "{index}. {word}", "buttons": null, "at_user": true},
     "forbidden_cleared": {"label": "违禁词清空成功", "category": "违禁词", "content": "✅ 已清空所有违禁词（共 {count} 个）", "buttons": null, "at_user": true},
-    "spam_enabled": {"label": "刷屏检测已开启", "category": "刷屏", "content": "✅ 已开启刷屏检测\n当前限制：每分钟最多 {limit} 条消息\n处罚：{punish}", "buttons": null, "at_user": true},
+    "spam_enabled": {"label": "刷屏检测已开启", "category": "刷屏", "content": "✅ 已开启刷屏检测\n当前限制：{seconds} 秒内最多 {limit} 条消息\n处罚：{punish}", "buttons": null, "at_user": true},
     "spam_disabled": {"label": "刷屏检测已关闭", "category": "刷屏", "content": "✅ 已关闭刷屏检测", "buttons": null, "at_user": true},
     "spam_limit_low": {"label": "刷屏限制过低", "category": "刷屏", "content": "❌ 刷屏限制至少为3条", "buttons": null, "at_user": true},
     "spam_limit_high": {"label": "刷屏限制过高", "category": "刷屏", "content": "❌ 刷屏限制最大为100条", "buttons": null, "at_user": true},
-    "spam_limit_set": {"label": "刷屏限制设置成功", "category": "刷屏", "content": "✅ 已设置刷屏限制：每分钟最多 {limit} 条消息", "buttons": null, "at_user": true},
+    "spam_limit_set": {"label": "刷屏限制设置成功", "category": "刷屏", "content": "✅ 已设置刷屏限制：{seconds} 秒内最多 {limit} 条消息", "buttons": null, "at_user": true},
+    "spam_window_invalid": {"label": "刷屏窗口无效", "category": "刷屏", "content": "❌ 刷屏统计窗口必须为 5-3600 秒", "buttons": null, "at_user": true},
+    "spam_window_set": {"label": "刷屏窗口设置成功", "category": "刷屏", "content": "✅ 已设置刷屏统计窗口：{seconds} 秒", "buttons": null, "at_user": true},
+    "spam_punish_invalid": {"label": "刷屏处罚无效", "category": "刷屏", "content": "❌ 禁言时长必须为 0-43200 分钟", "buttons": null, "at_user": true},
     "spam_punish_set": {"label": "刷屏处罚设置成功", "category": "刷屏", "content": "✅ 已设置刷屏处罚：{punish}", "buttons": null, "at_user": true},
     "speak_recall_target_required": {"label": "发言撤回目标缺失", "category": "处罚", "content": "❌ 请@需要撤回发言的普通成员", "buttons": null, "at_user": true},
     "speak_recall_set": {"label": "发言撤回设置成功", "category": "处罚", "content": "✅ 已设置发言撤回（{remaining}）\n该用户发消息将自动撤回", "buttons": null, "at_user": true},
@@ -198,10 +201,10 @@
     "verify_wrong_mute_failed": {"label": "验证错误禁言失败", "category": "验证", "content": "<@{target_id}> ❌ 答案错误，禁言操作失败；10分钟后发送消息可再次验证", "buttons": null, "at_user": false},
     "spam_notice_only": {"label": "刷屏仅撤回通知", "category": "自动监管", "content": "<@{target_id}> ⚠️ 检测到刷屏行为，已撤回近期消息", "buttons": null, "at_user": false},
     "spam_notice_permanent": {"label": "刷屏永久处罚通知", "category": "自动监管", "content": "<@{target_id}> ⚠️ 检测到刷屏行为，已撤回近期消息并永久撤回发言", "buttons": null, "at_user": false},
-    "spam_notice_timed": {"label": "刷屏限时处罚通知", "category": "自动监管", "content": "<@{target_id}> ⚠️ 检测到刷屏行为，已撤回近期消息并加入发言撤回 {minutes} 分钟", "buttons": null, "at_user": false},
-    "block_link_notice": {"label": "链接拦截通知", "category": "自动监管", "content": "<@{target_id}> ⛔ 本群禁止发链接", "buttons": null, "at_user": false},
-    "block_forward_notice": {"label": "转发拦截通知", "category": "自动监管", "content": "<@{target_id}> ⛔ 本群禁止发合并转发", "buttons": null, "at_user": false},
-    "block_card_notice": {"label": "卡片拦截通知", "category": "自动监管", "content": "<@{target_id}> ⛔ 本群禁止发卡片", "buttons": null, "at_user": false},
-    "forbidden_notice": {"label": "违禁词拦截通知", "category": "自动监管", "content": "<@{target_id}> ⛔ 消息包含违禁词，已撤回", "buttons": null, "at_user": false}
+    "spam_notice_timed": {"label": "刷屏处罚通知", "category": "自动监管", "content": "<@{target_id}> ⚠️ 检测到刷屏行为，{action_text}", "buttons": null, "at_user": false},
+    "block_link_notice": {"label": "链接拦截通知", "category": "自动监管", "content": "<@{target_id}> ⛔ 本群禁止发链接，{action_text}", "buttons": null, "at_user": false},
+    "block_forward_notice": {"label": "转发拦截通知", "category": "自动监管", "content": "<@{target_id}> ⛔ 本群禁止发合并转发，{action_text}", "buttons": null, "at_user": false},
+    "block_card_notice": {"label": "卡片拦截通知", "category": "自动监管", "content": "<@{target_id}> ⛔ 本群禁止发卡片，{action_text}", "buttons": null, "at_user": false},
+    "forbidden_notice": {"label": "违禁词拦截通知", "category": "自动监管", "content": "<@{target_id}> ⛔ 消息包含违禁词，{action_text}", "buttons": null, "at_user": false}
   }
 }

@@ -12,9 +12,12 @@ DB_PATH = os.path.join(DATA_DIR, 'group_manager.db')
 LEGACY_JSON = os.path.join(DATA_DIR, 'group_manager.json')
 
 FEATURE_KEYS = ('forbidden_words', 'join_verify', 'block_links', 'block_cards', 'block_forward')
+POLICY_KEYS = ('forbidden_words', 'block_links', 'block_cards', 'block_forward')
+ACTION_KEYS = ('recall', 'mute', 'recall_mute')
 MESSAGE_LOG_TTL = 7200
 RECALL_WINDOW = 1800
-SPAM_WINDOW = 60
+SPAM_DEFAULT_WINDOW = 60
+SPAM_LOG_TTL = 3600
 
 _initialized = False
 _init_lock = threading.Lock()
@@ -46,7 +49,8 @@ def init_tables(connection):
             group_id TEXT PRIMARY KEY,
             enabled INTEGER DEFAULT 0,
             notify INTEGER DEFAULT 0,
-            features TEXT DEFAULT '{}'
+            features TEXT DEFAULT '{}',
+            policies TEXT DEFAULT '{}'
         );
         CREATE TABLE IF NOT EXISTS forbidden_words (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +69,10 @@ def init_tables(connection):
             group_id TEXT PRIMARY KEY,
             enabled INTEGER DEFAULT 0,
             limit_count INTEGER DEFAULT 10,
-            punish_minutes INTEGER DEFAULT 0
+            punish_minutes INTEGER DEFAULT 0,
+            window_seconds INTEGER DEFAULT 60,
+            action TEXT DEFAULT 'recall',
+            mute_minutes INTEGER DEFAULT 10
         );
         CREATE TABLE IF NOT EXISTS spam_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,7 +124,31 @@ def init_tables(connection):
             ON audit_log(group_id, action, phase, success);
         CREATE INDEX IF NOT EXISTS idx_audit_trace ON audit_log(trace_id, id);
     """)
+    _ensure_column(connection, 'group_config', 'policies', "TEXT DEFAULT '{}'")
+    action_added = _ensure_column(
+        connection, 'spam_config', 'action', "TEXT DEFAULT 'recall'",
+    )
+    _ensure_column(connection, 'spam_config', 'window_seconds', 'INTEGER DEFAULT 60')
+    _ensure_column(connection, 'spam_config', 'mute_minutes', 'INTEGER DEFAULT 10')
+    if action_added:
+        connection.execute(
+            "UPDATE spam_config SET action = CASE "
+            "WHEN punish_minutes = 0 THEN 'recall' ELSE 'recall_mute' END, "
+            "mute_minutes = CASE WHEN punish_minutes < 0 THEN 43200 "
+            "WHEN punish_minutes = 0 THEN 10 "
+            "WHEN punish_minutes > 43200 THEN 43200 ELSE punish_minutes END"
+        )
     connection.commit()
+
+
+def _ensure_column(connection, table, column, definition):
+    columns = {
+        row['name'] for row in connection.execute(f'PRAGMA table_info({table})')
+    }
+    if column in columns:
+        return False
+    connection.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+    return True
 
 
 def migrate_legacy_json(connection):
@@ -132,14 +163,20 @@ def migrate_legacy_json(connection):
                 key: bool((config.get('features') or {}).get(key, False))
                 for key in FEATURE_KEYS
             }
+            policies = {
+                key: {'action': 'recall', 'mute_minutes': 10}
+                for key in POLICY_KEYS
+            }
             connection.execute(
                 'INSERT OR IGNORE INTO group_config '
-                '(group_id, enabled, notify, features) VALUES (?, ?, ?, ?)',
+                '(group_id, enabled, notify, features, policies) '
+                'VALUES (?, ?, ?, ?, ?)',
                 (
                     group_id,
                     int(bool(config.get('enabled'))),
                     int(bool(config.get('notify'))),
                     json.dumps(features),
+                    json.dumps(policies),
                 ),
             )
             for word in config.get('forbidden_words') or []:

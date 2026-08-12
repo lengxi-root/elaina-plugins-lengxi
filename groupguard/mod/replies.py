@@ -83,12 +83,12 @@ def format_remaining(expire):
     return f'{remain:.0f}秒'
 
 
-def format_spam_punishment(minutes):
-    if minutes == 0:
-        return '不处罚 (只撤回刷屏消息)'
-    if minutes < 0:
-        return '永久发言撤回'
-    return f'发言撤回 {minutes} 分钟'
+def format_spam_punishment(action, minutes=10):
+    if action == 'mute':
+        return f'禁言 {minutes} 分钟'
+    if action == 'recall_mute':
+        return f'撤回并禁言 {minutes} 分钟'
+    return '仅撤回消息'
 
 
 def api_error(data):
@@ -168,6 +168,7 @@ def _base_variables(data):
         'count': 0,
         'failed': 0,
         'minutes': 0,
+        'seconds': 0,
         'limit': 0,
         'target_id': '',
         'word': '',
@@ -175,6 +176,7 @@ def _base_variables(data):
         'url': '',
         'names': '',
         'punish': '',
+        'action_text': '',
         'remaining': '',
         'error': '未知错误',
     }

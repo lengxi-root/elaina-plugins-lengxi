@@ -4,6 +4,12 @@ const THEME_MAP = {'--bg':'--host-bg','--bg2':'--host-bg2','--bg3':'--host-bg3',
 const PAGE_TITLES = {overview:'概览',config:'功能设置',forbidden:'违禁词',targets:'发言撤回',templates:'消息模板',audit:'审计日志'};
 const ACTION_LABELS = {mute:'禁言',unmute:'解禁',recall:'撤回消息',speak_recall:'发言撤回',cancel_recall:'取消撤回',approve_join:'通过入群',decline_join:'拒绝入群',blacklist_join:'拒绝并拉黑',verify_pass:'通过验证',verify_failure_mute:'验证失败禁言',spam_punish:'刷屏处罚',config_change:'配置变更',forbidden_add:'添加违禁词',forbidden_delete:'删除违禁词',forbidden_clear:'清空违禁词',cache_clear:'清除缓存'};
 const SOURCE_LABELS = {command:'群命令',automatic:'自动监管',verification:'入群验证',web:'Web 面板'};
+const POLICY_FIELDS = [
+  ['block_links','cfg-block-links'],
+  ['block_cards','cfg-block-cards'],
+  ['block_forward','cfg-block-forward'],
+  ['forbidden_words','cfg-forbidden'],
+];
 let groups = [];
 let dashboard = null;
 let templates = {};
@@ -122,10 +128,13 @@ function renderOverview(){
   const rows=dashboard.audit.slice(0,5);$('recent-list').innerHTML=rows.length?rows.map(item=>`<div class="activity-row"><time>${esc(formatTime(item.time))}</time><b>${esc(ACTION_LABELS[item.action]||item.action)}</b><span class="result ${item.success?'ok':'fail'}">${item.success?'成功':'失败'}</span></div>`).join(''):'<div class="empty">暂无管理记录</div>';
 }
 function renderConfig(){
-  const config=dashboard.config,features=config.features||{},spam=dashboard.spam;
-  $('cfg-enabled').checked=!!config.enabled;$('cfg-notify').checked=!!config.notify;$('cfg-join-verify').checked=!!features.join_verify;$('cfg-block-links').checked=!!features.block_links;$('cfg-block-cards').checked=!!features.block_cards;$('cfg-block-forward').checked=!!features.block_forward;$('cfg-forbidden').checked=!!features.forbidden_words;$('cfg-spam-enabled').checked=!!spam.enabled;$('cfg-spam-limit').value=spam.limit_count;
-  const punish=String(spam.punish_minutes);const select=$('cfg-spam-punish');if(![...select.options].some(option=>option.value===punish)){const option=document.createElement('option');option.value=punish;option.textContent=punish<0?'永久发言撤回':`发言撤回 ${punish} 分钟`;select.append(option)}select.value=punish;
+  const config=dashboard.config,features=config.features||{},policies=config.policies||{},spam=dashboard.spam;
+  $('cfg-enabled').checked=!!config.enabled;$('cfg-notify').checked=!!config.notify;$('cfg-join-verify').checked=!!features.join_verify;
+  POLICY_FIELDS.forEach(([key,id])=>{const policy=policies[key]||{action:'recall',mute_minutes:10};$(id).checked=!!features[key];$(id+'-action').value=policy.action;$(id+'-mute').value=policy.mute_minutes});
+  $('cfg-spam-enabled').checked=!!spam.enabled;$('cfg-spam-window').value=spam.window_seconds;$('cfg-spam-limit').value=spam.limit_count;$('cfg-spam-action').value=spam.action;$('cfg-spam-mute').value=spam.mute_minutes;
+  syncPolicyFields();
 }
+function syncPolicyFields(){document.querySelectorAll('.policy-action').forEach(select=>{const row=select.closest('.rule-controls');const input=row?.querySelector('.mute-duration input');if(input){const enabled=select.value!=='recall';input.disabled=!enabled;input.closest('.mute-duration').classList.toggle('disabled',!enabled)}})}
 function renderForbidden(){
   const words=dashboard.forbidden_words||[];$('forbidden-count').textContent=`共 ${words.length} 个`;$('forbidden-list').innerHTML=words.length?words.map(word=>`<span class="tag"><span>${esc(word)}</span><button type="button" data-delete-word="${esc(word)}" title="删除违禁词" aria-label="删除违禁词">×</button></span>`).join(''):'<div class="empty">暂无违禁词</div>';
 }
@@ -139,7 +148,8 @@ function renderAudit(){
 }
 async function saveConfig(){
   const button=$('save-config');button.disabled=true;
-  const payload={group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,features:{join_verify:$('cfg-join-verify').checked,block_links:$('cfg-block-links').checked,block_cards:$('cfg-block-cards').checked,block_forward:$('cfg-block-forward').checked,forbidden_words:$('cfg-forbidden').checked},spam_enabled:$('cfg-spam-enabled').checked,limit_count:Number($('cfg-spam-limit').value),punish_minutes:Number($('cfg-spam-punish').value)};
+  const features={join_verify:$('cfg-join-verify').checked};const policies={};POLICY_FIELDS.forEach(([key,id])=>{features[key]=$(id).checked;policies[key]={action:$(id+'-action').value,mute_minutes:Number($(id+'-mute').value)}});
+  const payload={group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,features,policies,spam:{enabled:$('cfg-spam-enabled').checked,window_seconds:Number($('cfg-spam-window').value),limit_count:Number($('cfg-spam-limit').value),action:$('cfg-spam-action').value,mute_minutes:Number($('cfg-spam-mute').value)}};
   try{dashboard=await api(`/config?days=${encodeURIComponent($('days-select').value)}`,{method:'PUT',body:JSON.stringify(payload)});renderAll();toast('群管配置已保存')}catch(error){toast(error.message,true)}finally{button.disabled=false}
 }
 async function addForbidden(event){event.preventDefault();const word=$('forbidden-input').value.trim();if(!word)return;try{const data=await api('/forbidden',{method:'POST',body:JSON.stringify({group_id:currentGroup(),word})});dashboard.forbidden_words=data.forbidden_words;renderForbidden();renderOverview();$('forbidden-input').value='';toast('违禁词已添加');await loadDashboard()}catch(error){toast(error.message,true)}}
@@ -150,6 +160,7 @@ document.querySelectorAll('.nav button').forEach(button=>button.addEventListener
 document.querySelectorAll('[data-open-page]').forEach(button=>button.addEventListener('click',()=>openPage(button.dataset.openPage)));
 $('sidebar-toggle').addEventListener('click',()=>setSidebar(!$('app').classList.contains('sidebar-collapsed')));$('sidebar-scrim').addEventListener('click',()=>setSidebar(true));
 $('reload').addEventListener('click',loadGroups);$('group-select').addEventListener('change',()=>{localStorage.setItem('groupguard-group',currentGroup());loadDashboard()});$('days-select').addEventListener('change',loadDashboard);$('save-config').addEventListener('click',saveConfig);$('forbidden-form').addEventListener('submit',addForbidden);
+document.querySelectorAll('.policy-action').forEach(select=>select.addEventListener('change',syncPolicyFields));
 $('template-search').addEventListener('input',renderTemplates);$('template-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-key]');if(button){selectedTemplateKey=button.dataset.templateKey;renderTemplates()}});$('save-template').addEventListener('click',saveTemplate);$('apply-template-json').addEventListener('click',applyRawTemplate);$('sync-template-json').addEventListener('click',syncRawTemplate);
 $('forbidden-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-word]');if(button)deleteForbidden(button.dataset.deleteWord)});$('target-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-target]');if(button)deleteTarget(button.dataset.deleteTarget)});['filter-source','filter-status','filter-action'].forEach(id=>$(id).addEventListener('change',renderAudit));
 sidebarMedia.addEventListener('change',()=>setSidebar(true));setSidebar(true);Promise.all([loadTemplates(),loadGroups()]).catch(error=>{showReady(false);toast(error.message,true)});

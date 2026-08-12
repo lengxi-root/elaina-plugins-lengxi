@@ -3,7 +3,7 @@
 import time
 from functools import lru_cache
 
-from .core import SPAM_WINDOW, get_db
+from .core import ACTION_KEYS, SPAM_DEFAULT_WINDOW, SPAM_LOG_TTL, get_db
 
 
 _last_cleanup = 0
@@ -13,34 +13,53 @@ _last_cleanup = 0
 def _get_spam_config(group_id):
     connection = get_db()
     row = connection.execute(
-        'SELECT enabled, limit_count, punish_minutes FROM spam_config WHERE group_id = ?',
+        'SELECT enabled, window_seconds, limit_count, action, mute_minutes '
+        'FROM spam_config WHERE group_id = ?',
         (group_id,),
     ).fetchone()
     connection.close()
     if not row:
-        return 0, 10, 0
-    return int(row['enabled']), int(row['limit_count']), int(row['punish_minutes'])
+        return 0, SPAM_DEFAULT_WINDOW, 10, 'recall', 10
+    action = row['action'] if row['action'] in ACTION_KEYS else 'recall'
+    return (
+        int(row['enabled']),
+        int(row['window_seconds']),
+        int(row['limit_count']),
+        action,
+        int(row['mute_minutes']),
+    )
 
 
 def get_spam_config(group_id):
-    enabled, limit_count, punish_minutes = _get_spam_config(group_id)
+    enabled, window_seconds, limit_count, action, mute_minutes = _get_spam_config(group_id)
     return {
         'enabled': enabled,
+        'window_seconds': window_seconds,
         'limit_count': limit_count,
-        'punish_minutes': punish_minutes,
+        'action': action,
+        'mute_minutes': mute_minutes,
     }
 
 
-def save_spam_config(group_id, enabled, limit_count, punish_minutes):
+def save_spam_config(
+    group_id, enabled, window_seconds, limit_count, action, mute_minutes,
+):
     previous = _get_spam_config(group_id)
-    updated = (int(enabled), int(limit_count), int(punish_minutes))
+    updated = (
+        int(enabled), int(window_seconds), int(limit_count),
+        str(action), int(mute_minutes),
+    )
+    if updated[3] not in ACTION_KEYS:
+        raise ValueError(f'Unsupported spam action: {updated[3]}')
+    legacy_punish = 0 if updated[3] == 'recall' else updated[4]
     connection = get_db()
     connection.execute(
         'INSERT OR REPLACE INTO spam_config '
-        '(group_id, enabled, limit_count, punish_minutes) VALUES (?, ?, ?, ?)',
-        (group_id, *updated),
+        '(group_id, enabled, window_seconds, limit_count, action, mute_minutes, '
+        'punish_minutes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (group_id, *updated, legacy_punish),
     )
-    if previous[:2] != updated[:2]:
+    if previous[:3] != updated[:3]:
         connection.execute('DELETE FROM spam_log WHERE group_id = ?', (group_id,))
     connection.commit()
     connection.close()
@@ -59,13 +78,13 @@ def record_and_check_spam(group_id, user_id):
         'INSERT INTO spam_log (group_id, user_id, time) VALUES (?, ?, ?)',
         (group_id, user_id, now),
     )
-    if now - _last_cleanup >= SPAM_WINDOW:
-        connection.execute('DELETE FROM spam_log WHERE time < ?', (now - SPAM_WINDOW,))
+    if now - _last_cleanup >= SPAM_DEFAULT_WINDOW:
+        connection.execute('DELETE FROM spam_log WHERE time < ?', (now - SPAM_LOG_TTL,))
         _last_cleanup = now
     row = connection.execute(
         'SELECT COUNT(*) AS count FROM spam_log '
         'WHERE group_id = ? AND user_id = ? AND time > ?',
-        (group_id, user_id, now - SPAM_WINDOW),
+        (group_id, user_id, now - config['window_seconds']),
     ).fetchone()
     connection.commit()
     connection.close()
