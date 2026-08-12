@@ -70,7 +70,9 @@ def _font(size, bold=False):
 
 # ==================== 渲染 ====================
 
-_S = 2  # 2x 超采样
+_S = 1
+_MAX_RENDERED_WORDS = 300
+_render_lock = asyncio.Lock()
 _TEXT = (45, 52, 70)
 _MUTED = (135, 144, 165)
 _ACCENT = (205, 70, 70)
@@ -128,7 +130,7 @@ def _render_sync(words: list) -> bytes:
     d.text(((W - fw) / 2, H - 30 * S), ft, font=f_sub, fill=_MUTED)
 
     buf = io.BytesIO()
-    img.save(buf, format='PNG', optimize=True)
+    img.save(buf, format='PNG', compress_level=6)
     img.close()
     return buf.getvalue()
 
@@ -138,7 +140,8 @@ async def render_forbidden_list(words: list):
     if not words or not PIL_AVAILABLE:
         return None
     try:
-        png = await asyncio.to_thread(_render_sync, words)
+        async with _render_lock:
+            png = await asyncio.to_thread(_render_sync, words[:_MAX_RENDERED_WORDS])
     except Exception:
         return None
     return await _upload_meme(png, 'fw_list')

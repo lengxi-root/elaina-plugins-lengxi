@@ -14,8 +14,9 @@ async def cmd_fw_add(event, match):
     if not await ensure_admin_env(event):
         return
     word = match.group(1).strip()
-    if not word or len(word) < 2:
-        finish_action(event, 'forbidden_add', False, details={'reason': 'too_short'})
+    if not 2 <= len(word) <= 64:
+        finish_action(event, 'forbidden_add', False,
+                      details={'reason': 'invalid_length'})
         return await reply_at(event, 'forbidden_too_short')
     group_id = event.group_id
     if word in db.get_forbidden(group_id):
@@ -73,7 +74,7 @@ async def cmd_fw_list(event, match):
     if result:
         finish_action(event, 'forbidden_list', True, details={'count': len(words), 'format': 'image'})
         return await reply_at(event, 'forbidden_list_image', px=result['px'], url=result['file_url'])
-    masked_words = [fw_render.mask_word(word) for word in words]
+    masked_words = [fw_render.mask_word(word) for word in words[:300]]
     finish_action(event, 'forbidden_list', True, details={'count': len(words), 'format': 'text'})
     await reply_at(event, 'forbidden_list_text', words=masked_words)
 

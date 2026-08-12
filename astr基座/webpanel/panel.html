@@ -420,7 +420,9 @@
 const qs = new URLSearchParams(location.search);
 const TOKEN = qs.get('token') || '';
 const _bm = location.pathname.match(/^(.*)\/api\/web-pages\//);
-const API = (_bm ? _bm[1] : '') + '/api/ext/astrbot_base';
+const BASE = _bm ? _bm[1] : '';
+const API = BASE + '/api/ext/astrbot_base';
+const UPDATE_API = BASE + '/api/update';
 
 let PAGE = 'extension';
 let TAB = 'installed';
@@ -441,8 +443,23 @@ async function api(path, method, body){
   const m = method||'GET';
   const url = API+path+(m==='GET'?((path.includes('?')?'&':'?')+'token='+encodeURIComponent(TOKEN)):'');
   try{
-    const r = await fetch(url, {method:m, headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}, body: body?JSON.stringify(body):undefined});
+    const r = await fetch(url, {method:m, credentials:'same-origin', headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}, body: body?JSON.stringify(body):undefined});
     return await r.json();
+  }catch(e){ return {success:false, message:'网络错误: '+e}; }
+}
+
+async function updateApi(path, method, body){
+  const m = method||'GET';
+  try{
+    const r = await fetch(UPDATE_API+path, {
+      method:m,
+      credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:body?JSON.stringify(body):undefined
+    });
+    const data = await r.json();
+    if(!r.ok && data.success!==false) data.success=false;
+    return data;
   }catch(e){ return {success:false, message:'网络错误: '+e}; }
 }
 
@@ -525,7 +542,6 @@ async function loadList(){
   const d = await api('/list');
   if(!d.success){ toast(d.message||'加载失败','error'); return; }
   DATA.installed = d.installed||[];
-  DATA.mirror = d.mirror||'';
   renderInstalled();
 }
 
@@ -851,25 +867,73 @@ async function saveCfg(){
 }
 
 /* ===== 镜像对话框 ===== */
-function openMirror(){document.getElementById('mirror-input').value=DATA.mirror||'';document.getElementById('mirror-mask').classList.add('show');}
+async function openMirror(){
+  document.getElementById('mirror-mask').classList.add('show');
+  document.getElementById('mirror-list').innerHTML='<div class="muted">正在读取框架镜像配置…</div>';
+  const d=await updateApi('/mirrors');
+  if(!d.success){
+    document.getElementById('mirror-list').innerHTML='';
+    toast(d.message||'读取镜像配置失败','error');
+    return;
+  }
+  const info=d.data||{};
+  DATA.mirror=info.custom_mirror||'';
+  document.getElementById('mirror-input').value=DATA.mirror;
+  renderMirrorResults(info.fast_mirrors||[]);
+}
 function closeMirror(){document.getElementById('mirror-mask').classList.remove('show');}
 async function saveMirror(){
   const m=document.getElementById('mirror-input').value.trim();
-  const d=await api('/mirror','POST',{mirror:m});
+  const d=await updateApi('/mirror','POST',{mirror:m});
   toast(d.message||'已保存', d.success?'success':'error');
   if(d.success){ DATA.mirror=m; closeMirror(); }
 }
-async function testMirrors(){
-  document.getElementById('mirror-list').innerHTML='<div class="muted">测速中 (可能需要十几秒)…</div>';
-  const d=await api('/test-mirrors','POST',{});
-  const ms=(d&&d.mirrors)||[];
-  if(!ms.length){ document.getElementById('mirror-list').innerHTML='<div class="muted">无可用镜像</div>'; return; }
-  document.getElementById('mirror-list').innerHTML=ms.slice(0,12).map(m=>
+function renderMirrorResults(ms){
+  const available=(ms||[]).filter(m=>m&&m.success!==false).sort((a,b)=>(a.latency??999)-(b.latency??999));
+  if(!available.length){
+    document.getElementById('mirror-list').innerHTML='<div class="muted">暂无可用镜像测速结果</div>';
+    return;
+  }
+  document.getElementById('mirror-list').innerHTML=available.slice(0,12).map(m=>
     `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-light);align-items:center">
       <code>${esc(m.mirror||'(直连)')}</code>
       <span style="display:flex;gap:8px;align-items:center"><span class="muted">${m.latency!=null?m.latency+'s':''}</span>
-      <button class="v-btn sm tonal" onclick="pickMirror('${esc(m.mirror||'')}')">选用</button></span>
+      <button class="v-btn sm tonal" data-mirror="${esc(m.mirror||'')}" onclick="pickMirror(this.dataset.mirror)">选用</button></span>
     </div>`).join('');
+}
+async function testMirrors(){
+  document.getElementById('mirror-list').innerHTML='<div class="muted">测速中 (可能需要十几秒)…</div>';
+  const available=[];
+  try{
+    const r=await fetch(UPDATE_API+'/test-mirrors', {
+      method:'GET',
+      credentials:'same-origin',
+      headers:{'Accept':'text/event-stream'}
+    });
+    if(!r.ok||!r.body) throw new Error('HTTP '+r.status);
+    const reader=r.body.getReader();
+    const decoder=new TextDecoder();
+    let buffer='';
+    while(true){
+      const chunk=await reader.read();
+      buffer+=decoder.decode(chunk.value||new Uint8Array(),{stream:!chunk.done});
+      const events=buffer.split(/\r?\n\r?\n/);
+      buffer=events.pop()||'';
+      events.forEach(event=>{
+        const line=event.split(/\r?\n/).find(x=>x.startsWith('data:'));
+        if(!line) return;
+        const result=JSON.parse(line.slice(5).trim());
+        if(result.done) return;
+        if(result.success) available.push(result);
+        renderMirrorResults(available);
+      });
+      if(chunk.done) break;
+    }
+    if(!available.length) renderMirrorResults([]);
+  }catch(e){
+    document.getElementById('mirror-list').innerHTML='<div class="muted">镜像测速失败</div>';
+    toast('镜像测速失败: '+e,'error');
+  }
 }
 function pickMirror(m){document.getElementById('mirror-input').value=m;toast('已填入, 点保存生效');}
 

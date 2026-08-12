@@ -477,8 +477,9 @@ def _resolve_role(event) -> str:
 
 
 _FULL_ACCESS_TIP = (
-    "⚠️ 订阅推送需要群开启全量消息。\n"
-    "请主人发送 <qqbot-cmd-input text='全量申请 ' show='全量申请 群号' /> 获取授权链接。"
+    "⚠️ 订阅推送需要群开启主动消息权限。\n"
+    "请主人发送 <qqbot-cmd-input text='全量申请 ' show='全量申请 群号' /> 获取授权链接，"
+    "并勾选主动在群聊内发言。"
 )
 
 
@@ -559,7 +560,7 @@ def make_wrapper(spec: PluginSpec, cmd: CommandSpec):
             if not ok:
                 return
             if cmd.is_subscribe and getattr(event, "group_id", "") and not getattr(event, "is_direct", False):
-                if not state.is_full_access(str(event.group_id)):
+                if not state.can_proactively_message(str(event.group_id)):
                     await sending._send_text(event.sender, event=event, content=_FULL_ACCESS_TIP)
                     return
             try:

@@ -117,33 +117,58 @@ def is_bot_owner(event) -> bool:
         return False
 
 
-# ---- 全量群缓存 (主动推送需群已开全量消息) ----
+# ---- 主动消息权限 ----
 
-_full_access: set | None = None
+_proactive_groups: set | None = None
 
 
-def full_access_set() -> set:
-    global _full_access
-    if _full_access is not None:
-        return _full_access
-    _full_access = set()
+def proactive_group_set() -> set:
+    """读取已允许主动消息且仍在群内的群。"""
+    global _proactive_groups
+    if _proactive_groups is not None:
+        return _proactive_groups
+    _proactive_groups = set()
     try:
         pool = bots()
         bot = pool.get(default_appid()) or next(iter(pool.values()), None)
         if bot is not None:
             rows = bot.log_service.query_data(
-                "SELECT group_id FROM full_access_groups ORDER BY first_seen DESC"
+                "SELECT group_id FROM groups_users "
+                "WHERE allow_proactive_msg = 1 AND in_group = 1 "
+                "ORDER BY rowid DESC"
             )
-            _full_access = {r["group_id"] for r in rows if r.get("group_id")} if rows else set()
+            _proactive_groups = {r["group_id"] for r in rows if r.get("group_id")} if rows else set()
     except Exception:
         pass
-    return _full_access
+    return _proactive_groups
 
 
-def is_full_access(group_id: str) -> bool:
-    return group_id in full_access_set()
+def can_proactively_message(group_id: str) -> bool:
+    """实时检查指定群是否允许主动消息。"""
+    gid = str(group_id or "").strip()
+    if not gid:
+        return False
+    try:
+        pool = bots()
+        bot = pool.get(default_appid()) or next(iter(pool.values()), None)
+        if bot is None:
+            return False
+        rows = bot.log_service.query_data(
+            "SELECT allow_proactive_msg FROM groups_users "
+            "WHERE group_id = ? AND in_group = 1 LIMIT 1",
+            (gid,),
+        )
+        return bool(rows and rows[0].get("allow_proactive_msg"))
+    except Exception:
+        return False
 
 
-def invalidate_full_access():
-    global _full_access
-    _full_access = None
+def invalidate_proactive_groups():
+    global _proactive_groups
+    _proactive_groups = None
+
+
+# 兼容仍引用旧函数名的 AstrBot 插件。
+full_access_set = proactive_group_set
+is_full_access = can_proactively_message
+invalidate_full_access = invalidate_proactive_groups

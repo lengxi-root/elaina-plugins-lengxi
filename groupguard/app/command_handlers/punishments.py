@@ -21,8 +21,7 @@ async def cmd_speak_recall(event, match):
         finish_action(event, 'speak_recall', False, details={'reason': 'target_required'})
         return await reply_at(event, 'speak_recall_target_required')
     expire = int(time.time()) + parse_duration(event.content or '')
-    for member_id, _member_role in members:
-        db.add_target(event.group_id, member_id, expire)
+    db.add_targets(event.group_id, (member_id for member_id, _role in members), expire)
     trace_phase(event, 'speak_recall', 'storage', success=True,
                 affected_count=len(members), target_id=members[0][0],
                 details={'expire': expire})
@@ -60,12 +59,9 @@ async def cmd_cancel_recall(event, match):
         finish_action(event, 'cancel_recall', False, details={'reason': 'target_required'})
         return await reply_at(event, 'cancel_target_required')
     group_id = event.group_id
-    targets = db.get_targets(group_id)
-    removed = 0
-    for member_id, _member_role in members:
-        if member_id in targets:
-            db.delete_target(group_id, member_id)
-            removed += 1
+    removed = db.delete_targets(
+        group_id, (member_id for member_id, _role in members)
+    )
     trace_phase(event, 'cancel_recall', 'storage', success=removed > 0,
                 affected_count=removed)
     if removed:
@@ -83,15 +79,15 @@ async def cmd_punish_list(event, match):
         return
     group_id = event.group_id
     db.purge_expired_targets()
-    targets = db.get_targets(group_id)
+    targets = db.get_target_entries(group_id)
     if not targets:
         finish_action(event, 'punish_list', True, details={'count': 0})
         return await reply_at(event, 'punish_list_empty')
     entries = []
-    for index, (member_id, expire) in enumerate(targets.items(), 1):
-        username = db.get_username_from_log(group_id, member_id)
-        display = username or (member_id[:6] + '...')
+    for index, item in enumerate(targets, 1):
+        member_id = item['user_id']
+        display = item['username'] or (member_id[:6] + '...')
         entries.append({'index': index, 'display': display,
-                        'remaining': format_remaining(expire)})
+                        'remaining': format_remaining(item['expire'])})
     finish_action(event, 'punish_list', True, details={'count': len(targets)})
     await reply_at(event, 'punish_list', entries=entries)

@@ -4,8 +4,11 @@ import time
 
 from .core import MESSAGE_LOG_TTL, RECALL_WINDOW, get_db
 
+_last_cleanup = 0
+
 
 def store_message(group_id, user_id, message_id, role, username=''):
+    global _last_cleanup
     if not message_id:
         return
     connection = get_db()
@@ -15,7 +18,9 @@ def store_message(group_id, user_id, message_id, role, username=''):
         '(group_id, user_id, message_id, user_role, username, time) VALUES (?, ?, ?, ?, ?, ?)',
         (group_id, user_id, message_id, role, username or '', now),
     )
-    connection.execute('DELETE FROM message_log WHERE time < ?', (now - MESSAGE_LOG_TTL,))
+    if now - _last_cleanup >= 600:
+        connection.execute('DELETE FROM message_log WHERE time < ?', (now - MESSAGE_LOG_TTL,))
+        _last_cleanup = now
     connection.commit()
     connection.close()
 

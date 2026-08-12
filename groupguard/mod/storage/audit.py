@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from .core import get_db
 
 AUDIT_LOG_TTL = 180 * 86400
+_MAX_DETAILS_JSON = 16384
 _trace_context = {}
 _last_cleanup = 0
 
@@ -18,11 +19,13 @@ _MANAGEMENT_ACTIONS = {
     'verify_failure_mute', 'spam_punish', 'config_change',
     'forbidden_add', 'forbidden_delete', 'forbidden_clear', 'cache_clear',
 }
+_MANAGEMENT_ACTIONS_SORTED = tuple(sorted(_MANAGEMENT_ACTIONS))
+_MANAGEMENT_PLACEHOLDERS = ','.join('?' for _ in _MANAGEMENT_ACTIONS_SORTED)
 
 
-def _event_reference(event):
+def _event_reference(event, event_key):
     try:
-        return weakref.ref(event)
+        return weakref.ref(event, lambda _reference: _trace_context.pop(event_key, None))
     except TypeError:
         return event
 
@@ -35,6 +38,22 @@ def _same_event(context, event):
 def _event_value(event, name, default=''):
     value = getattr(event, name, default)
     return str(value or default)
+
+
+def _encode_details(details):
+    try:
+        encoded = json.dumps(
+            details, ensure_ascii=False, separators=(',', ':'), allow_nan=False
+        )
+    except (TypeError, ValueError, RecursionError):
+        return '{"serialization_error":true}'
+    if len(encoded) <= _MAX_DETAILS_JSON:
+        return encoded
+    return json.dumps({
+        'truncated': True,
+        'original_chars': len(encoded),
+        'preview': encoded[:4000],
+    }, ensure_ascii=False, separators=(',', ':'))
 
 
 def ensure_trace(event, source='command'):
@@ -57,7 +76,7 @@ def ensure_trace(event, source='command'):
         pass
     _trace_context[event_key] = {
         'trace_id': trace_id, 'created': time.monotonic(), 'source': source,
-        'action': '', 'event': _event_reference(event),
+        'action': '', 'event': _event_reference(event, event_key),
     }
     if len(_trace_context) > 10000:
         cutoff = time.monotonic() - 3600
@@ -116,7 +135,7 @@ def record_audit(
         'duration_ms': duration_ms,
         'details': details if isinstance(details, dict) else {},
     }
-    details_json = json.dumps(payload['details'], ensure_ascii=False, separators=(',', ':'))
+    details_json = _encode_details(payload['details'])
     connection = get_db()
     connection.execute(
         'INSERT INTO audit_log '
@@ -148,7 +167,8 @@ def record_received(event, action, *, source='command', details=None):
     context = _trace_context.setdefault(
         id(event),
         {'trace_id': ensure_trace(event, source), 'created': time.monotonic(),
-         'source': source, 'action': action, 'event': _event_reference(event)},
+         'source': source, 'action': action,
+         'event': _event_reference(event, id(event))},
     )
     context.update({'source': source, 'action': action})
     return record_audit(event, action, 'received', source=source, details=details)
@@ -202,23 +222,26 @@ def get_management_stats(group_id, days=30):
         "SELECT action, COUNT(DISTINCT trace_id) AS operations, "
         "SUM(affected_count) AS affected "
         "FROM audit_log WHERE group_id = ? AND time >= ? AND phase = 'result' "
-        "AND success = 1 GROUP BY action",
-        (group_id, since),
+        "AND success = 1 "
+        f"AND action IN ({_MANAGEMENT_PLACEHOLDERS}) GROUP BY action",
+        (group_id, since, *_MANAGEMENT_ACTIONS_SORTED),
     ).fetchall()
     source_rows = connection.execute(
-        "SELECT source, COUNT(DISTINCT trace_id || ':' || action) AS operations "
-        "FROM audit_log WHERE group_id = ? "
-        "AND time >= ? AND phase = 'result' AND success = 1 "
-        f"AND action IN ({','.join('?' for _ in _MANAGEMENT_ACTIONS)}) GROUP BY source",
-        (group_id, since, *sorted(_MANAGEMENT_ACTIONS)),
+        "WITH scoped AS ("
+        "SELECT source, trace_id, success FROM audit_log "
+        "WHERE group_id = ? AND time >= ? AND phase = 'result' "
+        f"AND action IN ({_MANAGEMENT_PLACEHOLDERS})"
+        "), totals AS ("
+        "SELECT COUNT(DISTINCT CASE WHEN success = 1 THEN trace_id END) successful, "
+        "COUNT(DISTINCT CASE WHEN success = 0 THEN trace_id END) failed FROM scoped"
+        "), sources AS ("
+        "SELECT source, COUNT(DISTINCT CASE WHEN success = 1 THEN trace_id END) "
+        "successful FROM scoped GROUP BY source"
+        ") SELECT sources.source, COALESCE(sources.successful, 0) successful, "
+        "totals.successful total_successful, totals.failed total_failed "
+        "FROM totals LEFT JOIN sources ON 1",
+        (group_id, since, *_MANAGEMENT_ACTIONS_SORTED),
     ).fetchall()
-    failed_row = connection.execute(
-        "SELECT COUNT(DISTINCT trace_id || ':' || action) AS operations "
-        "FROM audit_log WHERE group_id = ? AND time >= ? "
-        "AND phase = 'result' AND success = 0 "
-        f"AND action IN ({','.join('?' for _ in _MANAGEMENT_ACTIONS)})",
-        (group_id, since, *sorted(_MANAGEMENT_ACTIONS)),
-    ).fetchone()
     connection.close()
     by_action = {
         row['action']: {
@@ -227,18 +250,19 @@ def get_management_stats(group_id, days=30):
         }
         for row in rows
     }
-    management_count = sum(
-        item['operations'] for action, item in by_action.items()
-        if action in _MANAGEMENT_ACTIONS
-    )
-    by_source = {row['source']: int(row['operations'] or 0) for row in source_rows}
+    by_source = {
+        row['source']: int(row['successful'] or 0)
+        for row in source_rows if row['source'] is not None
+    }
+    management_count = int(source_rows[0]['total_successful'] or 0)
+    failed_count = int(source_rows[0]['total_failed'] or 0)
     manual_count = by_source.get('command', 0) + by_source.get('web', 0)
     return {
         'days': days,
         'management_count': management_count,
         'manual_count': manual_count,
-        'automatic_count': management_count - manual_count,
-        'failed_count': int(failed_row['operations'] or 0),
+        'automatic_count': max(0, management_count - manual_count),
+        'failed_count': failed_count,
         'mute_count': by_action.get('mute', {}).get('affected', 0)
         + by_action.get('verify_failure_mute', {}).get('affected', 0),
         'unmute_count': by_action.get('unmute', {}).get('affected', 0),
@@ -256,17 +280,15 @@ def get_management_stats(group_id, days=30):
 
 def get_recent_audit(group_id, limit=10):
     limit = max(1, min(50, int(limit)))
-    placeholders = ','.join('?' for _ in _MANAGEMENT_ACTIONS)
-    actions = sorted(_MANAGEMENT_ACTIONS)
     connection = get_db()
     rows = connection.execute(
         "SELECT a.time, a.trace_id, a.operator_id, a.target_id, a.action, "
         "a.success, a.source, latest.affected_count FROM audit_log a JOIN ("
         "SELECT MAX(id) AS id, SUM(affected_count) AS affected_count "
         "FROM audit_log WHERE group_id = ? AND phase = 'result' "
-        f"AND action IN ({placeholders}) GROUP BY trace_id, action"
+        f"AND action IN ({_MANAGEMENT_PLACEHOLDERS}) GROUP BY trace_id, action"
         ") latest ON latest.id = a.id ORDER BY a.id DESC LIMIT ?",
-        (group_id, *actions, limit),
+        (group_id, *_MANAGEMENT_ACTIONS_SORTED, limit),
     ).fetchall()
     connection.close()
     return [dict(row) for row in rows]

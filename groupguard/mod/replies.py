@@ -1,21 +1,15 @@
 """All user-visible GroupGuard replies and reply delivery live here."""
 
 import json
+import string
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from .reply_templates import get_reply_template
+from .reply_templates import _get_cached_template
 from .storage.audit import record_audit
 
 _UNSET = object()
-_DIRECT_SEND_OPTION_KEYS = {
-    'media', 'msg_type', 'auto_delete_time', 'skip_suffix',
-    'message_reference', 'message_reference_id', 'reference_message_id',
-}
-_TUPLE_OPTION_KEYS = _DIRECT_SEND_OPTION_KEYS | {
-    'small_buttons', 'button_font_size', 'button_style', 'send_kwargs',
-}
 
 
 @dataclass(slots=True)
@@ -28,6 +22,7 @@ class ReplyMessage:
     button_font_size: str | None = None
     button_style: dict | None = None
     send_kwargs: dict = field(default_factory=dict)
+    at_user: bool = True
 
     def delivery_kwargs(self):
         kwargs = dict(self.send_kwargs)
@@ -40,80 +35,6 @@ class ReplyMessage:
         if self.button_style:
             kwargs['button_style'] = self.button_style
         return kwargs
-
-
-def reply_message(
-    content,
-    buttons=None,
-    *,
-    prompt_buttons=None,
-    small_buttons=False,
-    button_font_size=None,
-    button_style=None,
-    **send_kwargs,
-):
-    """Build a reply template with buttons and framework delivery options."""
-    return ReplyMessage(
-        content=str(content or ''),
-        buttons=buttons,
-        prompt_buttons=prompt_buttons,
-        button_font_size=button_font_size or ('small' if small_buttons else None),
-        button_style=button_style,
-        send_kwargs=send_kwargs,
-    )
-
-
-def _normalize_reply(value):
-    """Normalize supported template shapes into one sendable reply object."""
-    if isinstance(value, ReplyMessage):
-        return value
-    if isinstance(value, str):
-        return ReplyMessage(value)
-    if isinstance(value, dict):
-        content = value.get('content', value.get('text', value.get('markdown', '')))
-        raw_send_kwargs = value.get('send_kwargs') or {}
-        if not isinstance(raw_send_kwargs, dict):
-            raise TypeError('reply send_kwargs must be a dict')
-        send_kwargs = dict(raw_send_kwargs)
-        send_kwargs.update({
-            key: value[key] for key in _DIRECT_SEND_OPTION_KEYS if key in value
-        })
-        return reply_message(
-            content,
-            value.get('buttons'),
-            prompt_buttons=value.get('prompt_buttons'),
-            small_buttons=bool(value.get('small_buttons')),
-            button_font_size=value.get('button_font_size'),
-            button_style=value.get('button_style'),
-            **send_kwargs,
-        )
-    if isinstance(value, (tuple, list)):
-        if not 1 <= len(value) <= 4:
-            raise TypeError('reply tuple must contain 1 to 4 items')
-        content = value[0]
-        buttons = value[1] if len(value) > 1 else None
-        third = value[2] if len(value) > 2 else None
-        if (len(value) == 3 and isinstance(third, dict)
-                and _TUPLE_OPTION_KEYS.intersection(third)):
-            prompt_buttons, options = None, third
-        else:
-            prompt_buttons = third
-            options = value[3] if len(value) > 3 else {}
-        if not isinstance(options, dict):
-            raise TypeError('reply tuple delivery options must be a dict')
-        options = dict(options)
-        nested_send_kwargs = options.pop('send_kwargs', None)
-        if nested_send_kwargs:
-            if not isinstance(nested_send_kwargs, dict):
-                raise TypeError('reply send_kwargs must be a dict')
-            options = {**nested_send_kwargs, **options}
-        return reply_message(
-            content,
-            buttons,
-            prompt_buttons=prompt_buttons,
-            **options,
-        )
-    raise TypeError(f'unsupported groupguard reply type: {type(value).__name__}')
 
 
 def _apply_delivery_overrides(
@@ -210,14 +131,13 @@ def toggle(label, enabled, command_prefix):
 
 
 def category_markdown(category, group_config):
-    return _normalize_reply(_build(
-        'category_panel',
-        {'category': category, 'group_config': group_config},
-    )).content
+    return _build('category_panel', {
+        'category': category, 'group_config': group_config,
+    }).content
 
 
 def join_review_buttons(requests):
-    return _normalize_reply(_build('join_requests', {'requests': requests})).buttons
+    return _build('join_requests', {'requests': requests}).buttons
 
 
 class _TemplateData(dict):
@@ -225,10 +145,22 @@ class _TemplateData(dict):
         return '{' + key + '}'
 
 
+class _SafeFormatter(string.Formatter):
+    """Allow only simple names; block attribute/index traversal in templates."""
+
+    def get_field(self, field_name, args, kwargs):
+        if not field_name.isascii() or not field_name.isidentifier():
+            raise ValueError('template field must be a simple identifier')
+        return super().get_field(field_name, args, kwargs)
+
+
+_SAFE_FORMATTER = _SafeFormatter()
+
+
 def _render_value(value, variables):
     if isinstance(value, str):
         try:
-            return value.format_map(_TemplateData(variables))
+            return _SAFE_FORMATTER.vformat(value, (), _TemplateData(variables))
         except (ValueError, TypeError):
             return value
     if isinstance(value, list):
@@ -253,7 +185,10 @@ def _base_variables(data):
         'remaining': '',
         'error': '未知错误',
     }
-    variables.update(data)
+    variables.update({
+        name: value for name, value in data.items()
+        if value is None or isinstance(value, (str, int, float, bool))
+    })
     return variables
 
 
@@ -291,8 +226,8 @@ def _dynamic_template(key, template, data):
             '违禁词': 'category_forbidden', '消息过滤': 'category_filter',
             '刷屏检测': 'category_spam',
         }
-        key = category_keys.get(data['category'], 'category_spam')
-        template = get_reply_template(key)
+        template_key = category_keys.get(data['category'], 'category_spam')
+        template = _get_cached_template(template_key)
         features = data['group_config']['features']
         for name in ('join_verify', 'block_links', 'block_cards', 'block_forward'):
             enabled = bool(features[name])
@@ -307,7 +242,8 @@ def _dynamic_template(key, template, data):
         button_template = template.get('buttons') or []
         rows, buttons = [], []
         for index, item in enumerate(requests, 1):
-            verify_info = item.get('verify_info') or {}
+            verify_info = item.get('verify_info')
+            verify_info = verify_info if isinstance(verify_info, dict) else {}
             item_vars = {
                 'index': index,
                 'username': item.get('username') or template.get('unknown_user_text', '未知用户'),
@@ -326,13 +262,13 @@ def _dynamic_template(key, template, data):
             }) if data.get('next_cursor') else '',
         )
         if template.get('button_mode') == 'join_requests':
-            template = {**template, 'buttons': buttons}
+            template = {**template, 'buttons': buttons[:5]}
     elif key == 'management_stats':
         variables.update(data['stats'])
     elif key == 'audit_list':
         rows = data['rows']
         if not rows:
-            key, template = 'audit_list_empty', get_reply_template('audit_list_empty')
+            key, template = 'audit_list_empty', _get_cached_template('audit_list_empty')
         else:
             labels = template.get('action_labels') or {}
             item_template = template.get('item_content', '')
@@ -373,7 +309,7 @@ def _dynamic_template(key, template, data):
                 _render_value(prototype, {
                     **variables, 'option': option, 'option_index': index,
                 })
-                for index, option in enumerate(data['options'])
+                for index, option in enumerate(data['options'][:5])
             ]]
             template = {**template, 'buttons': buttons}
     elif key == 'group_state':
@@ -416,21 +352,23 @@ def _dynamic_template(key, template, data):
         variables['retry_text'] = _render_value(
             template.get('retry_content', ''), variables
         ) if data.get('retry_count', 0) >= 3 else ''
-    return key, template, variables
+    return template, variables
 
 
 def _build(key, data):
-    template = get_reply_template(key if key != 'category_panel' else 'category_spam')
-    key, template, variables = _dynamic_template(key, template, data)
-    message = _normalize_reply({
-        'content': _render_value(template.get('content', ''), variables),
-        'buttons': _render_value(template.get('buttons'), variables),
-        'prompt_buttons': _render_value(template.get('prompt_buttons'), variables),
-        'button_font_size': template.get('button_font_size') or None,
-        'button_style': _render_value(template.get('button_style'), variables),
-        'send_kwargs': _render_value(template.get('send_kwargs'), variables),
-    })
-    message.send_kwargs['_template_at_user'] = template.get('at_user')
+    template = _get_cached_template(
+        key if key != 'category_panel' else 'category_spam'
+    )
+    template, variables = _dynamic_template(key, template, data)
+    message = ReplyMessage(
+        content=str(_render_value(template.get('content', ''), variables)),
+        buttons=_render_value(template.get('buttons'), variables),
+        prompt_buttons=_render_value(template.get('prompt_buttons'), variables),
+        button_font_size=template.get('button_font_size') or None,
+        button_style=_render_value(template.get('button_style'), variables),
+        send_kwargs=_render_value(template.get('send_kwargs') or {}, variables),
+        at_user=template.get('at_user', True),
+    )
     if message.buttons is None and data.get('buttons'):
         message.buttons = data['buttons']
     return message
@@ -463,7 +401,7 @@ async def respond(
             },
         )
     message = _apply_delivery_overrides(
-        _normalize_reply(_build(key, data)),
+        _build(key, data),
         buttons=buttons,
         prompt_buttons=prompt_buttons,
         small_buttons=small_buttons,
@@ -471,14 +409,10 @@ async def respond(
         button_style=button_style,
         send_kwargs=send_kwargs,
     )
-    template_at_user = message.send_kwargs.pop('_template_at_user', None)
-    should_at_user = bool(
-        template_at_user if at_user is _UNSET else at_user
-    )
+    should_at_user = bool(message.at_user if at_user is _UNSET else at_user)
     if should_at_user:
         message.content = f'<@{event.user_id}> {message.content}'
     kwargs = message.delivery_kwargs()
-    from .storage.audit import current_action
     action = audit_action or current_action(event, f'reply:{key}')
     try:
         result = await event.reply(message.content, **kwargs)

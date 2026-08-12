@@ -3,6 +3,7 @@
 import json
 import os
 import sqlite3
+import threading
 
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,18 +17,25 @@ RECALL_WINDOW = 1800
 SPAM_WINDOW = 60
 
 _initialized = False
+_init_lock = threading.Lock()
 
 
 def get_db():
     global _initialized
-    os.makedirs(DATA_DIR, exist_ok=True)
+    if not _initialized:
+        os.makedirs(DATA_DIR, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=5)
     connection.row_factory = sqlite3.Row
-    connection.execute('PRAGMA busy_timeout = 5000')
-    if not _initialized:
-        init_tables(connection)
-        migrate_legacy_json(connection)
-        _initialized = True
+    try:
+        if not _initialized:
+            with _init_lock:
+                if not _initialized:
+                    init_tables(connection)
+                    migrate_legacy_json(connection)
+                    _initialized = True
+    except Exception:
+        connection.close()
+        raise
     return connection
 
 
@@ -94,8 +102,14 @@ def init_tables(connection):
         CREATE INDEX IF NOT EXISTS idx_forbidden_group ON forbidden_words(group_id);
         CREATE INDEX IF NOT EXISTS idx_targets_group ON targets(group_id);
         CREATE INDEX IF NOT EXISTS idx_spam_log_group_user ON spam_log(group_id, user_id);
+        CREATE INDEX IF NOT EXISTS idx_spam_log_group_user_time
+            ON spam_log(group_id, user_id, time);
         CREATE INDEX IF NOT EXISTS idx_spam_log_time ON spam_log(time);
         CREATE INDEX IF NOT EXISTS idx_message_log_group_user ON message_log(group_id, user_id);
+        CREATE INDEX IF NOT EXISTS idx_message_log_group_user_time
+            ON message_log(group_id, user_id, time DESC);
+        CREATE INDEX IF NOT EXISTS idx_message_log_group_time
+            ON message_log(group_id, time DESC);
         CREATE INDEX IF NOT EXISTS idx_message_log_time ON message_log(time);
         CREATE INDEX IF NOT EXISTS idx_audit_group_time ON audit_log(group_id, time DESC);
         CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(time);

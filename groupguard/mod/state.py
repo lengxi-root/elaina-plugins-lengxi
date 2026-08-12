@@ -4,11 +4,36 @@ import asyncio
 import time
 
 pending_verify = {}   # {group_id: {user_id: {"answer": idx, "verify_id": str, "expire": ts, ...}}}
-verified_users = {}   # {group_id: set(user_id)} — 已通过验证
 unverified = {}       # {group_id: set(user_id)} — 待验证
 verify_cooldown = {}  # {group_id: {user_id: {"retry_count": n, "next_time": ts}}}
 
 _cleanup_task = None
+
+
+def _discard_member(mapping, group_id, user_id):
+    members = mapping.get(group_id)
+    if members is None:
+        return
+    if isinstance(members, set):
+        members.discard(user_id)
+    else:
+        members.pop(user_id, None)
+    if not members:
+        mapping.pop(group_id, None)
+
+
+def clear_member(group_id, user_id):
+    """Release all short-lived verification state for one member."""
+    for mapping in (pending_verify, verify_cooldown, unverified):
+        _discard_member(mapping, group_id, user_id)
+
+
+def clear_pending(group_id, user_id):
+    _discard_member(pending_verify, group_id, user_id)
+
+
+def clear_cooldown(group_id, user_id):
+    _discard_member(verify_cooldown, group_id, user_id)
 
 
 def expire_pending(group_id, user_id, now=None):
@@ -51,6 +76,8 @@ async def _cleanup_loop():
 
 def start_cleanup():
     global _cleanup_task
+    if _cleanup_task and not _cleanup_task.done():
+        return
     _cleanup_task = asyncio.get_running_loop().create_task(_cleanup_loop())
 
 
@@ -59,3 +86,6 @@ def stop_cleanup():
     if _cleanup_task:
         _cleanup_task.cancel()
         _cleanup_task = None
+    pending_verify.clear()
+    unverified.clear()
+    verify_cooldown.clear()

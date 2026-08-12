@@ -1,6 +1,7 @@
 """群管总开关与功能配置存储。"""
 
 import json
+from functools import lru_cache
 
 from .core import FEATURE_KEYS, get_db
 
@@ -14,7 +15,8 @@ def default_group_config(group_id):
     }
 
 
-def get_group_cfg(group_id):
+@lru_cache(maxsize=512)
+def _get_group_cfg(group_id):
     connection = get_db()
     row = connection.execute(
         'SELECT * FROM group_config WHERE group_id = ?',
@@ -22,19 +24,25 @@ def get_group_cfg(group_id):
     ).fetchone()
     connection.close()
     if not row:
-        return default_group_config(group_id)
+        return False, False, tuple(False for _ in FEATURE_KEYS)
     try:
         stored_features = json.loads(row['features'] or '{}')
     except json.JSONDecodeError:
         stored_features = {}
+    return (
+        bool(row['enabled']),
+        bool(row['notify']),
+        tuple(bool(stored_features.get(key, False)) for key in FEATURE_KEYS),
+    )
+
+
+def get_group_cfg(group_id):
+    enabled, notify, feature_values = _get_group_cfg(group_id)
     return {
         'group_id': group_id,
-        'enabled': bool(row['enabled']),
-        'notify': bool(row['notify']),
-        'features': {
-            key: bool(stored_features.get(key, False))
-            for key in FEATURE_KEYS
-        },
+        'enabled': enabled,
+        'notify': notify,
+        'features': dict(zip(FEATURE_KEYS, feature_values)),
     }
 
 
@@ -52,6 +60,7 @@ def save_group_cfg(config):
     )
     connection.commit()
     connection.close()
+    _get_group_cfg.cache_clear()
 
 
 def set_enabled(group_id, enabled):

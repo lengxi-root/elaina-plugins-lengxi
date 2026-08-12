@@ -286,8 +286,8 @@ async def send_chain(sender, chain, *, event=None, group_id=None, user_id=None):
     返回最后一次发送的 API 结果 (dict) 或 None。"""
     if sender is None or chain is None:
         return None
-    if group_id and event is None and not state.is_full_access(str(group_id)):
-        log.debug(f"[astr基座] 群 {group_id} 未开全量, 跳过主动推送")
+    if group_id and event is None and not state.can_proactively_message(str(group_id)):
+        log.debug(f"[astr基座] 群 {group_id} 未开主动消息权限, 跳过主动推送")
         return None
 
     text_parts: list[str] = []

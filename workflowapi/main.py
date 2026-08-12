@@ -15,7 +15,7 @@ import os
 
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
-from core.plugin.web_pages import register_page, unregister_page
+from core.plugin.web_pages import register_page, register_route, unregister_page, unregister_route
 
 from .mod import store, watcher, webapi
 from .mod.executor import close_http_session, execute_workflow
@@ -24,7 +24,7 @@ __plugin_meta__ = {
     'name': '工作流API',
     'author': 'ElainaBot',
     'description': 'JSON 驱动的可视化工作流/API 插件: 正则存 JSON、自动热更新、可视化自定义任意 API 回复',
-    'version': '1.0.2',
+    'version': '1.0.3',
 }
 
 log = get_logger(PLUGIN, '工作流API')
@@ -95,28 +95,17 @@ _register_commands()
 
 
 def _setup_routes():
-    """注册 Web 面板后端接口 (复用已鉴权的 aiohttp app)。"""
+    """注册 Web 面板后端接口，由框架统一执行 Cookie 鉴权。"""
     try:
-        from core.bot.manager import _bot_manager_ref
-
-        if not _bot_manager_ref or not _bot_manager_ref._app:
-            log.warning('无法获取 Web App, 跳过接口注册')
-            return
-        app = _bot_manager_ref._app
-        from web.auth import require_auth
-
         for method, path, fn in webapi.ROUTES:
-            full = webapi.API_PREFIX + path
-            wrapped = require_auth(fn)
-            if method == 'GET':
-                app.router.add_get(full, wrapped)
-            else:
-                app.router.add_post(full, wrapped)
-    except RuntimeError:
-        # 路由已注册 (热重载时 app 已冻结) — 忽略
-        pass
+            register_route(method, webapi.API_PREFIX + path, fn, auth=True)
     except Exception as e:
         log.warning(f'接口注册异常: {e}')
+
+
+def _teardown_routes():
+    for method, path, _fn in webapi.ROUTES:
+        unregister_route(method, webapi.API_PREFIX + path)
 
 
 @on_load
@@ -137,5 +126,6 @@ async def _on_load():
 @on_unload
 async def _on_unload():
     watcher.stop()
+    _teardown_routes()
     unregister_page(_PAGE_KEY)
     await close_http_session()

@@ -2,6 +2,8 @@
 
 import asyncio
 import time
+import weakref
+from collections import OrderedDict
 
 from core.base.config import cfg
 
@@ -21,9 +23,21 @@ def is_group_admin(event):
     return is_bot_owner(event)
 
 
-_state_locks = {}
-_state_last_request = {}
+_state_locks = weakref.WeakValueDictionary()
+_state_last_request = OrderedDict()
 _STATE_REQUEST_INTERVAL = 60
+_MAX_STATE_REQUESTS = 2048
+
+
+def _remember_state_request(key, now):
+    _state_last_request[key] = now
+    _state_last_request.move_to_end(key)
+    cutoff = now - 3600
+    while _state_last_request:
+        oldest_key, oldest_time = next(iter(_state_last_request.items()))
+        if oldest_time >= cutoff and len(_state_last_request) <= _MAX_STATE_REQUESTS:
+            break
+        _state_last_request.pop(oldest_key, None)
 
 
 def _normalize_state(row):
@@ -74,7 +88,10 @@ async def get_bot_group_state(event, *, refresh=False):
         return cached
 
     key = (str(event.appid), str(event.group_id))
-    lock = _state_locks.setdefault(key, asyncio.Lock())
+    lock = _state_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _state_locks[key] = lock
     async with lock:
         cached = await _read_group_state(event)
         if cached and cached['is_admin'] and cached['in_group']:
@@ -85,7 +102,7 @@ async def get_bot_group_state(event, *, refresh=False):
             return cached
 
         # 请求开始前记时，失败请求也占用这一分钟额度。
-        _state_last_request[key] = now
+        _remember_state_request(key, now)
         try:
             data = await event.sender.get_group_bot_state(event.group_id)
         except Exception:

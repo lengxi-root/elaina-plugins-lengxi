@@ -208,10 +208,8 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const qs = new URLSearchParams(location.search);
-const TOKEN = qs.get('token') || '';
 const _bm = location.pathname.match(/^(.*)\/api\/web-pages\//);
-const API = (_bm ? _bm[1] : '') + '/api/workflow-api';
+const API = (_bm ? _bm[1] : '') + '/api/ext/workflow-api';
 
 let DATA = {version:2, settings:{enabled:true, default_timeout:15}, workflows:[]};
 let META = {};
@@ -224,11 +222,14 @@ let CONDHELP_OPEN = false; // 条件节点「用法说明」是否展开
 let connecting = null;// {nodeId, output} 连线进行中
 const NODE_W = 188;
 
-function hdr(){ return {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}; }
+function hdr(){ return {'Content-Type':'application/json'}; }
 async function api(path, method, body){
-  const r = await fetch(API+path+(method==='GET'?('?token='+TOKEN):''), {
-    method, headers: hdr(), body: body?JSON.stringify(body):undefined});
-  return r.json();
+  const r = await fetch(API+path, {
+    method: method || 'GET', headers: hdr(), credentials: 'same-origin',
+    body: body === undefined ? undefined : JSON.stringify(body)});
+  if (r.status === 401) return {success:false, message:'登录会话已过期，请刷新页面'};
+  const data = await r.json();
+  return r.ok ? data : (data && typeof data === 'object' ? data : {success:false, message:'请求失败'});
 }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }

@@ -86,16 +86,33 @@ def _bot_appid(bot):
 
 
 def get_full_access_groups(appid=''):
-    """读取全量群列表 (data.db full_access_groups, 按 appid 各存一份)"""
+    """读取全量群，兼容群数据表合并前后的框架版本。"""
     bot = _get_bot(appid)
     if bot is None:
         return []
+    errors = []
+    queries = (
+        (
+            'SELECT group_id FROM groups_users '
+            'WHERE is_full_access=1 AND in_group=1 ORDER BY rowid DESC',
+            'groups_users',
+        ),
+        (
+            'SELECT group_id FROM full_access_groups ORDER BY first_seen DESC',
+            'full_access_groups',
+        ),
+    )
+    for sql, table in queries:
+        try:
+            rows = bot.log_service.query_data(sql)
+            return [r['group_id'] for r in rows if r.get('group_id')]
+        except Exception as e:
+            errors.append(f'{table}: {e}')
     try:
-        rows = bot.log_service.query_data('SELECT group_id FROM full_access_groups ORDER BY first_seen DESC')
-        return [r['group_id'] for r in rows if r.get('group_id')]
-    except Exception as e:
-        log.warning(f'读取全量群失败: {e}')
-        return []
+        log.warning(f"读取全量群失败: {'; '.join(errors)}")
+    except Exception:
+        pass
+    return []
 
 
 def get_private_users(appid=''):

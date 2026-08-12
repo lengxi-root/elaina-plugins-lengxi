@@ -125,16 +125,6 @@ _MARKET_TTL = 3 * 60 * 60  # 市场清单缓存 3 小时
 _MARKET_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                   os.pardir, "data", "market_cache.json")
 
-# 面板可选镜像 (下拉展示; "" = 自动按测速排名多镜像兜底)
-_MIRROR_CHOICES = [
-    {"value": "", "label": "自动 (测速排名, 多镜像兜底)"},
-    {"value": "https://ghproxy.cc/", "label": "ghproxy.cc"},
-    {"value": "https://gh-proxy.com/", "label": "gh-proxy.com"},
-    {"value": "https://gh.llkk.cc/", "label": "gh.llkk.cc"},
-    {"value": "https://gh.idayer.com/", "label": "gh.idayer.com"},
-]
-
-
 # ==================================================================== #
 #  框架对象 / 镜像下载 (惰性导入, 复用 web.tools)
 # ==================================================================== #
@@ -202,15 +192,9 @@ def _github_archive_url(url: str) -> str | None:
 
 
 def _load_mirror_pref() -> str:
-    from web.tools._market.shared import _load_market_mirror
+    from web.tools._market.shared import get_github_mirror
 
-    return _load_market_mirror()
-
-
-def _save_mirror_pref(mirror: str):
-    from web.tools._market.shared import _save_market_mirror
-
-    _save_market_mirror(mirror)
+    return get_github_mirror() or ""
 
 
 def _safe(name: str) -> str:
@@ -535,22 +519,11 @@ async def _body(request) -> dict:
 
 
 async def handle_list(request):
-    """已安装插件 + 镜像偏好 (本地数据, 立即返回)。"""
+    """返回已安装插件 (本地数据, 立即返回)。"""
     return await _json(
         {
             "success": True,
             "installed": _installed_apps(),
-            "mirror": _load_mirror_pref(),
-        }
-    )
-
-
-async def handle_get_mirror(request):
-    return await _json(
-        {
-            "success": True,
-            "mirror": _load_mirror_pref(),
-            "choices": _MIRROR_CHOICES,
         }
     )
 
@@ -1081,35 +1054,12 @@ async def handle_clear_logs(request):
     return await _json({"success": True})
 
 
-async def handle_set_mirror(request):
-    body = await _body(request)
-    mirror = body.get("mirror", "")
-    try:
-        _save_mirror_pref(mirror)
-    except Exception as e:
-        return await _json({"success": False, "message": str(e)})
-    return await _json({"success": True, "message": "镜像偏好已保存", "mirror": mirror})
-
-
-async def handle_test_mirrors(request):
-    """复用框架测速, 返回按延迟排序的可用镜像。"""
-    try:
-        from web.tools._updater.mirror import get_fast_mirrors
-
-        results = await get_fast_mirrors(force=True)
-    except Exception as e:
-        return await _json({"success": False, "message": f"测速失败: {e}"})
-    mirrors = [{"mirror": r.get("mirror", ""), "latency": r.get("latency")} for r in results]
-    return await _json({"success": True, "mirrors": mirrors})
-
-
 # ==================================================================== #
 #  注册 / 注销
 # ==================================================================== #
 
 _ROUTES = [
     ("GET", "/list", handle_list),
-    ("GET", "/mirror", handle_get_mirror),
     ("GET", "/market", handle_market),
     ("GET", "/commands", handle_commands),
     ("GET", "/config", handle_get_config),
@@ -1124,8 +1074,6 @@ _ROUTES = [
     ("POST", "/reload", handle_reload),
     ("POST", "/config", handle_save_config),
     ("POST", "/settings", handle_save_settings),
-    ("POST", "/mirror", handle_set_mirror),
-    ("POST", "/test-mirrors", handle_test_mirrors),
     ("POST", "/clear-logs", handle_clear_logs),
 ]
 

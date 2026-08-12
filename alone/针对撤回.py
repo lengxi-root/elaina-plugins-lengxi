@@ -16,7 +16,7 @@ __plugin_meta__ = {
     'name': '针对撤回',
     'author': 'ElainaBot',
     'description': '针对指定用户自动撤回消息',
-    'version': '2.0.0',
+    'version': '2.0.1',
 }
 
 # ==================== 数据持久化 ====================
@@ -135,7 +135,8 @@ def _is_bot_admin(group_id):
     if not bot:
         return False
     rows = bot.log_service.query_data(
-        'SELECT group_id FROM group_bot_admin WHERE group_id = ?', (group_id,)
+        'SELECT 1 FROM groups_users '
+        'WHERE group_id = ? AND is_admin = 1 AND in_group = 1 LIMIT 1', (group_id,)
     )
     return bool(rows)
 

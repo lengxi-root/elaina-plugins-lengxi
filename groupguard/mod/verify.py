@@ -63,7 +63,7 @@ async def send_verify(event, group_id, member_id, retry_count=0):
         'retry_count': retry_count,
         'next_wait': min(wait * 2, VERIFY_MAX_WAIT),
     }
-    state.verify_cooldown.get(group_id, {}).pop(member_id, None)
+    state.clear_cooldown(group_id, member_id)
 
     record_result(event, 'verify_challenge', True, affected_count=1,
                   target_id=member_id, details={'retry_count': retry_count},
@@ -109,16 +109,13 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
         await send_verify(event, group_id, user_id, retry_count)
         return
     if chosen == pending['answer']:
-        del state.pending_verify[group_id][user_id]
-        state.verified_users.setdefault(group_id, set()).add(user_id)
-        state.unverified.get(group_id, set()).discard(user_id)
-        state.verify_cooldown.get(group_id, {}).pop(user_id, None)
+        state.clear_member(group_id, user_id)
         record_result(event, 'verify_answer', True, affected_count=1, target_id=user_id,
                       source='verification')
         await respond(event, 'verify_success', at_user=False, target_id=user_id)
     else:
         retry_count = pending.get('retry_count', 0) + 1
-        del state.pending_verify[group_id][user_id]
+        state.clear_pending(group_id, user_id)
         state.verify_cooldown.setdefault(group_id, {})[user_id] = {
             'retry_count': retry_count,
             'next_time': time.time() + VERIFY_FAILURE_MUTE,
@@ -137,7 +134,4 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
 
 def pass_verify(group_id, user_id):
     """管理员手动通过验证"""
-    state.verified_users.setdefault(group_id, set()).add(user_id)
-    state.unverified.get(group_id, set()).discard(user_id)
-    state.verify_cooldown.get(group_id, {}).pop(user_id, None)
-    state.pending_verify.get(group_id, {}).pop(user_id, None)
+    state.clear_member(group_id, user_id)

@@ -1,16 +1,28 @@
 """违禁词存储。"""
 
+from functools import lru_cache
+
 from .core import get_db
 
 
-def get_forbidden(group_id):
+@lru_cache(maxsize=512)
+def _get_forbidden(group_id):
     connection = get_db()
     rows = connection.execute(
         'SELECT word FROM forbidden_words WHERE group_id = ? ORDER BY rowid',
         (group_id,),
     ).fetchall()
     connection.close()
-    return [row['word'] for row in rows]
+    return tuple(row['word'] for row in rows)
+
+
+def get_forbidden(group_id):
+    return list(_get_forbidden(group_id))
+
+
+def contains_forbidden(group_id, content):
+    """Match content against the cached immutable word set."""
+    return any(word in content for word in _get_forbidden(group_id))
 
 
 def add_forbidden(group_id, word):
@@ -21,6 +33,7 @@ def add_forbidden(group_id, word):
     )
     connection.commit()
     connection.close()
+    _get_forbidden.cache_clear()
 
 
 def delete_forbidden(group_id, word):
@@ -31,6 +44,7 @@ def delete_forbidden(group_id, word):
     )
     connection.commit()
     connection.close()
+    _get_forbidden.cache_clear()
 
 
 def clear_forbidden(group_id):
@@ -41,4 +55,5 @@ def clear_forbidden(group_id):
     )
     connection.commit()
     connection.close()
+    _get_forbidden.cache_clear()
     return cursor.rowcount

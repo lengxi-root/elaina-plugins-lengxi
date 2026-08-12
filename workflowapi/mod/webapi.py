@@ -1,6 +1,6 @@
 """Web 面板后端接口: 读取/保存配置、测试 API、渲染预览、元信息。
 
-复用框架已鉴权的 aiohttp app; 所有接口都经过 require_auth 包装。
+由框架的动态扩展路由统一处理 Cookie 鉴权。
 """
 
 import json
@@ -12,7 +12,7 @@ from . import executor, store, watcher
 
 log = get_logger(PLUGIN, '工作流API')
 
-API_PREFIX = '/api/workflow-api'
+API_PREFIX = '/api/ext/workflow-api'
 
 # 供面板动态渲染的元信息
 META = {

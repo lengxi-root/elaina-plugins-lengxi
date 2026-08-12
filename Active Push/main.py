@@ -12,7 +12,7 @@ __plugin_meta__ = {
     'name': '主动推送',
     'author': 'ElainaBot',
     'description': '向全部全量群或私聊用户发送主动消息, 支持推送记录与断点继续',
-    'version': '1.2.3',
+    'version': '1.2.4',
 }
 
 log = get_logger(PLUGIN, '主动推送')
