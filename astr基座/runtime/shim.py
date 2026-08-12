@@ -13,6 +13,7 @@ from . import bridge
 from . import commands as _cmd
 from . import components as _comp
 from . import events as _ev
+from . import llm as _llm
 from . import paths as _paths
 
 _installed = False
@@ -191,7 +192,9 @@ def install():
 
     api = _new_module("astrbot.api")
     _export(api, logger=logger, AstrBotConfig=bridge.AstrBotConfig,
-            MessageChain=bridge.MessageChain)
+            MessageChain=bridge.MessageChain, Provider=_llm.Provider,
+            ProviderRequest=_llm.ProviderRequest, LLMResponse=_llm.LLMResponse,
+            FunctionTool=_llm.FunctionTool, ToolSet=_llm.ToolSet)
     api.__path__ = []
 
     api_event = _new_module("astrbot.api.event")
@@ -206,7 +209,17 @@ def install():
     _export(api_msgcomp, **comp_attrs)
 
     api_provider = _new_module("astrbot.api.provider")
-    _export(api_provider, Provider=_Dummy, ProviderRequest=_Dummy, LLMResponse=_Dummy)
+    api_provider.__path__ = []
+    provider_attrs = {
+        "Provider": _llm.Provider,
+        "ProviderRequest": _llm.ProviderRequest,
+        "LLMResponse": _llm.LLMResponse,
+        "ProviderMeta": _llm.ProviderMeta,
+        "ProviderMetaData": _llm.ProviderMetaData,
+        "ProviderType": _llm.ProviderType,
+        "TokenUsage": _llm.TokenUsage,
+    }
+    _export(api_provider, **provider_attrs)
 
     api_platform = _new_module("astrbot.api.platform")
     _export(api_platform, **platform_attrs)
@@ -217,7 +230,7 @@ def install():
     import json as _json
     import os as _os
     import uuid as _uuid
-    _export(api_all, **{**comp_attrs, **star_attrs, **event_attrs,
+    _export(api_all, **{**comp_attrs, **star_attrs, **event_attrs, **provider_attrs,
                         # 真实 astrbot.api.all 经 message_components 星号导入
                         # 泄漏了这些标准库名, 部分插件依赖 (如直接用 json)
                         "asyncio": _asyncio, "base64": _base64,
@@ -233,6 +246,8 @@ def install():
                         "platform_adapter_type": filter_mod.platform_adapter_type,
                         "llm_tool": _cmd._passthrough_decorator,
                         "GreedyStr": _cmd.GreedyStr,
+                        "FunctionTool": _llm.FunctionTool,
+                        "ToolSet": _llm.ToolSet,
                         "PermissionType": _cmd.PermissionType,
                         "PlatformAdapterType": _cmd.PlatformAdapterType,
                         "CommandResult": bridge.MessageEventResult})
@@ -249,6 +264,24 @@ def install():
     core.logger = logger
     core.AstrBotConfig = bridge.AstrBotConfig
     core.__path__ = []
+
+    core_provider = _new_module("astrbot.core.provider")
+    core_provider.__path__ = []
+    _export(core_provider, **provider_attrs)
+    core_provider_entities = _new_module("astrbot.core.provider.entities")
+    _export(core_provider_entities, **provider_attrs)
+    core_provider_entites = _new_module("astrbot.core.provider.entites")
+    _export(core_provider_entites, **provider_attrs)
+    core_provider_provider = _new_module("astrbot.core.provider.provider")
+    _export(core_provider_provider, Provider=_llm.Provider)
+    core_provider_tools = _new_module("astrbot.core.provider.func_tool_manager")
+    _export(core_provider_tools, FunctionTool=_llm.FunctionTool,
+            FunctionToolManager=_llm.FunctionToolManager, ToolSet=_llm.ToolSet)
+
+    core_agent = _new_module("astrbot.core.agent")
+    core_agent.__path__ = []
+    core_agent_tool = _new_module("astrbot.core.agent.tool")
+    _export(core_agent_tool, FunctionTool=_llm.FunctionTool, ToolSet=_llm.ToolSet)
 
     core_message = _new_module("astrbot.core.message")
     core_message.__path__ = []
@@ -341,6 +374,13 @@ def install():
     core.utils = core_utils
     core.config = core_config
     core.platform = plat
+    core.provider = core_provider
+    core.agent = core_agent
+    core_provider.entities = core_provider_entities
+    core_provider.entites = core_provider_entites
+    core_provider.provider = core_provider_provider
+    core_provider.func_tool_manager = core_provider_tools
+    core_agent.tool = core_agent_tool
     core_star.filter = core_star_filter
     core_star.star_tools = core_star_tools
     core_star_filter.event_message_type = core_filter_emt

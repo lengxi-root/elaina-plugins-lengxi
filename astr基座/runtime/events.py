@@ -9,6 +9,7 @@ import re
 
 from . import sending, state
 from .components import MessageChain, MessageEventResult
+from .llm import ProviderManager, ProviderRequest, ProviderType
 
 log = state.log
 
@@ -16,7 +17,10 @@ log = state.log
 class AstrMessageEvent:
     """把 ElainaBot MessageEvent 包装成 AstrBot 事件接口。"""
 
-    def __init__(self, elaina_event, *, role: str = "member", content: str | None = None):
+    def __init__(
+        self, elaina_event, *, role: str = "member", content: str | None = None,
+        context=None,
+    ):
         self._e = elaina_event
         self.role = role  # 群内订阅权限判定
         # content 用于去掉插件指令前缀后给插件看 (None=用原始消息)
@@ -25,6 +29,7 @@ class AstrMessageEvent:
         self._message_obj = None
         self.session_id = str(elaina_event.group_id or elaina_event.user_id or "")
         self.platform_meta = PlatformMetadata()
+        self.context = context
         self.is_wake = True
         self.is_at_or_wake_command = True
         self._result: MessageEventResult | None = None
@@ -111,8 +116,25 @@ class AstrMessageEvent:
     def clear_result(self):
         self._result = None
 
-    def should_call_llm(self, *_a, **_k):
-        return None
+    def should_call_llm(self, call_llm=True, *_a, **_k):
+        self.call_llm = bool(call_llm)
+
+    def request_llm(
+        self, prompt: str, func_tool_manager=None, tool_set=None, session_id: str = "",
+        image_urls=None, audio_urls=None, contexts=None, system_prompt: str = "",
+        conversation=None,
+    ) -> ProviderRequest:
+        """创建由基座分发器转交给中央 ``ai_llm`` 的模型请求。"""
+        return ProviderRequest(
+            prompt=prompt,
+            session_id=session_id or self.session_id,
+            image_urls=list(image_urls or []),
+            audio_urls=list(audio_urls or []),
+            func_tool=tool_set or func_tool_manager,
+            contexts=list(contexts or []),
+            system_prompt=system_prompt or "",
+            conversation=conversation,
+        )
 
     def stop_event(self):
         self._stopped = True
@@ -315,30 +337,14 @@ _GLOBAL_CONFIG_DEFAULTS = {
 }
 
 
-class _ProviderManagerStub:
-    """无 LLM 能力的供应商管理器占位: 属性齐全但均为空。"""
-
-    def __init__(self):
-        self.personas = []
-        self.provider_insts = []
-        self.stt_provider_insts = []
-        self.tts_provider_insts = []
-        self.curr_provider_inst = None
-        self.selected_default_persona = None
-
-    def __bool__(self):
-        # 保留 falsy 语义: 插件 `if context.provider_manager:` 可降级
-        return False
-
-
 class Context:
     """AstrBot 插件上下文 (self.context), 主动发送入口。"""
 
     def __init__(self):
         self._star_instances: list = []
         self.logger = log  # 部分插件直接用 context.logger 记录日志
-        # LLM / 供应商相关: 本基座不提供, 占位对象 (falsy, 属性齐全)
-        self.provider_manager = _ProviderManagerStub()
+        # 动态桥接中央 ai_llm 模块；模块未启用时该管理器保持 falsy。
+        self.provider_manager = ProviderManager()
         self.platform_manager = None
         self.conversation_manager = None
 
@@ -391,23 +397,73 @@ class Context:
             state.unregister_web_api(route, methods)
         return None
 
-    def add_llm_tools(self, *_a, **_k):
-        return None
+    def add_llm_tools(self, *tools):
+        for tool in tools:
+            self.provider_manager.llm_tools.add_tool(tool)
 
-    def register_llm_tool(self, *_a, **_k):
-        return None
+    def register_llm_tool(self, name, func_args, desc, func_obj):
+        self.provider_manager.llm_tools.add_func(name, func_args, desc, func_obj)
 
-    def unregister_llm_tool(self, *_a, **_k):
-        return None
+    def unregister_llm_tool(self, name, *_a, **_k):
+        self.provider_manager.llm_tools.remove_func(name)
 
-    def get_using_provider(self, *_a, **_k):
-        return None
+    def get_llm_tool_manager(self):
+        return self.provider_manager.llm_tools
 
-    def get_provider_by_id(self, *_a, **_k):
-        return None
+    def get_using_provider(self, umo=None, *_a, **_k):
+        return self.provider_manager.get_using_provider(
+            ProviderType.CHAT_COMPLETION, umo=umo
+        )
+
+    async def get_using_provider_async(self, umo=None, *_a, **_k):
+        return await self.provider_manager.get_using_provider_async(
+            ProviderType.CHAT_COMPLETION, umo=umo
+        )
+
+    def get_provider_by_id(self, provider_id, *_a, **_k):
+        return self.provider_manager.inst_map.get(str(provider_id or ""))
 
     def get_all_providers(self, *_a, **_k):
-        return []
+        return self.provider_manager.provider_insts
+
+    async def get_current_chat_provider_id(self, umo="") -> str:
+        provider = await self.get_using_provider_async(umo)
+        if provider is None:
+            raise RuntimeError("AI LLM 模块未安装、未启用或没有可用接口")
+        return provider.meta().id
+
+    async def llm_generate(
+        self, *, chat_provider_id="", prompt=None, image_urls=None,
+        audio_urls=None, tools=None, system_prompt=None, contexts=None, **kwargs
+    ):
+        provider = self.get_provider_by_id(chat_provider_id) if chat_provider_id else (
+            self.get_using_provider()
+        )
+        if provider is None:
+            raise RuntimeError("AI LLM 模块未安装、未启用或没有可用接口")
+        return await provider.text_chat(
+            prompt=prompt, image_urls=image_urls, audio_urls=audio_urls,
+            func_tool=tools, contexts=contexts, system_prompt=system_prompt,
+            astr_context=self, **kwargs,
+        )
+
+    async def tool_loop_agent(
+        self, *, event=None, chat_provider_id="", prompt=None, image_urls=None,
+        audio_urls=None, tools=None, system_prompt=None, contexts=None,
+        max_steps=30, **kwargs
+    ):
+        provider = self.get_provider_by_id(chat_provider_id) if chat_provider_id else (
+            self.get_using_provider()
+        )
+        if provider is None:
+            raise RuntimeError("AI LLM 模块未安装、未启用或没有可用接口")
+        tools = tools or self.provider_manager.llm_tools
+        return await provider.text_chat(
+            prompt=prompt, image_urls=image_urls, audio_urls=audio_urls,
+            func_tool=tools, contexts=contexts, system_prompt=system_prompt,
+            event=event, astr_context=self, max_tool_rounds=max_steps,
+            enable_runtime_tools=True, **kwargs,
+        )
 
     def get_event_queue(self, *_a, **_k):
         return None

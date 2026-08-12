@@ -13,6 +13,8 @@
 3. 把 `@filter.command` / `command_group` / `regex` / `event_message_type` 注册成框架 handler；
 4. 把消息组件（`Plain`/`Image`/`At`/`Reply`/`Node`/`Record` 等）翻译成 QQ 官方接口消息发送（发图支持官机 markdown 直链，失败自动回退富媒体）；
 5. `html_render()` / `text_to_image()` 复用框架共享 Playwright 浏览器出图。
+6. AstrBot 插件的 `Provider`、`text_chat()`、`llm_generate()` 和 `tool_loop_agent()`
+   会动态桥接到框架的 **AI LLM** 模块，接口与密钥仍由中央模块统一管理。
 
 ## 目录结构
 
@@ -34,6 +36,10 @@ astr基座/
 3. 在「安装插件」页从 GitHub 仓库 URL / zip 直链 / 上传 zip 安装 AstrBot 插件；安装后基座自动热重载即生效。
 
 也可手动把插件放到 `apps/<插件名>/`（含 `main.py`）后在面板点「重载基座」。
+
+需要模型能力的插件还应先在模块市场安装并启用 **AI LLM**，然后在其面板中
+启用 LLM 服务并配置至少一个可用接口。基座不会保存或复制模型 API Key；AI LLM
+模块热重载后，AstrBot 插件会在下一次调用时自动取得新的服务实例。
 
 ## Web 面板
 

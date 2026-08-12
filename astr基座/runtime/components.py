@@ -230,6 +230,11 @@ class MessageChain:
         self.chain.extend(components)
         return self
 
+    def get_plain_text(self) -> str:
+        return "".join(
+            component.text for component in self.chain if isinstance(component, Plain)
+        )
+
 
 class MessageEventResult:
     """事件被动结果 (plain_result / image_result / chain_result 的返回)。"""

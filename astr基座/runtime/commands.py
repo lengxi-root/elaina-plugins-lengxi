@@ -10,6 +10,7 @@ import typing
 
 from . import sending, session, state
 from .events import AstrBotConfig, AstrMessageEvent, Context
+from .llm import ProviderRequest
 
 log = state.log
 
@@ -522,16 +523,31 @@ async def _invoke(method, astr_event, sender, event, kwargs):
     try:
         if inspect.isasyncgenfunction(method):
             async for result in method(astr_event, **kwargs):
+                result = await _resolve_llm_request(astr_event, result)
                 result = await _apply_decorating_hooks(astr_event, result)
                 await sending.send_result(sender, event, result)
         else:
             res = method(astr_event, **kwargs)
             if inspect.isawaitable(res):
                 res = await res
+            res = await _resolve_llm_request(astr_event, res)
             res = await _apply_decorating_hooks(astr_event, res)
             await sending.send_result(sender, event, res)
     except Exception as e:
         log.error(f"[astr基座] 指令 [{astr_event.message_str[:20]}] 执行异常: {e}", exc_info=True)
+
+
+async def _resolve_llm_request(astr_event, result):
+    if not isinstance(result, ProviderRequest):
+        return result
+    context = getattr(astr_event, "context", None) or Context()
+    provider = context.get_using_provider(astr_event.unified_msg_origin)
+    if provider is None:
+        raise RuntimeError("AI LLM 模块未安装、未启用或没有可用接口")
+    response = await provider.text_chat(
+        result, event=astr_event, astr_context=context,
+    )
+    return response.result_chain or astr_event.plain_result(response.completion_text)
 
 
 def make_wrapper(spec: PluginSpec, cmd: CommandSpec):
@@ -570,7 +586,10 @@ def make_wrapper(spec: PluginSpec, cmd: CommandSpec):
                 return
 
         content = _strip_prefix(event.content, cmd.prefix) if cmd.prefix else None
-        astr_event = AstrMessageEvent(event, role=_resolve_role(event), content=content)
+        astr_event = AstrMessageEvent(
+            event, role=_resolve_role(event), content=content,
+            context=getattr(instance, "context", None),
+        )
         await _invoke(method, astr_event, event.sender, event, kwargs)
 
     _wrapper.__name__ = f"astr_{spec.name}_{cmd.method_name}"
