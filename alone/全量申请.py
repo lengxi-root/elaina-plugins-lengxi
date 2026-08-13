@@ -63,12 +63,25 @@ def _get_bot_uin_uid():
     return uin, uid
 
 
+def _get_current_bot_name(event):
+    """按事件所属机器人获取当前昵称，避免提示文案绑定固定名称。"""
+    try:
+        app = get_app()
+        bot = app.get_bot(getattr(event, 'appid', '')) if app else None
+        name = str(getattr(bot, 'name', '') or '').strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    return '机器人'
+
+
 @on_load
 def _init_config():
     _ensure_config()
 
 _IMG = '![菜单头图 #300px #250px](https://qqbot.ugcimg.cn/102813815/9fd08ad10f048984fc0a9d36f71dd450e0780587/c7f24f5aeadfb1908561622d43de3169)'
-_INPUT_TIP = "\n1.请群主点击我的头像→\n2.点击右上角齿轮设置→\n3.点击**可获取的群聊消息范围**设置为**获取群内全部消息**→\n4.勾选**主动在群聊内发言**即可\n\n备选:<qqbot-cmd-input text='全量申请 ' show='请点击这里并输入群号' />\n>授权后无需@伊蕾娜也可以处理指令\n需要9.2.90以上版本QQ设置哦！"
+_INPUT_TIP = "\n1.请群主点击我的头像→\n2.点击右上角齿轮设置→\n3.点击**可获取的群聊消息范围**设置为**获取群内全部消息**→\n4.勾选**主动在群聊内发言**即可\n\n备选:<qqbot-cmd-input text='全量申请 ' show='请点击这里并输入群号' />\n>授权后无需@{bot_name}也可以处理指令\n需要9.2.90以上版本QQ设置哦！"
 _INVALID_GROUP_TIP = "输入的群号也许不对哦，请重新输入：<qqbot-cmd-input text='全量申请 ' show='全量申请 群号' />"
 
 
@@ -139,7 +152,8 @@ async def apply_full_access(event, match):
 
 @handler(r'^全量申请$', name='全量申请提示', desc='提示输入全量申请群号')
 async def prompt_full_access_group(event, match):
-    await event.reply(f"<@{event.user_id}> {_INPUT_TIP}")
+    bot_name = _get_current_bot_name(event)
+    await event.reply(f"<@{event.user_id}> {_INPUT_TIP.format(bot_name=bot_name)}")
 
 
 @handler(r'^全量申请\s*(\d{1,5})$', name='全量申请群号校验', desc='提示重新输入疑似错误群号')
