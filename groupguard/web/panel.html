@@ -73,6 +73,16 @@
             </div>
           </section>
           <section class="panel">
+            <div class="panel-head"><div><h2>入群策略</h2><p>入群申请审批与入群后验证分别配置</p></div></div>
+            <div class="rule-row join-policy-rule">
+              <div class="rule-toggle"><span><b>入群申请审批</b><small>自动策略仅在群管总开关开启时执行</small></span></div>
+              <div class="rule-controls join-policy-controls">
+                <label class="field"><span>审批方式</span><select id="cfg-join-policy"><option value="manual">手动审批</option><option value="auto_approve">自动通过</option><option value="auto_decline">自动拒绝</option><option value="auto_blacklist">自动拒绝并拉黑</option></select></label>
+                <label class="field" id="cfg-join-reason-field"><span>拒绝理由</span><input id="cfg-join-reason" maxlength="200" placeholder="不符合入群要求"></label>
+              </div>
+            </div>
+          </section>
+          <section class="panel">
             <div class="panel-head"><div><h2>内容规则</h2><p>每条规则独立设置处理方式与禁言时间</p></div></div>
             <div class="rule-list">
               <div class="rule-row">
@@ -135,7 +145,7 @@
             </section>
             <section class="panel template-editor">
               <div class="panel-head">
-                <div><h2 id="template-title">选择模板</h2><p id="template-key">全部模板保存在 reply_templates.json</p></div>
+                <div><h2 id="template-title">选择模板</h2><p id="template-key">模板保存在 data/reply_templates.json</p></div>
                 <button class="btn primary" id="save-template" type="button" disabled>保存模板</button>
               </div>
               <div class="panel-body template-form" id="template-form" hidden>
@@ -150,8 +160,8 @@
                 </div>
                 <label class="field"><span>发送正文</span><textarea id="tpl-content" rows="12" spellcheck="false"></textarea></label>
                 <section class="template-variables" aria-label="可用变量">
-                  <div class="template-variables-head"><div><b>可用变量</b><small>点击变量可插入最近编辑框，也可手动复制到按钮 JSON</small></div><span id="template-variable-context"></span></div>
-                  <div id="template-variable-list"></div>
+                  <div class="template-variables-head"><div><b>变量插入</b><small>先点击发送正文或按钮 JSON，再选择变量插入到光标位置</small></div><button class="btn" id="template-variable-toggle" type="button" aria-expanded="false">插入变量</button></div>
+                  <div id="template-variable-context" class="template-variable-context"></div>
                 </section>
                 <label class="field"><span>按钮 JSON</span><textarea id="tpl-buttons" rows="11" spellcheck="false" placeholder='[{"text":"娱乐菜单","data":"/娱乐菜单","enter":true,"style":1},{"text":"邀我进群","link":"https://qun.qq.com/...","style":1}]'></textarea></label>
                 <details class="advanced-editor">
@@ -179,6 +189,13 @@
         </section>
       </div>
     </main>
+  </div>
+  <div id="template-variable-modal" class="template-variable-modal" hidden>
+    <div class="template-variable-backdrop" data-template-variable-close></div>
+    <section class="template-variable-dialog" role="dialog" aria-modal="true" aria-labelledby="template-variable-title">
+      <div class="template-variable-dialog-head"><div><h2 id="template-variable-title">插入变量</h2><p>选择变量后将插入到当前光标位置</p></div><button class="icon-btn" id="template-variable-close" type="button" aria-label="关闭变量弹窗">×</button></div>
+      <div id="template-variable-list" class="template-variable-panel"></div>
+    </section>
   </div>
   <div class="toast" id="toast"></div>
   <script type="module" src="/api/ext/groupguard/assets/panel.js"></script>

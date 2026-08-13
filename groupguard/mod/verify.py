@@ -14,6 +14,21 @@ VERIFY_MAX_WAIT = 3600      # 最大等待1小时
 VERIFY_FAILURE_MUTE = 600   # 答错后禁言并等待10分钟
 
 
+def _reply_succeeded(result):
+    if result is None:
+        return False
+    if not isinstance(result, dict):
+        return True
+    code = result.get('code')
+    if code not in (None, 0, '0'):
+        return False
+    if code is None and not any(
+        key in result for key in ('id', 'message_id', 'timestamp')
+    ) and any(key in result for key in ('message', 'msg', 'error')):
+        return False
+    return True
+
+
 async def _mute_failed_user(event, group_id, user_id):
     expire_at = (
         datetime.now().astimezone() + timedelta(seconds=VERIFY_FAILURE_MUTE)
@@ -56,6 +71,9 @@ async def send_verify(event, group_id, member_id, retry_count=0):
 
     wait = min(VERIFY_INITIAL_WAIT * (2 ** retry_count), VERIFY_MAX_WAIT)
 
+    previous_cooldown = (
+        state.verify_cooldown.get(group_id, {}).get(member_id)
+    )
     state.pending_verify.setdefault(group_id, {})[member_id] = {
         'answer': correct_idx,
         'verify_id': verify_id,
@@ -65,13 +83,37 @@ async def send_verify(event, group_id, member_id, retry_count=0):
     }
     state.clear_cooldown(group_id, member_id)
 
+    error = ''
+    try:
+        result = await respond(
+            event, 'verify_question', at_user=False, group_id=group_id,
+            member_id=member_id, verify_id=verify_id, options=options,
+            a=a, b=b, op=op, minutes=int(wait // 60),
+        )
+        if not _reply_succeeded(result):
+            error = 'reply_failed'
+    except Exception as exc:
+        error = type(exc).__name__
+    if error:
+        state.clear_pending(group_id, member_id)
+        if previous_cooldown is not None:
+            state.verify_cooldown.setdefault(group_id, {})[member_id] = (
+                previous_cooldown
+            )
+        record_result(
+            event, 'verify_challenge', False, target_id=member_id,
+            details={
+                'retry_count': retry_count,
+                'reason': 'reply_failed',
+                'error': error,
+            },
+            source='verification',
+        )
+        return False
     record_result(event, 'verify_challenge', True, affected_count=1,
                   target_id=member_id, details={'retry_count': retry_count},
                   source='verification')
-    await respond(
-        event, 'verify_question', at_user=False, group_id=group_id, member_id=member_id,
-        verify_id=verify_id, options=options, a=a, b=b, op=op, minutes=int(wait // 60),
-    )
+    return True
 
 
 async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None):
@@ -134,4 +176,12 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
 
 def pass_verify(group_id, user_id):
     """管理员手动通过验证"""
+    is_pending = (
+        user_id in state.pending_verify.get(group_id, {})
+        or user_id in state.unverified.get(group_id, set())
+        or user_id in state.verify_cooldown.get(group_id, {})
+    )
+    if not is_pending:
+        return False
     state.clear_member(group_id, user_id)
+    return True

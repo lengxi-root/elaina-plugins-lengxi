@@ -27,7 +27,8 @@ async def cmd_speak_recall(event, match):
                 details={'expire': expire})
     finish_action(event, 'speak_recall', True, affected_count=len(members),
                   target_id=members[0][0], details={'expire': expire})
-    await reply_at(event, 'speak_recall_set', remaining=format_remaining(expire))
+    await reply_at(event, 'speak_recall_set', target_id=members[0][0],
+                   remaining=format_remaining(expire))
 
 
 @handler(r'^/?针对(?:\s|$|@)', name='针对', desc='永久发言撤回', **HANDLER_OPTIONS)
@@ -66,10 +67,10 @@ async def cmd_cancel_recall(event, match):
                 affected_count=removed)
     if removed:
         finish_action(event, 'cancel_recall', True, affected_count=removed)
-        await reply_at(event, 'cancel_recall_done', count=removed)
+        await reply_at(event, 'cancel_recall_done', target_id=members[0][0], count=removed)
     else:
         finish_action(event, 'cancel_recall', False, details={'reason': 'not_punished'})
-        await reply_at(event, 'cancel_recall_missing')
+        await reply_at(event, 'cancel_recall_missing', target_id=members[0][0])
 
 
 @handler(r'^/?处罚列表\s*$', name='处罚列表', desc='查看发言撤回处罚列表', **HANDLER_OPTIONS)
@@ -87,7 +88,7 @@ async def cmd_punish_list(event, match):
     for index, item in enumerate(targets, 1):
         member_id = item['user_id']
         display = item['username'] or (member_id[:6] + '...')
-        entries.append({'index': index, 'display': display,
+        entries.append({'index': index, 'display': display, 'target_id': member_id,
                         'remaining': format_remaining(item['expire'])})
     finish_action(event, 'punish_list', True, details={'count': len(targets)})
     await reply_at(event, 'punish_list', entries=entries)

@@ -13,6 +13,7 @@ LEGACY_JSON = os.path.join(DATA_DIR, 'group_manager.json')
 
 FEATURE_KEYS = ('forbidden_words', 'join_verify', 'block_links', 'block_cards', 'block_forward')
 POLICY_KEYS = ('forbidden_words', 'block_links', 'block_cards', 'block_forward')
+JOIN_POLICY_MODES = ('manual', 'auto_approve', 'auto_decline', 'auto_blacklist')
 ACTION_KEYS = ('recall', 'mute', 'recall_mute')
 MESSAGE_LOG_TTL = 7200
 RECALL_WINDOW = 1800
@@ -50,7 +51,8 @@ def init_tables(connection):
             enabled INTEGER DEFAULT 0,
             notify INTEGER DEFAULT 0,
             features TEXT DEFAULT '{}',
-            policies TEXT DEFAULT '{}'
+            policies TEXT DEFAULT '{}',
+            join_policy TEXT DEFAULT '{}'
         );
         CREATE TABLE IF NOT EXISTS forbidden_words (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,6 +127,7 @@ def init_tables(connection):
         CREATE INDEX IF NOT EXISTS idx_audit_trace ON audit_log(trace_id, id);
     """)
     _ensure_column(connection, 'group_config', 'policies', "TEXT DEFAULT '{}'")
+    _ensure_column(connection, 'group_config', 'join_policy', "TEXT DEFAULT '{}'")
     action_added = _ensure_column(
         connection, 'spam_config', 'action', "TEXT DEFAULT 'recall'",
     )

@@ -64,7 +64,10 @@ async def cmd_verify_pass(event, match):
         finish_action(event, 'verify_pass', False, details={'reason': 'target_required'})
         return await reply_at(event, 'verify_target_required')
     target_id = members[0][0]
-    verify.pass_verify(event.group_id, target_id)
+    if not verify.pass_verify(event.group_id, target_id):
+        finish_action(event, 'verify_pass', False, target_id=target_id,
+                      details={'reason': 'not_pending'})
+        return await reply_at(event, 'verify_not_pending', target_id=target_id)
     trace_phase(event, 'verify_pass', 'storage', success=True, affected_count=1,
                 target_id=target_id)
     finish_action(event, 'verify_pass', True, affected_count=1, target_id=target_id)

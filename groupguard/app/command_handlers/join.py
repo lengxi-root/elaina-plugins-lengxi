@@ -77,9 +77,10 @@ async def cmd_approve_join(event, match):
                   details={'request_id': request_id,
                            'error': '' if success else api_error(response)})
     if success:
-        await reply_at(event, 'join_approved')
+        await reply_at(event, 'join_approved', target_id=member_id)
     else:
-        await reply_at(event, 'join_review_failed', error=api_error(response))
+        await reply_at(event, 'join_review_failed', target_id=member_id,
+                       error=api_error(response))
 
 
 @handler(r'^/?(拒绝入群|拒绝并拉黑)\s+(\S+)\s+(\S+)(?:\s+(.+))?\s*$',
@@ -108,6 +109,8 @@ async def cmd_decline_join(event, match):
                   details={'request_id': request_id, 'reason': reason,
                            'error': '' if success else api_error(response)})
     if success:
-        await reply_at(event, 'join_declined', blacklisted=command == '拒绝并拉黑')
+        await reply_at(event, 'join_declined', target_id=member_id,
+                       blacklisted=command == '拒绝并拉黑')
     else:
-        await reply_at(event, 'join_review_failed', error=api_error(response))
+        await reply_at(event, 'join_review_failed', target_id=member_id,
+                       error=api_error(response))

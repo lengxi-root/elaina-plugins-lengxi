@@ -31,8 +31,9 @@
   mod/panels/              面板组件、分类菜单与禁言菜单
   mod/perms.py             权限、机器人群状态与可操作成员筛选
   mod/state.py             入群验证运行时状态与过期清理
-  mod/reply_templates.py   JSON 消息模板的校验、热加载与原子保存
-  reply_templates.json     全部回复正文、按钮和小按钮开关
+  mod/reply_templates.py   JSON 消息模板的校验、初始化、热加载与原子保存
+  mod/default_templates.py 内置默认回复模板
+  data/reply_templates.json 运行时生成的自定义模板，更新时仅补充缺失项
   mod/verify.py            入群验证出题与判题
   mod/utils.py             时长解析与格式化
 """
@@ -45,12 +46,13 @@ from core.plugin.web_pages import register_page, unregister_page
 
 from .app import commands, monitor, verify_events, webpanel  # noqa: F401
 from .mod import state
+from .mod.reply_templates import initialize_reply_templates
 
 __plugin_meta__ = {
     'name': '群管',
     'author': '冷曦',
     'description': '违禁词过滤、入群验证、禁言、入群审批、消息撤回等群管理功能',
-    'version': '1.3.2',
+    'version': '1.3.3',
     'license': 'MIT',
 }
 
@@ -67,6 +69,7 @@ _ICON = (
 
 @on_load
 async def _init():
+    initialize_reply_templates()
     state.start_cleanup()
     register_page(
         key=_PAGE_KEY, label='群管', source='plugin', source_name='groupguard',

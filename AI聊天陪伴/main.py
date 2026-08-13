@@ -18,7 +18,7 @@ __plugin_meta__ = {
     'name': 'AI 聊天陪伴',
     'author': 'ElainaBot',
     'description': '支持多人格、中央 LLM、全入口用户独立上下文与 Web 面板',
-    'version': '1.2.1',
+    'version': '1.2.2',
     'github': 'https://github.com/lengxi-plugins/elaina',
     'license': 'MIT',
 }
@@ -74,6 +74,25 @@ def _addressed_text(event, text: str) -> str:
 
 async def _reply_to_user(event, text: str) -> None:
     await event.reply(_addressed_text(event, text))
+
+
+async def _stream_text(text: str):
+    """将已审核答复拆成有节制的累计分片，避免触发 QQ 50 QPS 限制。"""
+    content = str(text or '')
+    if not content:
+        return
+    chunk_size = max(32, (len(content) + 19) // 20)
+    for end in range(chunk_size, len(content), chunk_size):
+        yield {'type': 'replace', 'text': content[:end]}
+        await asyncio.sleep(0.06)
+    yield {'type': 'replace', 'text': content}
+
+
+async def _reply_chat_result(event, text: str, current: dict) -> None:
+    if getattr(event, 'is_direct', False) and current.get('direct_stream_enabled'):
+        await event.reply_stream(_stream_text(text), min_interval=0.05)
+        return
+    await _reply_to_user(event, text)
 
 
 async def _personality_for(event, current: dict) -> dict | None:
@@ -446,7 +465,7 @@ async def chat_message(event, _match) -> None:
     try:
         reply = await reply_for_event(event, text)
         if reply.strip():
-            await _reply_to_user(event, reply)
+            await _reply_chat_result(event, reply, current)
     except Exception as error:
         log.warning(f'AI 对话失败: {error}')
         await _reply_to_user(event, 'AI 服务暂时不可用，请稍后再试，或检查中央 AI 模块配置。')

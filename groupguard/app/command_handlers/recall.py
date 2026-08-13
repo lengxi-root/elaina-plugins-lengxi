@@ -77,4 +77,5 @@ async def cmd_recall_recent(event, match):
         target_id = ''
     finish_action(event, 'recall', total > 0, affected_count=total, target_id=target_id,
                   details={'failed': failed, 'limit': limit, 'user_scope': user_scope})
-    await reply_at(event, 'recall_done', user_scope=user_scope, count=total, failed=failed)
+    await reply_at(event, 'recall_done', target_id=target_id, user_scope=user_scope,
+                   count=total, failed=failed)

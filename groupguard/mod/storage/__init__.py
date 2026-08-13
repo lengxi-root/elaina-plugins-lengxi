@@ -14,6 +14,7 @@ from .core import (
     DATA_DIR,
     ACTION_KEYS,
     FEATURE_KEYS,
+    JOIN_POLICY_MODES,
     MESSAGE_LOG_TTL,
     POLICY_KEYS,
     RECALL_WINDOW,

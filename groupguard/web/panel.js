@@ -11,6 +11,21 @@ const POLICY_FIELDS = [
   ['forbidden_words','cfg-forbidden'],
 ];
 const TEMPLATE_VARIABLE_GROUPS = [
+  {label:'框架变量', items:[
+    ['userid','触发者 ID（兼容别名）','所有群管回复'], ['user_id','触发者 ID','所有群管回复'],
+    ['rawuserid','原始触发者 ID（兼容别名）','所有群管回复'], ['raw_user_id','原始触发者 ID','所有群管回复'],
+    ['groupid','群 ID（兼容别名）','群聊回复'], ['group_id','群 ID','群聊回复'],
+    ['username','触发者昵称','消息事件'], ['nickname','触发者昵称（兼容别名）','消息事件'],
+    ['appid','机器人 AppID','所有群管回复'], ['botid','机器人 AppID（兼容别名）','所有群管回复'],
+    ['bot_name','机器人名称','所有群管回复'], ['botname','机器人名称（兼容别名）','所有群管回复'],
+    ['bot_qq','机器人 QQ','所有群管回复'], ['botqq','机器人 QQ（兼容别名）','所有群管回复'], ['selfid','机器人 QQ（兼容别名）','所有群管回复'],
+    ['content','处理后的消息内容','消息事件'], ['raw_content','原始消息内容','消息事件'],
+    ['message_id','消息 ID','消息事件'], ['messageid','消息 ID（兼容别名）','消息事件'], ['message_type','消息类型','消息事件'],
+    ['event_id','事件 ID','所有事件'], ['eventid','事件 ID（兼容别名）','所有事件'], ['event_type','事件类型','所有事件'],
+    ['timestamp','事件时间','所有事件'],
+    ['channel_id','子频道 ID','频道事件'], ['channelid','子频道 ID（兼容别名）','频道事件'],
+    ['guild_id','频道 ID','频道事件'], ['guildid','频道 ID（兼容别名）','频道事件'], ['image_url','首张图片地址','含图片的消息事件'],
+  ]},
   {label:'通用变量', items:[
     ['target_id','目标成员 ID','自动处理、验证、禁言'], ['group_id','群 ID','按钮或验证'],
     ['member_id','成员 ID','列表项或验证'], ['username','成员昵称','列表项'],
@@ -38,7 +53,7 @@ const TEMPLATE_VARIABLE_GROUPS = [
   ]},
   {label:'列表与统计', items:[
     ['request_count','入群申请数量','join_requests'], ['request_rows','入群申请行','join_requests'], ['next_page','下一页内容','join_requests'], ['next_cursor','下一页游标','入群申请分页'],
-    ['index','当前序号','列表项'], ['request_id','入群申请 ID','入群申请按钮'], ['verify_message','验证信息','入群申请项'],
+    ['index','当前序号','列表项'], ['request_id','入群申请 ID','入群申请按钮'], ['verify_message','验证信息（含审核问答）','入群申请项'],
     ['audit_count','审计记录数量','audit_list'], ['audit_rows','审计记录行','audit_list'], ['time','时间','审计行'], ['action_label','操作名称','审计行'], ['state','成功或失败','审计行'], ['affected_count','影响数量','审计行'], ['trace_short','Trace 短 ID','审计行'],
     ['global_mode','全局禁言模式','mute_list'], ['member_count','成员数量','mute_list'], ['member_rows','禁言成员行','mute_list'], ['overflow','超出提示','mute_list'], ['overflow_count','超出数量','禁言列表'],
     ['word_count','违禁词数量','forbidden_list_text'], ['word_rows','违禁词行','forbidden_list_text'], ['entry_count','处罚成员数量','punish_list'], ['entry_rows','处罚成员行','punish_list'], ['display','显示文本','处罚列表项'], ['expire_at','到期时间','禁言列表项'],
@@ -55,6 +70,7 @@ let dashboard = null;
 let templates = {};
 let selectedTemplateKey = '';
 let activePage = 'overview';
+let templateVariablesOpen = false;
 const sidebarMedia = window.matchMedia('(max-width:700px)');
 
 function syncHostTheme(){
@@ -137,21 +153,33 @@ function renderTemplates(){
 function pretty(value){return JSON.stringify(value??null,null,2)}
 function parseJsonField(id,label){const value=$(id).value.trim();try{return value?JSON.parse(value):null}catch(_){throw new Error(`${label} JSON 格式无效`)}}
 function selectedTemplate(){return templates[selectedTemplateKey]||null}
+function setTemplateVariablesOpen(open){
+  const modal=$('template-variable-modal'),toggle=$('template-variable-toggle');
+  if(!modal||!toggle)return;
+  templateVariablesOpen=!!open;modal.hidden=!templateVariablesOpen;toggle.setAttribute('aria-expanded',String(templateVariablesOpen));
+}
+function closeTemplateVariables(){setTemplateVariablesOpen(false)}
+function updateTemplateVariableContext(){
+  const context=$('template-variable-context');
+  if(context)context.textContent=`当前插入位置：${templateInsertTargetLabel()}`;
+}
+function templateInsertTargetLabel(){return ({'tpl-content':'发送正文','tpl-buttons':'按钮 JSON','tpl-raw':'完整模板 JSON'})[templateInsertTarget]||'发送正文'}
 function renderTemplateVariables(){
   const item=selectedTemplate();
-  if(!item){$('template-variable-context').textContent='';$('template-variable-list').innerHTML='';return}
-  $('template-variable-context').textContent='点击即可插入';
+  if(!item){$('template-variable-context').textContent='';$('template-variable-list').innerHTML='';closeTemplateVariables();return}
+  updateTemplateVariableContext();
   $('template-variable-list').innerHTML='<div class="template-variable-groups">'+TEMPLATE_VARIABLE_GROUPS.map(group=>'<section class="template-variable-group"><div class="template-variable-group-title">'+esc(group.label)+'</div><div class="template-variable-items">'+group.items.map(([name,description,scope])=>'<button type="button" class="template-variable" data-template-variable="'+esc(name)+'" title="适用：'+esc(scope)+'"><code>{'+esc(name)+'}</code><small>'+esc(description)+'</small></button>').join('')+'</div></section>').join('')+'</div>';
+  closeTemplateVariables();
 }
 function insertTemplateVariable(name){
   const field=$(templateInsertTarget)||$('tpl-content');
   if(!field||field.disabled)return;
   const token='{'+name+'}';const start=field.selectionStart??field.value.length;const end=field.selectionEnd??start;
-  field.value=field.value.slice(0,start)+token+field.value.slice(end);field.focus();const cursor=start+token.length;field.setSelectionRange(cursor,cursor);
+  field.value=field.value.slice(0,start)+token+field.value.slice(end);field.focus();const cursor=start+token.length;field.setSelectionRange(cursor,cursor);closeTemplateVariables();
 }
 function renderTemplateForm(){
   const item=selectedTemplate(),has=!!item;$('template-form').hidden=!has;$('template-empty').hidden=has;$('save-template').disabled=!has;
-  if(!has){$('template-title').textContent='选择模板';$('template-key').textContent='全部模板保存在 reply_templates.json';return}
+  if(!has){$('template-title').textContent='选择模板';$('template-key').textContent='模板保存在 data/reply_templates.json';return}
   $('template-title').textContent=templateLabel(selectedTemplateKey,item);$('template-key').textContent=selectedTemplateKey;
   $('tpl-label').value=item.label||'';$('tpl-category').value=item.category||'';$('tpl-small-buttons').checked=!!item.small_buttons;$('tpl-at-user').checked=item.at_user!==false;
   $('tpl-msg-type').value=item.msg_type===0||item.msg_type===2?String(item.msg_type):'';
@@ -182,11 +210,13 @@ function renderOverview(){
 function renderConfig(){
   const config=dashboard.config,features=config.features||{},policies=config.policies||{},spam=dashboard.spam;
   $('cfg-enabled').checked=!!config.enabled;$('cfg-notify').checked=!!config.notify;$('cfg-join-verify').checked=!!features.join_verify;
+  const joinPolicy=config.join_policy||{mode:'manual',reject_reason:'不符合入群要求'};$('cfg-join-policy').value=joinPolicy.mode;$('cfg-join-reason').value=joinPolicy.reject_reason||'';
   POLICY_FIELDS.forEach(([key,id])=>{const policy=policies[key]||{action:'recall',mute_minutes:10};$(id).checked=!!features[key];$(id+'-action').value=policy.action;$(id+'-mute').value=policy.mute_minutes});
   $('cfg-spam-enabled').checked=!!spam.enabled;$('cfg-spam-window').value=spam.window_seconds;$('cfg-spam-limit').value=spam.limit_count;$('cfg-spam-action').value=spam.action;$('cfg-spam-mute').value=spam.mute_minutes;
-  syncPolicyFields();
+  syncPolicyFields();syncJoinPolicyFields();
 }
 function syncPolicyFields(){document.querySelectorAll('.policy-action').forEach(select=>{const row=select.closest('.rule-controls');const input=row?.querySelector('.mute-duration input');if(input){const enabled=select.value!=='recall';input.disabled=!enabled;input.closest('.mute-duration').classList.toggle('disabled',!enabled)}})}
+function syncJoinPolicyFields(){const mode=$('cfg-join-policy').value;const enabled=mode==='auto_decline'||mode==='auto_blacklist';$('cfg-join-reason').disabled=!enabled;$('cfg-join-reason-field').classList.toggle('disabled',!enabled)}
 function renderForbidden(){
   const words=dashboard.forbidden_words||[];$('forbidden-count').textContent=`共 ${words.length} 个`;$('forbidden-list').innerHTML=words.length?words.map(word=>`<span class="tag"><span>${esc(word)}</span><button type="button" data-delete-word="${esc(word)}" title="删除违禁词" aria-label="删除违禁词">×</button></span>`).join(''):'<div class="empty">暂无违禁词</div>';
 }
@@ -201,7 +231,7 @@ function renderAudit(){
 async function saveConfig(){
   const button=$('save-config');button.disabled=true;
   const features={join_verify:$('cfg-join-verify').checked};const policies={};POLICY_FIELDS.forEach(([key,id])=>{features[key]=$(id).checked;policies[key]={action:$(id+'-action').value,mute_minutes:Number($(id+'-mute').value)}});
-  const payload={group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,features,policies,spam:{enabled:$('cfg-spam-enabled').checked,window_seconds:Number($('cfg-spam-window').value),limit_count:Number($('cfg-spam-limit').value),action:$('cfg-spam-action').value,mute_minutes:Number($('cfg-spam-mute').value)}};
+  const payload={group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,features,policies,join_policy:{mode:$('cfg-join-policy').value,reject_reason:$('cfg-join-reason').value.trim()},spam:{enabled:$('cfg-spam-enabled').checked,window_seconds:Number($('cfg-spam-window').value),limit_count:Number($('cfg-spam-limit').value),action:$('cfg-spam-action').value,mute_minutes:Number($('cfg-spam-mute').value)}};
   try{dashboard=await api(`/config?days=${encodeURIComponent($('days-select').value)}`,{method:'PUT',body:JSON.stringify(payload)});renderAll();toast('群管配置已保存')}catch(error){toast(error.message,true)}finally{button.disabled=false}
 }
 async function addForbidden(event){event.preventDefault();const word=$('forbidden-input').value.trim();if(!word)return;try{const data=await api('/forbidden',{method:'POST',body:JSON.stringify({group_id:currentGroup(),word})});dashboard.forbidden_words=data.forbidden_words;renderForbidden();renderOverview();$('forbidden-input').value='';toast('违禁词已添加');await loadDashboard()}catch(error){toast(error.message,true)}}
@@ -213,7 +243,8 @@ document.querySelectorAll('[data-open-page]').forEach(button=>button.addEventLis
 $('sidebar-toggle').addEventListener('click',()=>setSidebar(!$('app').classList.contains('sidebar-collapsed')));$('sidebar-scrim').addEventListener('click',()=>setSidebar(true));
 $('reload').addEventListener('click',loadGroups);$('group-select').addEventListener('change',()=>{localStorage.setItem('groupguard-group',currentGroup());loadDashboard()});$('days-select').addEventListener('change',loadDashboard);$('save-config').addEventListener('click',saveConfig);$('forbidden-form').addEventListener('submit',addForbidden);
 document.querySelectorAll('.policy-action').forEach(select=>select.addEventListener('change',syncPolicyFields));
+$('cfg-join-policy').addEventListener('change',syncJoinPolicyFields);
 $('template-search').addEventListener('input',renderTemplates);$('template-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-key]');if(button){selectedTemplateKey=button.dataset.templateKey;renderTemplates()}});$('save-template').addEventListener('click',saveTemplate);$('apply-template-json').addEventListener('click',applyRawTemplate);$('sync-template-json').addEventListener('click',syncRawTemplate);
-document.querySelectorAll('#tpl-content,#tpl-buttons,#tpl-raw').forEach(field=>field.addEventListener('focus',()=>{templateInsertTarget=field.id}));$('template-variable-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-variable]');if(button)insertTemplateVariable(button.dataset.templateVariable)});
+document.querySelectorAll('#tpl-content,#tpl-buttons,#tpl-raw').forEach(field=>field.addEventListener('focus',()=>{templateInsertTarget=field.id;updateTemplateVariableContext()}));$('template-variable-toggle').addEventListener('click',()=>setTemplateVariablesOpen(!templateVariablesOpen));$('template-variable-close').addEventListener('click',closeTemplateVariables);$('template-variable-modal').addEventListener('click',event=>{if(event.target.matches('[data-template-variable-close]'))closeTemplateVariables()});$('template-variable-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-variable]');if(button)insertTemplateVariable(button.dataset.templateVariable)});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&templateVariablesOpen)closeTemplateVariables()});
 $('forbidden-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-word]');if(button)deleteForbidden(button.dataset.deleteWord)});$('target-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-target]');if(button)deleteTarget(button.dataset.deleteTarget)});['filter-source','filter-status','filter-action'].forEach(id=>$(id).addEventListener('change',renderAudit));
 sidebarMedia.addEventListener('change',()=>setSidebar(true));setSidebar(true);Promise.all([loadTemplates(),loadGroups()]).catch(error=>{showReady(false);toast(error.message,true)});

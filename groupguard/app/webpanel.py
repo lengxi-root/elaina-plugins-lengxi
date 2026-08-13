@@ -129,6 +129,28 @@ def _require_group_id(value):
     return group_id
 
 
+def _is_managed_group(group_id):
+    return any(
+        item.get('group_id') == group_id
+        and item.get('in_group')
+        and item.get('appid')
+        for item in _group_catalog()
+    )
+
+
+def _require_managed_group(value):
+    group_id = _require_group_id(value)
+    if not _is_managed_group(group_id):
+        raise ValueError('群聊不存在或机器人不是管理员')
+    return group_id
+
+
+def _record_web_error(raw_group_id, action, details):
+    group_id = str(raw_group_id or '').strip()
+    if group_id and _is_managed_group(group_id):
+        db.record_web_action(group_id, action, False, details=details)
+
+
 def _clamp_int(value, minimum, maximum, name):
     try:
         number = int(value)
@@ -171,6 +193,23 @@ def _require_policies(value):
     return policies
 
 
+def _require_join_policy(value):
+    if not isinstance(value, dict):
+        raise ValueError('入群审批策略无效')
+    mode = str(value.get('mode') or '')
+    if mode not in db.JOIN_POLICY_MODES:
+        raise ValueError('入群审批方式无效')
+    reject_reason = str(value.get('reject_reason') or '').strip()
+    if len(reject_reason) > 200:
+        raise ValueError('入群拒绝理由不能超过 200 个字符')
+    if mode in ('auto_decline', 'auto_blacklist') and not reject_reason:
+        raise ValueError('自动拒绝时必须填写拒绝理由')
+    return {
+        'mode': mode,
+        'reject_reason': reject_reason or '不符合入群要求',
+    }
+
+
 async def _json(request):
     try:
         body = await request.json()
@@ -200,7 +239,7 @@ async def _get_groups(_request):
 
 async def _get_dashboard(request):
     try:
-        group_id = _require_group_id(request.query.get('group_id'))
+        group_id = _require_managed_group(request.query.get('group_id'))
         days = _clamp_int(request.query.get('days') or 30, 1, 3650, '统计天数')
     except ValueError as error:
         return web.json_response({'success': False, 'error': str(error)}, status=400)
@@ -238,7 +277,7 @@ async def _get_templates(_request):
     return web.json_response({'success': True, 'data': {
         'templates': templates,
         'count': len(templates),
-        'storage': 'groupguard/reply_templates.json',
+        'storage': 'groupguard/data/reply_templates.json',
     }})
 
 
@@ -253,7 +292,7 @@ async def _save_template(request):
         if not isinstance(value, dict):
             raise ValueError('模板内容必须是对象')
         if group_id:
-            group_id = _require_group_id(group_id)
+            group_id = _require_managed_group(group_id)
         template = save_reply_template(key, value)
         if group_id:
             db.record_web_action(
@@ -264,19 +303,18 @@ async def _save_template(request):
             'key': key, 'template': template,
         }})
     except (ValueError, KeyError, OSError) as error:
-        if group_id:
-            db.record_web_action(
-                group_id, 'config_change', False,
-                details={'changed': ['reply_template'], 'template_key': key,
-                         'error': str(error)},
-            )
+        _record_web_error(
+            group_id, 'config_change',
+            {'changed': ['reply_template'], 'template_key': key,
+             'error': str(error)},
+        )
         return web.json_response({'success': False, 'error': str(error)}, status=400)
 
 
 async def _save_config(request):
     body = await _json(request)
     try:
-        group_id = _require_group_id(body.get('group_id'))
+        group_id = _require_managed_group(body.get('group_id'))
         features = body.get('features')
         if not isinstance(features, dict):
             raise ValueError('功能配置无效')
@@ -287,6 +325,7 @@ async def _save_config(request):
         if missing_features:
             raise ValueError('功能配置缺少必要字段')
         policies = _require_policies(body.get('policies'))
+        join_policy = _require_join_policy(body.get('join_policy'))
         spam = body.get('spam')
         if not isinstance(spam, dict):
             raise ValueError('刷屏配置无效')
@@ -309,6 +348,7 @@ async def _save_config(request):
                 for key in db.FEATURE_KEYS
             },
             'policies': policies,
+            'join_policy': join_policy,
         }
         spam_enabled = _require_bool(spam.get('enabled'), '刷屏检测开关')
         db.save_group_cfg(updated)
@@ -325,6 +365,8 @@ async def _save_config(request):
             key for key in db.FEATURE_KEYS
             if current['features'][key] != updated['features'][key]
         )
+        if current.get('join_policy') != join_policy:
+            changed.append('join_policy')
         changed.extend(
             f'{key}_policy' for key in db.POLICY_KEYS
             if current['policies'][key] != updated['policies'][key]
@@ -344,11 +386,7 @@ async def _save_config(request):
         )
         return await _get_dashboard(_dashboard_request(request, group_id))
     except ValueError as error:
-        group_id = str(body.get('group_id') or '')
-        if group_id:
-            db.record_web_action(
-                group_id, 'config_change', False, details={'error': str(error)}
-            )
+        _record_web_error(body.get('group_id'), 'config_change', {'error': str(error)})
         return web.json_response({'success': False, 'error': str(error)}, status=400)
 
 
@@ -360,7 +398,7 @@ class _dashboard_request:
 async def _add_forbidden(request):
     body = await _json(request)
     try:
-        group_id = _require_group_id(body.get('group_id'))
+        group_id = _require_managed_group(body.get('group_id'))
         word = str(body.get('word') or '').strip()
         if not 2 <= len(word) <= 64:
             raise ValueError('违禁词长度必须在 2 至 64 个字符之间')
@@ -375,18 +413,14 @@ async def _add_forbidden(request):
             'forbidden_words': db.get_forbidden(group_id),
         }})
     except ValueError as error:
-        group_id = str(body.get('group_id') or '')
-        if group_id:
-            db.record_web_action(
-                group_id, 'forbidden_add', False, details={'error': str(error)}
-            )
+        _record_web_error(body.get('group_id'), 'forbidden_add', {'error': str(error)})
         return web.json_response({'success': False, 'error': str(error)}, status=400)
 
 
 async def _delete_forbidden(request):
     body = await _json(request)
     try:
-        group_id = _require_group_id(body.get('group_id'))
+        group_id = _require_managed_group(body.get('group_id'))
         word = str(body.get('word') or '').strip()
         if word not in db.get_forbidden(group_id):
             raise ValueError('该违禁词不存在')
@@ -399,18 +433,14 @@ async def _delete_forbidden(request):
             'forbidden_words': db.get_forbidden(group_id),
         }})
     except ValueError as error:
-        group_id = str(body.get('group_id') or '')
-        if group_id:
-            db.record_web_action(
-                group_id, 'forbidden_delete', False, details={'error': str(error)}
-            )
+        _record_web_error(body.get('group_id'), 'forbidden_delete', {'error': str(error)})
         return web.json_response({'success': False, 'error': str(error)}, status=400)
 
 
 async def _delete_target(request):
     body = await _json(request)
     try:
-        group_id = _require_group_id(body.get('group_id'))
+        group_id = _require_managed_group(body.get('group_id'))
         user_id = str(body.get('user_id') or '').strip()
         if not user_id or user_id not in db.get_targets(group_id):
             raise ValueError('该成员不在发言撤回名单中')
@@ -426,9 +456,5 @@ async def _delete_target(request):
             ],
         }})
     except ValueError as error:
-        group_id = str(body.get('group_id') or '')
-        if group_id:
-            db.record_web_action(
-                group_id, 'cancel_recall', False, details={'error': str(error)}
-            )
+        _record_web_error(body.get('group_id'), 'cancel_recall', {'error': str(error)})
         return web.json_response({'success': False, 'error': str(error)}, status=400)

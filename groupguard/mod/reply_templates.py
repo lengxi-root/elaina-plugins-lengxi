@@ -8,14 +8,20 @@ import string
 import tempfile
 import threading
 
+from .default_templates import DEFAULT_PAYLOAD
+
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEMPLATE_PATH = os.path.join(ROOT_DIR, 'reply_templates.json')
+DATA_DIR = os.path.join(ROOT_DIR, 'data')
+TEMPLATE_PATH = os.path.join(DATA_DIR, 'reply_templates.json')
 
 _lock = threading.RLock()
 _cache = None
 _cache_mtime = None
 _formatter = string.Formatter()
+
+_LEGACY_BOT_NAME_TEXT = '授权后无需@伊蕾娜也可以处理指令'
+_DYNAMIC_BOT_NAME_TEXT = '授权后无需@{bot_name}也可以处理指令'
 
 _ALLOWED_BUTTON_MODES = {'', 'join_requests', 'verify_options'}
 _STRING_FIELDS = {
@@ -180,31 +186,96 @@ def validate_template(key, value):
     return copy.deepcopy(value)
 
 
-def _read_file():
-    with open(TEMPLATE_PATH, 'r', encoding='utf-8') as file:
-        payload = json.load(file)
+def _normalize_payload(payload, allow_empty=False):
     if not isinstance(payload, dict) or not isinstance(payload.get('templates'), dict):
         raise ValueError('回复模板文件格式无效')
     templates = {
         key: validate_template(key, value)
         for key, value in payload['templates'].items()
     }
-    if not templates:
+    if not templates and not allow_empty:
         raise ValueError('回复模板文件不能为空')
     return {'version': int(payload.get('version') or 1), 'templates': templates}
+
+
+def _read_file(path, allow_empty=False):
+    with open(path, 'r', encoding='utf-8') as file:
+        return _normalize_payload(json.load(file), allow_empty=allow_empty)
+
+
+def _load_defaults():
+    return _normalize_payload(copy.deepcopy(DEFAULT_PAYLOAD))
+
+
+def _write_file(payload):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    descriptor, temp_path = tempfile.mkstemp(
+        dir=DATA_DIR, prefix='.reply_templates.', suffix='.tmp'
+    )
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8', newline='\n') as file:
+            json.dump(payload, file, ensure_ascii=False, indent=2)
+            file.write('\n')
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temp_path, TEMPLATE_PATH)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def initialize_reply_templates():
+    """Create the editable file and append new defaults without replacing edits."""
+    with _lock:
+        defaults = _load_defaults()
+        if not os.path.exists(TEMPLATE_PATH):
+            _write_file(defaults)
+            return copy.deepcopy(defaults)
+
+        payload = _read_file(TEMPLATE_PATH)
+        changed = False
+        for key, template in defaults['templates'].items():
+            if key not in payload['templates']:
+                payload['templates'][key] = template
+                changed = True
+        legacy_template = payload['templates'].get('full_message_required')
+        default_template = defaults['templates'].get('full_message_required') or {}
+        default_content = default_template.get('content')
+        legacy_content = (
+            default_content.replace(_DYNAMIC_BOT_NAME_TEXT, _LEGACY_BOT_NAME_TEXT)
+            if isinstance(default_content, str) else None
+        )
+        if (isinstance(legacy_template, dict)
+                and isinstance(legacy_content, str)
+                and legacy_template.get('content') == legacy_content):
+            legacy_template['content'] = default_content
+            changed = True
+        if payload.get('version', 1) < defaults.get('version', 1):
+            payload['version'] = defaults['version']
+            changed = True
+        if changed:
+            _write_file(payload)
+        return copy.deepcopy(payload)
+
+
+def _template_signature():
+    signature = []
+    for path in (TEMPLATE_PATH,):
+        try:
+            signature.append(os.stat(path).st_mtime_ns)
+        except OSError:
+            signature.append(None)
+    return tuple(signature)
 
 
 def _load_cached(force=False):
     global _cache, _cache_mtime
     with _lock:
-        try:
-            mtime = os.stat(TEMPLATE_PATH).st_mtime_ns
-        except OSError:
-            mtime = None
+        mtime = _template_signature()
         if not force and _cache is not None and mtime == _cache_mtime:
             return _cache
         try:
-            payload = _read_file()
+            payload = initialize_reply_templates()
         except (OSError, ValueError, json.JSONDecodeError):
             if force or _cache is None:
                 raise
@@ -238,23 +309,11 @@ def save_reply_template(key, value):
     global _cache, _cache_mtime
     template = validate_template(key, value)
     with _lock:
-        payload = _read_file()
+        payload = initialize_reply_templates()
         if key not in payload['templates']:
             raise KeyError(f'unknown groupguard reply: {key}')
         payload['templates'][key] = template
-        descriptor, temp_path = tempfile.mkstemp(
-            dir=ROOT_DIR, prefix='.reply_templates.', suffix='.tmp'
-        )
-        try:
-            with os.fdopen(descriptor, 'w', encoding='utf-8', newline='\n') as file:
-                json.dump(payload, file, ensure_ascii=False, indent=2)
-                file.write('\n')
-                file.flush()
-                os.fsync(file.fileno())
-            os.replace(temp_path, TEMPLATE_PATH)
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+        _write_file(payload)
         _cache = payload
-        _cache_mtime = os.stat(TEMPLATE_PATH).st_mtime_ns
+        _cache_mtime = _template_signature()
     return copy.deepcopy(template)

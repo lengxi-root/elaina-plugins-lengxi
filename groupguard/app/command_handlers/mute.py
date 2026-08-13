@@ -55,9 +55,8 @@ def parse_members_and_minutes(event, arg):
             return members, 0
         return members, int(minute_matches[0])
 
-    tokens = text.split()
-    if len(tokens) == 2 and tokens[1].isdigit():
-        return [(tokens[0], '')], int(tokens[1])
+    # A raw ID cannot prove that the target is an ordinary member. Accepting
+    # it here would bypass the mention-role filter for admins and owners.
     return [], 0
 
 
@@ -121,9 +120,38 @@ async def cmd_mute_member(event, match):
                            'error': '' if success else api_error(response)})
     if success:
         names = '、'.join(f'<@{member_id}>' for member_id, _role in members)
-        await reply_at(event, 'mute_success', names=names, count=len(members), minutes=minutes)
+        await reply_at(event, 'mute_success', target_id=members[0][0], names=names,
+                       count=len(members), minutes=minutes)
     else:
-        await reply_at(event, 'mute_failed', error=api_error(response))
+        await reply_at(event, 'mute_failed', target_id=members[0][0],
+                       error=api_error(response))
+
+
+def _parse_unmute_target(event, arg):
+    # Unmute may target admins/owners too; only exclude the bot and @all.
+    for mention in getattr(event, 'mentions', None) or []:
+        if not isinstance(mention, dict):
+            continue
+        member_id = str(mention.get('id') or '').strip()
+        if (member_id and not mention.get('is_you') and not mention.get('bot')
+                and mention.get('scope') != 'all'):
+            return member_id, str(mention.get('member_role') or 'member')
+    member_id = str(arg or '').strip()
+    if member_id in {'', '@', '@用户', '用户', '对方'}:
+        member_id = ''
+    return (member_id, '') if member_id else (None, '')
+
+
+def _find_muted_member(setting, member_id):
+    if not isinstance(setting, dict):
+        return None
+    for item in setting.get('members') or []:
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get('member_openid') or item.get('user_id') or item.get('id') or '').strip()
+        if item_id == str(member_id):
+            return item
+    return None
 
 
 @handler(r'^/?(?:解禁|解除禁言)(?:\s*(.*?))?\s*$', name='解除禁言',
@@ -133,10 +161,22 @@ async def cmd_unmute_member(event, match):
     if not await ensure_mute_operator(event):
         finish_action(event, 'unmute', False, details={'reason': 'permission_denied'})
         return
-    member_id, _member_role = parse_member(event, match.group(1))
+    member_id, _member_role = _parse_unmute_target(event, match.group(1))
     if not member_id:
-        finish_action(event, 'unmute', False, details={'reason': 'invalid_format'})
-        return await reply_at(event, 'unmute_format')
+        finish_action(event, 'unmute', False, details={'reason': 'target_required'})
+        return await reply_at(event, 'unmute_target_required')
+    setting, status_error = await event.sender.get_group_restrict_chat_setting(
+        event.group_id, return_error=True,
+    )
+    if setting is None:
+        finish_action(event, 'unmute', False, target_id=member_id,
+                      details={'reason': 'status_unavailable', 'error': api_error(status_error)})
+        return await reply_at(event, 'unmute_status_failed', target_id=member_id,
+                              error=api_error(status_error))
+    if _find_muted_member(setting, member_id) is None:
+        finish_action(event, 'unmute', False, target_id=member_id,
+                      details={'reason': 'not_muted'})
+        return await reply_at(event, 'unmute_not_muted', target_id=member_id)
     success, response = await event.sender.set_group_member_mute(event.group_id, [{
         'op': 'del',
         'member_openid': member_id,
@@ -151,7 +191,8 @@ async def cmd_unmute_member(event, match):
     if success:
         await reply_at(event, 'unmute_success', target_id=member_id)
     else:
-        await reply_at(event, 'unmute_failed', error=api_error(response))
+        await reply_at(event, 'unmute_failed', target_id=member_id,
+                       error=api_error(response))
 
 
 @handler(r'^/?(?:禁言列表|查看禁言列表|查看列表|群禁言状态)\s*$',

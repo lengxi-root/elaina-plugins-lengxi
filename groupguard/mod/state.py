@@ -86,6 +86,3 @@ def stop_cleanup():
     if _cleanup_task:
         _cleanup_task.cancel()
         _cleanup_task = None
-    pending_verify.clear()
-    unverified.clear()
-    verify_cooldown.clear()

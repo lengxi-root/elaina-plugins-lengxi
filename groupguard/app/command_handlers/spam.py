@@ -116,7 +116,7 @@ async def cmd_spam_punish(event, match):
     action = 'recall' if minutes == 0 else 'recall_mute'
     config = db.get_spam_config(event.group_id)
     _save_spam(
-        event, config, action=action,
+        event.group_id, config, action=action,
         mute_minutes=minutes or config['mute_minutes'],
     )
     trace_phase(event, 'config_change', 'storage', success=True, affected_count=1,

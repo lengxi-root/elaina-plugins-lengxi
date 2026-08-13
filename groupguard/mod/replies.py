@@ -139,6 +139,25 @@ class _SafeFormatter(string.Formatter):
 
 
 _SAFE_FORMATTER = _SafeFormatter()
+_FRAMEWORK_EVENT_FIELDS = (
+    'content', 'raw_content', 'user_id', 'raw_user_id', 'group_id',
+    'channel_id', 'guild_id', 'username', 'message_id', 'message_type',
+    'event_id', 'event_type', 'timestamp', 'appid', 'image_url',
+)
+_FRAMEWORK_VARIABLE_ALIASES = {
+    'userid': 'user_id',
+    'rawuserid': 'raw_user_id',
+    'groupid': 'group_id',
+    'channelid': 'channel_id',
+    'guildid': 'guild_id',
+    'messageid': 'message_id',
+    'eventid': 'event_id',
+    'nickname': 'username',
+    'botid': 'appid',
+    'botname': 'bot_name',
+    'botqq': 'bot_qq',
+    'selfid': 'bot_qq',
+}
 
 
 def _render_value(value, variables):
@@ -163,7 +182,22 @@ def _button_rows(buttons, columns=3):
     return [buttons[index:index + columns] for index in range(0, len(buttons), columns)]
 
 
-def _base_variables(data):
+def _framework_variables(event):
+    if event is None:
+        return {}
+    variables = {
+        name: getattr(event, name, '') or ''
+        for name in _FRAMEWORK_EVENT_FIELDS
+    }
+    sender = getattr(event, 'sender', None)
+    variables.update(
+        bot_name=getattr(sender, '_bot_name', '') or '',
+        bot_qq=getattr(sender, '_bot_qq', '') or '',
+    )
+    return variables
+
+
+def _base_variables(data, event=None):
     variables = {
         'count': 0,
         'failed': 0,
@@ -180,15 +214,46 @@ def _base_variables(data):
         'remaining': '',
         'error': '未知错误',
     }
+    variables.update(_framework_variables(event))
+    if 'target_id' not in data:
+        variables['target_id'] = str(
+            variables.get('user_id') or variables.get('raw_user_id') or ''
+        )
     variables.update({
         name: value for name, value in data.items()
         if value is None or isinstance(value, (str, int, float, bool))
     })
+    if 'target_id' in data:
+        variables['target_id'] = str(data.get('target_id') or '')
+    variables.update({
+        alias: variables.get(source, '')
+        for alias, source in _FRAMEWORK_VARIABLE_ALIASES.items()
+    })
     return variables
 
 
-def _dynamic_template(key, template, data):
-    variables = _base_variables(data)
+def _join_verify_text(verify_info, empty_text='无'):
+    """Render legacy verification text and the latest structured review Q&A."""
+    if not isinstance(verify_info, dict):
+        return empty_text
+    lines = []
+    verify_message = str(verify_info.get('verify_message') or '').strip()
+    if verify_message:
+        lines.append(verify_message)
+    qa_list = verify_info.get('review_qa_list')
+    if isinstance(qa_list, list):
+        for index, item in enumerate(qa_list, 1):
+            if not isinstance(item, dict):
+                continue
+            question = str(item.get('question') or '').strip()
+            answer = str(item.get('answer') or '').strip()
+            if question or answer:
+                lines.append(f'问{index}：{question or empty_text}\n答{index}：{answer or empty_text}')
+    return '\n'.join(lines) or empty_text
+
+
+def _dynamic_template(key, template, data, event=None):
+    variables = _base_variables(data, event)
     if key == 'main_panel':
         config = data['group_config']
         features = config['features']
@@ -243,17 +308,22 @@ def _dynamic_template(key, template, data):
                 'index': index,
                 'username': item.get('username') or template.get('unknown_user_text', '未知用户'),
                 'member_id': str(item.get('member_openid') or ''),
+                'target_id': str(item.get('member_openid') or ''),
                 'request_id': str(item.get('join_request_id') or ''),
-                'verify_message': verify_info.get('verify_message') or template.get('empty_text', '无'),
+                'verify_message': _join_verify_text(
+                    verify_info, template.get('empty_text', '无')
+                ),
             }
-            rows.append(_render_value(item_template, item_vars))
+            rows.append(_render_value(item_template, {**variables, **item_vars}))
             if (template.get('button_mode') == 'join_requests'
                     and item_vars['member_id'] and item_vars['request_id']):
-                button_rows.append(_render_value(button_template, item_vars))
+                button_rows.append(_render_value(
+                    button_template, {**variables, **item_vars},
+                ))
         variables.update(
             request_count=len(requests), request_rows='\n'.join(rows),
             next_page=_render_value(template.get('next_page_content', ''), {
-                'next_cursor': data.get('next_cursor', ''),
+                **variables, 'next_cursor': data.get('next_cursor', ''),
             }) if data.get('next_cursor') else '',
         )
         if template.get('button_mode') == 'join_requests':
@@ -270,6 +340,7 @@ def _dynamic_template(key, template, data):
             rendered_rows = []
             for item in rows:
                 rendered_rows.append(_render_value(item_template, {
+                    **variables,
                     'time': datetime.fromtimestamp(item['time']).strftime('%m-%d %H:%M:%S'),
                     'action_label': labels.get(item['action'], item['action']),
                     'state': template.get('success_text', '成功') if item['success'] else template.get('failure_text', '失败'),
@@ -285,8 +356,10 @@ def _dynamic_template(key, template, data):
         member_rows = []
         for item in members[:10]:
             member_rows.append(_render_value(template.get('item_content', ''), {
+                **variables,
                 'name': item.get('username') or template.get('unknown_user_text', '未知用户'),
                 'member_id': item.get('member_openid') or '',
+                'target_id': item.get('member_openid') or '',
                 'expire_at': item.get('mute_expire_at') or template.get('unknown_time_text', '未知时间'),
             }))
         overflow_count = max(0, len(members) - 10)
@@ -294,7 +367,7 @@ def _dynamic_template(key, template, data):
             global_mode=labels.get(mode, labels.get('unknown', '未知')),
             member_count=len(members), member_rows=''.join(member_rows),
             overflow=_render_value(template.get('overflow_content', ''), {
-                'overflow_count': overflow_count,
+                **variables, 'overflow_count': overflow_count,
             }) if overflow_count else '',
         )
     elif key == 'verify_question':
@@ -320,7 +393,7 @@ def _dynamic_template(key, template, data):
             word_count=len(words),
             word_rows='\n'.join(
                 _render_value(template.get('item_content', ''), {
-                    'index': index, 'word': word,
+                    **variables, 'index': index, 'word': word,
                 }) for index, word in enumerate(words, 1)
             ),
         )
@@ -329,7 +402,9 @@ def _dynamic_template(key, template, data):
         variables.update(
             entry_count=len(entries),
             entry_rows='\n'.join(
-                _render_value(template.get('item_content', ''), item)
+                _render_value(template.get('item_content', ''), {
+                    **variables, **item,
+                })
                 for item in entries
             ),
         )
@@ -350,11 +425,11 @@ def _dynamic_template(key, template, data):
     return template, variables
 
 
-def _build(key, data):
+def _build(key, data, event=None):
     template = _get_cached_template(
         key if key != 'category_panel' else 'category_spam'
     )
-    template, variables = _dynamic_template(key, template, data)
+    template, variables = _dynamic_template(key, template, data, event)
     message = ReplyMessage(
         content=str(_render_value(template.get('content', ''), variables)),
         buttons=_button_rows(_render_value(template.get('buttons'), variables)),
@@ -390,7 +465,7 @@ async def respond(
             },
         )
     message = _apply_delivery_overrides(
-        _build(key, data),
+        _build(key, data, event),
         buttons=buttons,
         small_buttons=small_buttons,
     )
