@@ -149,6 +149,10 @@
                   <label class="switch template-switch"><span><b>自动 @ 触发者</b><small>关闭后模板自行处理提及文本</small></span><input id="tpl-at-user" type="checkbox"></label>
                 </div>
                 <label class="field"><span>发送正文</span><textarea id="tpl-content" rows="12" spellcheck="false"></textarea></label>
+                <section class="template-variables" aria-label="可用变量">
+                  <div class="template-variables-head"><div><b>可用变量</b><small>点击变量可插入最近编辑框，也可手动复制到按钮 JSON</small></div><span id="template-variable-context"></span></div>
+                  <div id="template-variable-list"></div>
+                </section>
                 <label class="field"><span>按钮 JSON</span><textarea id="tpl-buttons" rows="11" spellcheck="false" placeholder='[{"text":"娱乐菜单","data":"/娱乐菜单","enter":true,"style":1},{"text":"邀我进群","link":"https://qun.qq.com/...","style":1}]'></textarea></label>
                 <details class="advanced-editor">
                   <summary>完整模板 JSON</summary>

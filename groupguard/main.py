@@ -50,7 +50,7 @@ __plugin_meta__ = {
     'name': '群管',
     'author': '冷曦',
     'description': '违禁词过滤、入群验证、禁言、入群审批、消息撤回等群管理功能',
-    'version': '1.3.1',
+    'version': '1.3.2',
     'license': 'MIT',
 }
 

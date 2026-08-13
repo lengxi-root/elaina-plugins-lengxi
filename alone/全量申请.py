@@ -4,7 +4,7 @@ __plugin_meta__ = {
     'name': '全量申请',
     'author': 'lengxi',
     'description': '生成群全量消息授权链接，支持记录申请与列表查看',
-    'version': '1.1.0',
+    'version': '1.1.1',
 }
 
 
@@ -13,6 +13,7 @@ import json
 import os
 from datetime import datetime
 
+from core.application import get_app
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load
 
@@ -149,12 +150,10 @@ async def reject_short_group_code(event, match):
 
 @handler(r'^全量列表$', name='全量列表', desc='列出所有已开启全量消息的群', owner_only=True)
 async def list_full_access(event, match):
-    from core.bot.manager import _bot_manager_ref
-    if not _bot_manager_ref:
+    app = get_app()
+    if not app:
         return await event.reply(f"<@{event.user_id}> 服务未就绪")
-    if not hasattr(_bot_manager_ref, 'get_full_access_groups'):
-        return await event.reply(f"<@{event.user_id}> 该功能不可用，请确认 core/bot/event.py 已更新")
-    groups = _bot_manager_ref.get_full_access_groups()
+    groups = app.get_full_access_groups()
     if not groups:
         return await event.reply(f"<@{event.user_id}> 暂无全量群记录")
     lines = [f"<@{event.user_id}> 全量群列表（共 {len(groups)} 个）：\n"]

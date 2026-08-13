@@ -10,6 +10,46 @@ const POLICY_FIELDS = [
   ['block_forward','cfg-block-forward'],
   ['forbidden_words','cfg-forbidden'],
 ];
+const TEMPLATE_VARIABLE_GROUPS = [
+  {label:'通用变量', items:[
+    ['target_id','目标成员 ID','自动处理、验证、禁言'], ['group_id','群 ID','按钮或验证'],
+    ['member_id','成员 ID','列表项或验证'], ['username','成员昵称','列表项'],
+    ['count','数量','操作结果'], ['failed','失败数量','撤回结果'],
+    ['minutes','分钟数','禁言或验证'], ['seconds','秒数','刷屏窗口'],
+    ['limit','消息条数上限','刷屏设置'], ['word','违禁词','违禁词操作'],
+    ['action_text','处理结果','自动监管通知'], ['remaining','剩余时间','发言撤回'],
+    ['error','错误信息','失败提示'], ['days','统计天数','统计模板'],
+    ['url','图片地址','违禁词图片'], ['px','图片宽度','违禁词图片'], ['names','成员提及文本','禁言结果'], ['punish','处罚说明','刷屏设置'],
+  ]},
+  {label:'群管开关', items:[
+    ['group_mark','群管状态图标','main_panel'], ['group_command','群管切换命令','main_panel'],
+    ['notify_mark','提醒状态图标','main_panel'], ['notify_command','提醒切换命令','main_panel'],
+    ['join_verify_mark','入群验证图标','main_panel'], ['join_verify_command','入群验证命令','main_panel'],
+    ['block_links_mark','链接拦截图标','main_panel'], ['block_links_command','链接拦截命令','main_panel'],
+    ['block_cards_mark','卡片拦截图标','main_panel'], ['block_cards_command','卡片拦截命令','main_panel'],
+    ['block_forward_mark','转发拦截图标','main_panel'], ['block_forward_command','转发拦截命令','main_panel'],
+    ['forbidden_words_mark','违禁词图标','main_panel'], ['forbidden_words_command','违禁词命令','main_panel'],
+    ['spam_mark','刷屏检测图标','main_panel'], ['spam_command','刷屏检测命令','main_panel'],
+    ['forbidden_switch_state','违禁词开关文字','category_forbidden'],
+    ['join_verify_switch_state','验证开关文字','category_filter'], ['join_verify_switch_short','验证开关短文字','category_filter'],
+    ['block_links_switch_state','链接开关文字','category_filter'], ['block_links_switch_short','链接开关短文字','category_filter'],
+    ['block_cards_switch_state','卡片开关文字','category_filter'], ['block_cards_switch_short','卡片开关短文字','category_filter'],
+    ['block_forward_switch_state','转发开关文字','category_filter'], ['block_forward_switch_short','转发开关短文字','category_filter'],
+  ]},
+  {label:'列表与统计', items:[
+    ['request_count','入群申请数量','join_requests'], ['request_rows','入群申请行','join_requests'], ['next_page','下一页内容','join_requests'], ['next_cursor','下一页游标','入群申请分页'],
+    ['index','当前序号','列表项'], ['request_id','入群申请 ID','入群申请按钮'], ['verify_message','验证信息','入群申请项'],
+    ['audit_count','审计记录数量','audit_list'], ['audit_rows','审计记录行','audit_list'], ['time','时间','审计行'], ['action_label','操作名称','审计行'], ['state','成功或失败','审计行'], ['affected_count','影响数量','审计行'], ['trace_short','Trace 短 ID','审计行'],
+    ['global_mode','全局禁言模式','mute_list'], ['member_count','成员数量','mute_list'], ['member_rows','禁言成员行','mute_list'], ['overflow','超出提示','mute_list'], ['overflow_count','超出数量','禁言列表'],
+    ['word_count','违禁词数量','forbidden_list_text'], ['word_rows','违禁词行','forbidden_list_text'], ['entry_count','处罚成员数量','punish_list'], ['entry_rows','处罚成员行','punish_list'], ['display','显示文本','处罚列表项'], ['expire_at','到期时间','禁言列表项'],
+    ['management_count','管理操作数','management_stats'], ['manual_count','手动操作数','management_stats'], ['automatic_count','自动操作数','management_stats'], ['mute_count','禁言次数','management_stats'], ['unmute_count','解禁次数','management_stats'], ['recall_count','撤回次数','management_stats'], ['punish_count','处罚次数','management_stats'], ['approve_count','通过次数','management_stats'], ['decline_count','拒绝次数','management_stats'], ['config_count','配置变更次数','management_stats'], ['failed_count','失败次数','management_stats'],
+  ]},
+  {label:'验证与状态', items:[
+    ['a','算术左值','verify_question'], ['op','运算符','verify_question'], ['b','算术右值','verify_question'], ['verify_id','验证 ID','verify_question 按钮'], ['option','验证选项','verify_question 按钮'], ['option_index','选项序号','verify_question 按钮'],
+    ['is_admin','管理员状态','group_state'], ['is_full_access','完整权限状态','group_state'], ['allow_proactive_msg','主动消息权限','group_state'], ['retry_count','重试次数','verify_wrong_muted'], ['retry_text','重试提示','verify_wrong_muted'], ['decision_text','审批结果','join_declined'], ['scope_text','处理范围','recall_done'], ['failed_text','失败提示','recall_done'],
+  ]},
+];
+let templateInsertTarget = 'tpl-content';
 let groups = [];
 let dashboard = null;
 let templates = {};
@@ -97,13 +137,25 @@ function renderTemplates(){
 function pretty(value){return JSON.stringify(value??null,null,2)}
 function parseJsonField(id,label){const value=$(id).value.trim();try{return value?JSON.parse(value):null}catch(_){throw new Error(`${label} JSON 格式无效`)}}
 function selectedTemplate(){return templates[selectedTemplateKey]||null}
+function renderTemplateVariables(){
+  const item=selectedTemplate();
+  if(!item){$('template-variable-context').textContent='';$('template-variable-list').innerHTML='';return}
+  $('template-variable-context').textContent='点击即可插入';
+  $('template-variable-list').innerHTML='<div class="template-variable-groups">'+TEMPLATE_VARIABLE_GROUPS.map(group=>'<section class="template-variable-group"><div class="template-variable-group-title">'+esc(group.label)+'</div><div class="template-variable-items">'+group.items.map(([name,description,scope])=>'<button type="button" class="template-variable" data-template-variable="'+esc(name)+'" title="适用：'+esc(scope)+'"><code>{'+esc(name)+'}</code><small>'+esc(description)+'</small></button>').join('')+'</div></section>').join('')+'</div>';
+}
+function insertTemplateVariable(name){
+  const field=$(templateInsertTarget)||$('tpl-content');
+  if(!field||field.disabled)return;
+  const token='{'+name+'}';const start=field.selectionStart??field.value.length;const end=field.selectionEnd??start;
+  field.value=field.value.slice(0,start)+token+field.value.slice(end);field.focus();const cursor=start+token.length;field.setSelectionRange(cursor,cursor);
+}
 function renderTemplateForm(){
   const item=selectedTemplate(),has=!!item;$('template-form').hidden=!has;$('template-empty').hidden=has;$('save-template').disabled=!has;
   if(!has){$('template-title').textContent='选择模板';$('template-key').textContent='全部模板保存在 reply_templates.json';return}
   $('template-title').textContent=templateLabel(selectedTemplateKey,item);$('template-key').textContent=selectedTemplateKey;
   $('tpl-label').value=item.label||'';$('tpl-category').value=item.category||'';$('tpl-small-buttons').checked=!!item.small_buttons;$('tpl-at-user').checked=item.at_user!==false;
   $('tpl-msg-type').value=item.msg_type===0||item.msg_type===2?String(item.msg_type):'';
-  $('tpl-content').value=item.content||'';$('tpl-buttons').value=pretty(item.buttons);$('tpl-raw').value=pretty(item);
+  $('tpl-content').value=item.content||'';$('tpl-buttons').value=pretty(item.buttons);$('tpl-raw').value=pretty(item);renderTemplateVariables();
 }
 function formTemplate(){
   const current=selectedTemplate();if(!current)throw new Error('请先选择模板');
@@ -162,5 +214,6 @@ $('sidebar-toggle').addEventListener('click',()=>setSidebar(!$('app').classList.
 $('reload').addEventListener('click',loadGroups);$('group-select').addEventListener('change',()=>{localStorage.setItem('groupguard-group',currentGroup());loadDashboard()});$('days-select').addEventListener('change',loadDashboard);$('save-config').addEventListener('click',saveConfig);$('forbidden-form').addEventListener('submit',addForbidden);
 document.querySelectorAll('.policy-action').forEach(select=>select.addEventListener('change',syncPolicyFields));
 $('template-search').addEventListener('input',renderTemplates);$('template-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-key]');if(button){selectedTemplateKey=button.dataset.templateKey;renderTemplates()}});$('save-template').addEventListener('click',saveTemplate);$('apply-template-json').addEventListener('click',applyRawTemplate);$('sync-template-json').addEventListener('click',syncRawTemplate);
+document.querySelectorAll('#tpl-content,#tpl-buttons,#tpl-raw').forEach(field=>field.addEventListener('focus',()=>{templateInsertTarget=field.id}));$('template-variable-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-variable]');if(button)insertTemplateVariable(button.dataset.templateVariable)});
 $('forbidden-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-word]');if(button)deleteForbidden(button.dataset.deleteWord)});$('target-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-target]');if(button)deleteTarget(button.dataset.deleteTarget)});['filter-source','filter-status','filter-action'].forEach(id=>$(id).addEventListener('change',renderAudit));
 sidebarMedia.addEventListener('change',()=>setSidebar(true));setSidebar(true);Promise.all([loadTemplates(),loadGroups()]).catch(error=>{showReady(false);toast(error.message,true)});
