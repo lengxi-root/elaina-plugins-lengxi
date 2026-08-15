@@ -13,6 +13,7 @@ from .utils import api_pair
 VERIFY_INITIAL_WAIT = 300   # 首次验证5分钟
 VERIFY_MAX_WAIT = 3600      # 最大等待1小时
 VERIFY_FAILURE_MUTE = 600   # 答错后禁言并等待10分钟
+VERIFY_OPTION_COUNT = 4
 
 
 def _reply_succeeded(result):
@@ -59,10 +60,14 @@ async def send_verify(event, group_id, member_id, retry_count=0):
         a, b = max(a, b), min(a, b)
     answer = a + b if op == '+' else a - b
 
-    options = {answer}
-    while len(options) < 4:
-        options.add(answer + random.randint(-5, 5))
-    options = list(options)
+    distractors = [
+        answer + offset
+        for offset in range(-5, 6)
+        if offset and answer + offset >= 0
+    ]
+    options = [answer] + random.sample(
+        distractors, VERIFY_OPTION_COUNT - 1,
+    )
     random.shuffle(options)
     correct_idx = options.index(answer)
     verify_id = secrets.token_hex(4)
@@ -77,6 +82,7 @@ async def send_verify(event, group_id, member_id, retry_count=0):
         'verify_id': verify_id,
         'expire': time.time() + wait,
         'retry_count': retry_count,
+        'option_count': len(options),
         'next_wait': min(wait * 2, VERIFY_MAX_WAIT),
     }
     state.clear_cooldown(group_id, member_id)
@@ -140,6 +146,15 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
         record_result(event, 'verify_answer', False, target_id=user_id,
                       details={'reason': 'stale_challenge'}, source='verification')
         await respond(event, 'verify_stale', at_user=False, target_id=user_id)
+        return
+    option_count = pending.get('option_count', VERIFY_OPTION_COUNT)
+    try:
+        option_count = int(option_count)
+    except (TypeError, ValueError):
+        option_count = VERIFY_OPTION_COUNT
+    if not 0 <= chosen < option_count:
+        record_result(event, 'verify_answer', False, target_id=user_id,
+                      details={'reason': 'invalid_option'}, source='verification')
         return
     if time.time() > pending['expire']:
         retry_count = pending.get('retry_count', 0) + 1

@@ -28,6 +28,12 @@ def clear_member(group_id, user_id):
         _discard_member(mapping, group_id, user_id)
 
 
+def clear_group(group_id):
+    """Release all verification state for a group."""
+    for mapping in (pending_verify, verify_cooldown, unverified):
+        mapping.pop(group_id, None)
+
+
 def clear_pending(group_id, user_id):
     _discard_member(pending_verify, group_id, user_id)
 

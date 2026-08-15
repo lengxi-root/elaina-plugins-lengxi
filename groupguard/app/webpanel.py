@@ -8,7 +8,7 @@ from aiohttp import web
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.web_pages import register_route, unregister_route
 
-from ..mod import db
+from ..mod import db, state
 from ..mod.reply_templates import list_reply_templates, save_reply_template
 
 log = get_logger(PLUGIN, '群管面板')
@@ -355,6 +355,8 @@ async def _save_config(request):
         }
         spam_enabled = _require_bool(spam.get('enabled'), '刷屏检测开关')
         db.save_group_cfg(updated)
+        if not updated['enabled'] or not updated['features']['join_verify']:
+            state.clear_group(group_id)
         db.save_spam_config(
             group_id, int(spam_enabled), window_seconds, limit_count,
             spam_action, spam_mute_minutes,

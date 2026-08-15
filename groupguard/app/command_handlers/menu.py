@@ -2,7 +2,7 @@
 
 from core.plugin.decorators import handler
 
-from ...mod import db
+from ...mod import db, state
 from ...mod.panel import show_category, show_gm_panel
 from ...mod.perms import ensure_admin_env
 from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
@@ -44,6 +44,7 @@ async def cmd_gm_off(event, match):
     if not await ensure_admin_env(event):
         return
     db.set_enabled(event.group_id, False)
+    state.clear_group(event.group_id)
     trace_phase(event, 'config_change', 'storage', success=True, affected_count=1,
                 details={'key': 'enabled', 'value': False})
     finish_action(event, 'config_change', True, affected_count=1,
@@ -73,6 +74,8 @@ def make_toggle(key, enabled):
         if not await ensure_admin_env(event):
             return
         db.set_feature(event.group_id, key, enabled)
+        if key == 'join_verify' and not enabled:
+            state.clear_group(event.group_id)
         trace_phase(event, 'config_change', 'storage', success=True, affected_count=1,
                     details={'key': key, 'value': enabled})
         finish_action(event, 'config_change', True, affected_count=1,

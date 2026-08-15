@@ -120,6 +120,10 @@ async def on_verify_click(event, match):
     member_id = event.user_id
     if not member_id:
         return
+    gc = db.get_group_cfg(gid)
+    if not gc['enabled'] or not gc['features']['join_verify']:
+        state.clear_member(gid, member_id)
+        return
     try:
         chosen = int(parts[-1])
     except (TypeError, ValueError):
