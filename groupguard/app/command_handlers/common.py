@@ -5,7 +5,12 @@ from ...mod.storage.audit import current_action, record_audit, record_received, 
 from ...mod.utils import api_pair as api_pair
 
 
-HANDLER_OPTIONS = dict(group_only=True, ignore_at_check=True, priority=5)
+HANDLER_OPTIONS = dict(
+    group_only=True,
+    event_types=['GROUP_MESSAGE_CREATE', 'GROUP_AT_MESSAGE_CREATE'],
+    ignore_at_check=True,
+    priority=5,
+)
 
 
 def begin_action(event, action, details=None):

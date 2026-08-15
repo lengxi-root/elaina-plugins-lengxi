@@ -8,7 +8,11 @@ import string
 import tempfile
 import threading
 
-from .default_templates import DEFAULT_PAYLOAD
+from .default_templates import (
+    DEFAULT_PAYLOAD,
+    JOIN_REQUEST_ITEM_CONTENT,
+    LEGACY_JOIN_REQUEST_ITEM_CONTENT,
+)
 
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -347,6 +351,12 @@ def initialize_reply_templates():
                 and isinstance(legacy_content, str)
                 and legacy_template.get('content') == legacy_content):
             legacy_template['content'] = default_content
+            changed = True
+        join_requests_template = payload['templates'].get('join_requests')
+        if (isinstance(join_requests_template, dict)
+                and join_requests_template.get('item_content')
+                == LEGACY_JOIN_REQUEST_ITEM_CONTENT):
+            join_requests_template['item_content'] = JOIN_REQUEST_ITEM_CONTENT
             changed = True
         if payload.get('version', 1) < defaults.get('version', 1):
             payload['version'] = defaults['version']

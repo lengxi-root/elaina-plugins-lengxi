@@ -346,3 +346,16 @@ _DEFAULT_JSON_B64 = (
 )
 
 DEFAULT_PAYLOAD = json.loads(base64.b64decode(_DEFAULT_JSON_B64).decode('utf-8'))
+
+# Keep the approval token in button data, but do not expose it in the message.
+_join_requests_template = DEFAULT_PAYLOAD['templates']['join_requests']
+LEGACY_JOIN_REQUEST_ITEM_CONTENT = _join_requests_template['item_content']
+JOIN_REQUEST_ITEM_CONTENT = (
+    '{avatar}\n'
+    + '\n'.join(
+        line for line in LEGACY_JOIN_REQUEST_ITEM_CONTENT.splitlines()
+        if '{request_id}' not in line
+    )
+)
+_join_requests_template['item_content'] = JOIN_REQUEST_ITEM_CONTENT
+DEFAULT_PAYLOAD['version'] = max(int(DEFAULT_PAYLOAD.get('version', 1)), 3)

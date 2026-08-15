@@ -304,11 +304,18 @@ def _dynamic_template(key, template, data, event=None):
         for index, item in enumerate(requests, 1):
             verify_info = item.get('verify_info')
             verify_info = verify_info if isinstance(verify_info, dict) else {}
+            member_id = str(item.get('member_openid') or '')
+            appid = str(variables.get('appid') or '')
             item_vars = {
                 'index': index,
                 'username': item.get('username') or template.get('unknown_user_text', '未知用户'),
-                'member_id': str(item.get('member_openid') or ''),
-                'target_id': str(item.get('member_openid') or ''),
+                'avatar': (
+                    f'![头像 #30px #30px]'
+                    f'(https://q.qlogo.cn/qqapp/{appid}/{member_id}/640)'
+                    if appid and member_id else ''
+                ),
+                'member_id': member_id,
+                'target_id': member_id,
                 'request_id': str(item.get('join_request_id') or ''),
                 'verify_message': _join_verify_text(
                     verify_info, template.get('empty_text', '无')

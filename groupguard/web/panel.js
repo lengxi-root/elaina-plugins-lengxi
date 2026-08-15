@@ -53,7 +53,7 @@ const TEMPLATE_VARIABLE_GROUPS = [
   ]},
   {label:'列表与统计', items:[
     ['request_count','入群申请数量','join_requests'], ['request_rows','入群申请行','join_requests'], ['next_page','下一页内容','join_requests'], ['next_cursor','下一页游标','入群申请分页'],
-    ['index','当前序号','列表项'], ['request_id','入群申请 ID','入群申请按钮'], ['verify_message','验证信息（含审核问答）','入群申请项'],
+    ['index','当前序号','列表项'], ['avatar','30px 用户头像 Markdown','入群申请项'], ['request_id','入群申请 ID','入群申请按钮'], ['verify_message','验证信息（含审核问答）','入群申请项'],
     ['audit_count','审计记录数量','audit_list'], ['audit_rows','审计记录行','audit_list'], ['time','时间','审计行'], ['action_label','操作名称','审计行'], ['state','成功或失败','审计行'], ['affected_count','影响数量','审计行'], ['trace_short','Trace 短 ID','审计行'],
     ['global_mode','全局禁言模式','mute_list'], ['member_count','成员数量','mute_list'], ['member_rows','禁言成员行','mute_list'], ['overflow','超出提示','mute_list'], ['overflow_count','超出数量','禁言列表'],
     ['word_count','违禁词数量','forbidden_list_text'], ['word_rows','违禁词行','forbidden_list_text'], ['entry_count','处罚成员数量','punish_list'], ['entry_rows','处罚成员行','punish_list'], ['display','显示文本','处罚列表项'], ['expire_at','到期时间','禁言列表项'],
