@@ -1,8 +1,4 @@
-"""违禁词列表渲染 — PIL 绘制脱敏列表图 + COS 图床上传 (meme/)
-
-违禁词本身不外发明文 (避免机器人消息因包含违禁词被平台判违规),
-列表仅展示「编号 + 首字 + ***」, 删除时按编号操作。
-"""
+"""渲染并上传脱敏的违禁词列表。"""
 
 import io
 import asyncio
@@ -19,8 +15,6 @@ def mask_word(word: str) -> str:
     """脱敏: 只显示开头一个字, 其余以 *** 代替"""
     return (word[0] if word else '') + '***'
 
-
-# ==================== 图床 (框架 image_hosting 模块, COS 渠道) ====================
 
 def _get_hosting():
     try:
@@ -41,8 +35,6 @@ async def _upload_meme(image_data: bytes, name: str):
     r = await hosting.upload_cos(image_data, fn, custom_path=f"meme/{fn}")
     return r if isinstance(r, dict) and r.get('file_url') else None
 
-
-# ==================== 字体 ====================
 
 _font_cache = {}
 
@@ -67,8 +59,6 @@ def _font(size, bold=False):
     _font_cache[key] = f
     return f
 
-
-# ==================== 渲染 ====================
 
 _S = 1
 _MAX_RENDERED_WORDS = 300

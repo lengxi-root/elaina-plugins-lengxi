@@ -3,19 +3,10 @@
 from core.plugin.decorators import handler
 
 from ..mod import db, state
+from ..mod.replies import api_error
 from ..mod.storage.audit import record_received, record_result
+from ..mod.utils import api_pair
 from ..mod.verify import handle_verify_answer, send_verify
-
-
-def _api_error(response):
-    if isinstance(response, dict):
-        return str(
-            response.get('message')
-            or response.get('msg')
-            or response.get('code')
-            or ''
-        )
-    return str(response or '')
 
 
 def _join_request_details(event, mode, request_id):
@@ -77,19 +68,16 @@ async def on_join_request(event, match):
     if decline:
         details['reason'] = reason
     record_received(event, action, source='automatic', details=details)
-    try:
-        success, response = await event.sender.review_group_join_request(
-            group_id,
-            member_id,
-            'decline' if decline else 'approve',
-            join_request_id=request_id,
-            reject_reason=reason if decline else '',
-            add_to_member_blacklist=blacklisted,
-        )
-        error = '' if success else _api_error(response)
-    except Exception as exc:  # noqa: BLE001
-        success = False
-        error = f'{type(exc).__name__}: {exc}'
+    success, response = await api_pair(event.sender.review_group_join_request(
+        group_id,
+        member_id,
+        'decline' if decline else 'approve',
+        join_request_id=request_id,
+        reject_reason=reason if decline else '',
+        add_to_member_blacklist=blacklisted,
+    ))
+    success = bool(success)
+    error = '' if success else api_error(response)
     result_details = {**details, 'error': error}
     record_result(
         event, action, success, affected_count=1 if success else 0,

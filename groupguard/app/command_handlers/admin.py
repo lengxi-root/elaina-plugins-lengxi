@@ -22,7 +22,7 @@ async def cmd_refresh_group_state(event, match):
         finish_action(event, 'refresh_group_state', False, details={'reason': 'operator_denied'})
         return await reply_at(event, 'refresh_denied')
     trace_phase(event, 'refresh_group_state', 'permission', success=True)
-    state = await get_bot_group_state(event)
+    state = await get_bot_group_state(event, refresh=True)
     trace_phase(event, 'refresh_group_state', 'api', success=state is not None,
                 details={'operation': 'get_group_state'})
     if state is None:

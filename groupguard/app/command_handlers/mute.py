@@ -11,6 +11,7 @@ from ...mod.utils import reply_at
 from .common import (
     HANDLER_OPTIONS,
     active_action,
+    api_pair,
     api_error,
     begin_action,
     finish_action,
@@ -55,18 +56,14 @@ def parse_members_and_minutes(event, arg):
             return members, 0
         return members, int(minute_matches[0])
 
-    # A raw ID cannot prove that the target is an ordinary member. Accepting
-    # it here would bypass the mention-role filter for admins and owners.
+    # 原始 ID 无法证明目标是普通成员，禁止绕过艾特角色检查。
     return [], 0
 
 
 def parse_member(event, arg):
-    """优先读取可操作艾特，兼容不公开展示的成员 ID 输入。"""
+    """保留旧接口，但仍只返回经过角色过滤的艾特成员。"""
     members = get_operable_members(event)
-    if members:
-        return members[0]
-    member_id = str(arg or '').strip()
-    return (member_id, '') if member_id else (None, '')
+    return members[0] if members else (None, '')
 
 
 @handler(r'^/?禁言菜单\s*$', name='禁言菜单', desc='查看禁言操作菜单', **HANDLER_OPTIONS)
@@ -108,7 +105,9 @@ async def cmd_mute_member(event, match):
         {'op': 'add', 'member_openid': member_id, 'mute_expire_at': expire_at}
         for member_id, _member_role in members
     ]
-    success, response = await event.sender.set_group_member_mute(event.group_id, payload)
+    success, response = await api_pair(
+        event.sender.set_group_member_mute(event.group_id, payload)
+    )
     trace_phase(event, 'mute', 'api', success=success,
                 affected_count=len(members) if success else 0,
                 target_id=members[0][0],
@@ -128,7 +127,7 @@ async def cmd_mute_member(event, match):
 
 
 def _parse_unmute_target(event, arg):
-    # Unmute may target admins/owners too; only exclude the bot and @all.
+    # 解禁允许管理员和群主，只排除机器人与 @全体成员。
     for mention in getattr(event, 'mentions', None) or []:
         if not isinstance(mention, dict):
             continue
@@ -165,10 +164,10 @@ async def cmd_unmute_member(event, match):
     if not member_id:
         finish_action(event, 'unmute', False, details={'reason': 'target_required'})
         return await reply_at(event, 'unmute_target_required')
-    setting, status_error = await event.sender.get_group_restrict_chat_setting(
+    setting, status_error = await api_pair(event.sender.get_group_restrict_chat_setting(
         event.group_id, return_error=True,
-    )
-    if setting is None:
+    ), failure=None)
+    if not isinstance(setting, dict):
         finish_action(event, 'unmute', False, target_id=member_id,
                       details={'reason': 'status_unavailable', 'error': api_error(status_error)})
         return await reply_at(event, 'unmute_status_failed', target_id=member_id,
@@ -177,10 +176,10 @@ async def cmd_unmute_member(event, match):
         finish_action(event, 'unmute', False, target_id=member_id,
                       details={'reason': 'not_muted'})
         return await reply_at(event, 'unmute_not_muted', target_id=member_id)
-    success, response = await event.sender.set_group_member_mute(event.group_id, [{
+    success, response = await api_pair(event.sender.set_group_member_mute(event.group_id, [{
         'op': 'del',
         'member_openid': member_id,
-    }])
+    }]))
     trace_phase(event, 'unmute', 'api', success=success,
                 affected_count=1 if success else 0, target_id=member_id,
                 details={'operation': 'delete',
@@ -202,13 +201,14 @@ async def cmd_mute_status(event, match):
     if not await ensure_mute_operator(event):
         finish_action(event, 'mute_list', False, details={'reason': 'permission_denied'})
         return
-    setting, error = await event.sender.get_group_restrict_chat_setting(
+    setting, error = await api_pair(event.sender.get_group_restrict_chat_setting(
         event.group_id,
         return_error=True,
-    )
-    trace_phase(event, 'mute_list', 'api', success=setting is not None,
-                details={'error': '' if setting is not None else api_error(error)})
-    if setting is None:
+    ), failure=None)
+    setting_valid = isinstance(setting, dict)
+    trace_phase(event, 'mute_list', 'api', success=setting_valid,
+                details={'error': '' if setting_valid else api_error(error)})
+    if not setting_valid or not isinstance(setting.get('members') or [], list):
         finish_action(event, 'mute_list', False, details={'error': api_error(error)})
         return await reply_at(event, 'mute_list_failed', error=api_error(error))
 

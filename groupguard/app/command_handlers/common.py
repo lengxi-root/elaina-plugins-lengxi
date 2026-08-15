@@ -2,6 +2,7 @@
 
 from ...mod.replies import api_error as api_error
 from ...mod.storage.audit import current_action, record_audit, record_received, record_result
+from ...mod.utils import api_pair as api_pair
 
 
 HANDLER_OPTIONS = dict(group_only=True, ignore_at_check=True, priority=5)

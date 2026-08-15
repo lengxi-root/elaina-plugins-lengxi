@@ -1,5 +1,4 @@
 ﻿# Built-in GroupGuard reply templates.
-# Runtime edits live in groupguard/data/reply_templates.json.
 
 import base64
 import json

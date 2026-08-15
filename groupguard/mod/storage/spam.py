@@ -9,6 +9,13 @@ from .core import ACTION_KEYS, SPAM_DEFAULT_WINDOW, SPAM_LOG_TTL, get_db
 _last_cleanup = 0
 
 
+def _bounded_int(value, default, minimum, maximum):
+    try:
+        return max(minimum, min(maximum, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
 @lru_cache(maxsize=512)
 def _get_spam_config(group_id):
     connection = get_db()
@@ -22,11 +29,11 @@ def _get_spam_config(group_id):
         return 0, SPAM_DEFAULT_WINDOW, 10, 'recall', 10
     action = row['action'] if row['action'] in ACTION_KEYS else 'recall'
     return (
-        int(row['enabled']),
-        int(row['window_seconds']),
-        int(row['limit_count']),
+        _bounded_int(row['enabled'], 0, 0, 1),
+        _bounded_int(row['window_seconds'], SPAM_DEFAULT_WINDOW, 5, 3600),
+        _bounded_int(row['limit_count'], 10, 3, 100),
         action,
-        int(row['mute_minutes']),
+        _bounded_int(row['mute_minutes'], 10, 1, 43200),
     )
 
 
@@ -45,12 +52,14 @@ def save_spam_config(
     group_id, enabled, window_seconds, limit_count, action, mute_minutes,
 ):
     previous = _get_spam_config(group_id)
-    updated = (
-        int(enabled), int(window_seconds), int(limit_count),
-        str(action), int(mute_minutes),
-    )
+    updated = (_bounded_int(enabled, 0, 0, 1), int(window_seconds), int(limit_count),
+               str(action), int(mute_minutes))
     if updated[3] not in ACTION_KEYS:
         raise ValueError(f'Unsupported spam action: {updated[3]}')
+    if not 5 <= updated[1] <= 3600 or not 3 <= updated[2] <= 100:
+        raise ValueError('Invalid spam window or limit')
+    if not 1 <= updated[4] <= 43200:
+        raise ValueError('Invalid spam mute duration')
     legacy_punish = 0 if updated[3] == 'recall' else updated[4]
     connection = get_db()
     connection.execute(

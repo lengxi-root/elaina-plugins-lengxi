@@ -8,6 +8,7 @@ from ...mod.utils import reply_at
 from .common import (
     HANDLER_OPTIONS,
     active_action,
+    api_pair,
     api_error,
     begin_action,
     finish_action,
@@ -34,19 +35,23 @@ async def cmd_join_requests(event, match):
     begin_action(event, 'join_list')
     if not await ensure_admin_env(event):
         return
-    page, error = await event.sender.get_group_join_requests(
+    page, error = await api_pair(event.sender.get_group_join_requests(
         event.group_id,
         cursor=match.group(1) or '',
         limit=5,
         return_error=True,
-    )
-    trace_phase(event, 'join_list', 'api', success=page is not None,
+    ), failure=None)
+    page_valid = isinstance(page, dict)
+    trace_phase(event, 'join_list', 'api', success=page_valid,
                 details={'operation': 'list',
-                         'error': '' if page is not None else api_error(error)})
-    if page is None:
+                         'error': '' if page_valid else api_error(error)})
+    if not page_valid:
         finish_action(event, 'join_list', False, details={'error': api_error(error)})
         return await reply_at(event, 'join_list_failed', error=api_error(error))
     requests = page.get('list') or []
+    if not isinstance(requests, list):
+        finish_action(event, 'join_list', False, details={'error': 'invalid_response'})
+        return await reply_at(event, 'join_list_failed', error='invalid_response')
     if not requests:
         finish_action(event, 'join_list', True, details={'count': 0})
         return await reply_at(event, 'join_list_empty')
@@ -62,12 +67,12 @@ async def cmd_approve_join(event, match):
     if not await ensure_join_reviewer(event):
         return
     member_id, request_id = match.group(1), match.group(2)
-    success, response = await event.sender.review_group_join_request(
+    success, response = await api_pair(event.sender.review_group_join_request(
         event.group_id,
         member_id,
         'approve',
         join_request_id=request_id,
-    )
+    ))
     trace_phase(event, 'approve_join', 'api', success=success,
                 affected_count=1 if success else 0, target_id=member_id,
                 details={'request_id': request_id,
@@ -91,15 +96,15 @@ async def cmd_decline_join(event, match):
     begin_action(event, action_key)
     if not await ensure_join_reviewer(event):
         return
-    reason = (match.group(4) or '不符合入群要求').strip()
-    success, response = await event.sender.review_group_join_request(
+    reason = (match.group(4) or '不符合入群要求').strip()[:200]
+    success, response = await api_pair(event.sender.review_group_join_request(
         event.group_id,
         member_id,
         'decline',
         join_request_id=request_id,
         reject_reason=reason,
         add_to_member_blacklist=command == '拒绝并拉黑',
-    )
+    ))
     trace_phase(event, action_key, 'api', success=success,
                 affected_count=1 if success else 0, target_id=member_id,
                 details={'request_id': request_id, 'reason': reason,

@@ -1,8 +1,21 @@
 """工具函数 — 时长解析/格式化"""
 
 import re
+
 from .replies import format_remaining as format_remaining
 from .replies import respond
+
+
+async def api_pair(awaitable, failure=False):
+    """将 API 异常和非元组返回统一为二元结果。"""
+    try:
+        result = await awaitable
+        if isinstance(result, tuple):
+            return (result + (None, None))[:2]
+        return result, None
+    except Exception as error:  # noqa: BLE001
+        return failure, {'message': type(error).__name__}
+
 
 async def reply_at(event, key, **data):
     """Compatibility alias; reply content is defined in mod.replies only."""

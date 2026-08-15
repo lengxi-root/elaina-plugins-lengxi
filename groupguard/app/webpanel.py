@@ -25,36 +25,32 @@ _catalog_expires = 0.0
 
 
 def register_routes():
-    register_route('GET', f'{PREFIX}/groups', _get_groups)
-    register_route('GET', f'{PREFIX}/dashboard', _get_dashboard)
-    register_route('PUT', f'{PREFIX}/config', _save_config)
-    register_route('GET', f'{PREFIX}/templates', _get_templates)
-    register_route('PUT', f'{PREFIX}/template', _save_template)
-    register_route('POST', f'{PREFIX}/forbidden', _add_forbidden)
-    register_route('DELETE', f'{PREFIX}/forbidden', _delete_forbidden)
-    register_route('DELETE', f'{PREFIX}/target', _delete_target)
-    for filename in _ASSETS:
-        register_route(
-            'GET', f'{PREFIX}/assets/{filename}', _asset, auth=False
-        )
+    for method, path, handler, auth in _routes():
+        register_route(method, path, handler, auth=auth)
     log.info('群管 Web 面板路由已注册: /api/ext/groupguard/*')
 
 
 def unregister_routes():
-    routes = (
-        ('GET', f'{PREFIX}/groups'),
-        ('GET', f'{PREFIX}/dashboard'),
-        ('PUT', f'{PREFIX}/config'),
-        ('GET', f'{PREFIX}/templates'),
-        ('PUT', f'{PREFIX}/template'),
-        ('POST', f'{PREFIX}/forbidden'),
-        ('DELETE', f'{PREFIX}/forbidden'),
-        ('DELETE', f'{PREFIX}/target'),
-    )
-    for method, path in routes:
+    for method, path, _handler, _auth in _routes():
         unregister_route(method, path)
-    for filename in _ASSETS:
-        unregister_route('GET', f'{PREFIX}/assets/{filename}')
+
+
+def _routes():
+    routes = [
+        ('GET', 'groups', _get_groups, True),
+        ('GET', 'dashboard', _get_dashboard, True),
+        ('PUT', 'config', _save_config, True),
+        ('GET', 'templates', _get_templates, True),
+        ('PUT', 'template', _save_template, True),
+        ('POST', 'forbidden', _add_forbidden, True),
+        ('DELETE', 'forbidden', _delete_forbidden, True),
+        ('DELETE', 'target', _delete_target, True),
+    ]
+    routes.extend(('GET', f'assets/{name}', _asset, False) for name in _ASSETS)
+    return [
+        (method, f'{PREFIX}/{path}', handler, auth)
+        for method, path, handler, auth in routes
+    ]
 
 
 def _managed_group_ids():
@@ -237,19 +233,14 @@ async def _get_groups(_request):
     return web.json_response({'success': True, 'data': {'groups': groups}})
 
 
-async def _get_dashboard(request):
-    try:
-        group_id = _require_managed_group(request.query.get('group_id'))
-        days = _clamp_int(request.query.get('days') or 30, 1, 3650, '统计天数')
-    except ValueError as error:
-        return web.json_response({'success': False, 'error': str(error)}, status=400)
-
+def _dashboard_data(group_id, days):
     db.purge_expired_targets()
     config = db.get_group_cfg(group_id)
     spam = db.get_spam_config(group_id)
-    groups = _group_catalog()
-    group = next((item for item in groups if item['group_id'] == group_id), None)
-    return web.json_response({'success': True, 'data': {
+    group = next(
+        (item for item in _group_catalog() if item['group_id'] == group_id), None
+    )
+    return {
         'group': group or {
             'group_id': group_id, 'group_name': '', 'member_count': 0,
             'in_group': False, 'appid': '', 'configured': True,
@@ -269,7 +260,18 @@ async def _get_dashboard(request):
         ],
         'stats': db.get_management_stats(group_id, days),
         'audit': db.get_recent_audit(group_id, 50),
-    }})
+    }
+
+
+async def _get_dashboard(request):
+    try:
+        group_id = _require_managed_group(request.query.get('group_id'))
+        days = _clamp_int(request.query.get('days') or 30, 1, 3650, '统计天数')
+    except ValueError as error:
+        return web.json_response({'success': False, 'error': str(error)}, status=400)
+    return web.json_response({
+        'success': True, 'data': _dashboard_data(group_id, days),
+    })
 
 
 async def _get_templates(_request):
@@ -315,6 +317,7 @@ async def _save_config(request):
     body = await _json(request)
     try:
         group_id = _require_managed_group(body.get('group_id'))
+        days = _clamp_int(request.query.get('days') or 30, 1, 3650, '统计天数')
         features = body.get('features')
         if not isinstance(features, dict):
             raise ValueError('功能配置无效')
@@ -384,15 +387,12 @@ async def _save_config(request):
             group_id, 'config_change', True, affected_count=len(changed),
             details={'changed': changed},
         )
-        return await _get_dashboard(_dashboard_request(request, group_id))
+        return web.json_response({
+            'success': True, 'data': _dashboard_data(group_id, days),
+        })
     except ValueError as error:
         _record_web_error(body.get('group_id'), 'config_change', {'error': str(error)})
         return web.json_response({'success': False, 'error': str(error)}, status=400)
-
-
-class _dashboard_request:
-    def __init__(self, request, group_id):
-        self.query = {'group_id': group_id, 'days': request.query.get('days', '30')}
 
 
 async def _add_forbidden(request):

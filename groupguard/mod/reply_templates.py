@@ -48,6 +48,9 @@ _ALLOWED_BUTTON_KEYS = {
     'tips', 'modal', 'subscribe', 'subscribe_data', 'click_limit',
     'unsupport_tips', 'anchor',
 }
+_LEGACY_TEMPLATE_KEYS = {
+    'prompt_buttons', 'button_font_size', 'button_style', 'send_kwargs',
+}
 
 
 def _is_int_between(value, minimum, maximum):
@@ -186,6 +189,96 @@ def validate_template(key, value):
     return copy.deepcopy(value)
 
 
+def _flatten_legacy_buttons(value):
+    changed = isinstance(value, dict)
+    if isinstance(value, dict):
+        value = value.get('rows') or value.get('buttons') or value.get('btns') or []
+    if not isinstance(value, list):
+        return value, changed
+    buttons = []
+    for item in value:
+        if isinstance(item, list):
+            buttons.extend(item)
+            changed = True
+        elif isinstance(item, dict) and ('buttons' in item or 'btns' in item):
+            row = item.get('buttons') or item.get('btns') or []
+            buttons.extend(row if isinstance(row, list) else [item])
+            changed = True
+        else:
+            buttons.append(item)
+    return buttons, changed
+
+
+def _flatten_legacy_prompt_buttons(value):
+    if not value:
+        return []
+    if isinstance(value, dict) and isinstance(value.get('content'), dict):
+        rows = value['content'].get('rows') or []
+        value = []
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get('buttons'), list):
+                value.extend(row['buttons'])
+    elif not isinstance(value, list):
+        value = [value]
+    buttons = []
+    for index, item in enumerate(value, 1):
+        if isinstance(item, str):
+            item = {'text': item, 'data': 'elaina', 'type': 2, 'enter': True}
+        elif isinstance(item, list) and item and isinstance(item[0], str):
+            item = {'text': item[0], 'data': 'elaina', 'type': 2, 'enter': True,
+                    **({'style': item[1]} if len(item) > 1 else {})}
+        else:
+            item = copy.deepcopy(item)
+            if isinstance(item, dict):
+                item.setdefault('id', str(index))
+        buttons.append(item)
+    return buttons
+
+
+def _migrate_legacy_template(value):
+    if not isinstance(value, dict):
+        return value, False
+    buttons, rows_changed = _flatten_legacy_buttons(value.get('buttons'))
+    legacy_keys = _LEGACY_TEMPLATE_KEYS.intersection(value)
+    if not legacy_keys and not rows_changed:
+        return value, False
+
+    migrated = copy.deepcopy(value)
+    prompt_buttons = _flatten_legacy_prompt_buttons(
+        migrated.pop('prompt_buttons', None)
+    )
+    if isinstance(buttons, list):
+        migrated['buttons'] = buttons + prompt_buttons
+    elif buttons is None and prompt_buttons:
+        migrated['buttons'] = prompt_buttons
+
+    font_size = migrated.pop('button_font_size', '') or ''
+    button_style = migrated.pop('button_style', None)
+    if isinstance(button_style, dict):
+        font_size = font_size or button_style.get('font_size') or ''
+    if font_size == 'small' and 'small_buttons' not in migrated:
+        migrated['small_buttons'] = True
+
+    send_kwargs = migrated.pop('send_kwargs', None)
+    if (isinstance(send_kwargs, dict) and 'msg_type' in send_kwargs
+            and 'msg_type' not in migrated):
+        migrated['msg_type'] = send_kwargs['msg_type']
+    return migrated, True
+
+
+def _prepare_payload(payload, allow_empty=False):
+    if not isinstance(payload, dict) or not isinstance(payload.get('templates'), dict):
+        return _normalize_payload(payload, allow_empty=allow_empty), False
+    migrated = copy.deepcopy(payload)
+    changed = False
+    for key, template in migrated['templates'].items():
+        migrated['templates'][key], template_changed = _migrate_legacy_template(
+            template
+        )
+        changed = changed or template_changed
+    return _normalize_payload(migrated, allow_empty=allow_empty), changed
+
+
 def _normalize_payload(payload, allow_empty=False):
     if not isinstance(payload, dict) or not isinstance(payload.get('templates'), dict):
         raise ValueError('回复模板文件格式无效')
@@ -195,12 +288,18 @@ def _normalize_payload(payload, allow_empty=False):
     }
     if not templates and not allow_empty:
         raise ValueError('回复模板文件不能为空')
-    return {'version': int(payload.get('version') or 1), 'templates': templates}
+    try:
+        version = int(payload.get('version', 1))
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError('模板版本号无效') from error
+    if version < 1:
+        raise ValueError('模板版本号无效')
+    return {'version': version, 'templates': templates}
 
 
 def _read_file(path, allow_empty=False):
     with open(path, 'r', encoding='utf-8') as file:
-        return _normalize_payload(json.load(file), allow_empty=allow_empty)
+        return _prepare_payload(json.load(file), allow_empty=allow_empty)
 
 
 def _load_defaults():
@@ -232,8 +331,7 @@ def initialize_reply_templates():
             _write_file(defaults)
             return copy.deepcopy(defaults)
 
-        payload = _read_file(TEMPLATE_PATH)
-        changed = False
+        payload, changed = _read_file(TEMPLATE_PATH)
         for key, template in defaults['templates'].items():
             if key not in payload['templates']:
                 payload['templates'][key] = template
@@ -259,13 +357,10 @@ def initialize_reply_templates():
 
 
 def _template_signature():
-    signature = []
-    for path in (TEMPLATE_PATH,):
-        try:
-            signature.append(os.stat(path).st_mtime_ns)
-        except OSError:
-            signature.append(None)
-    return tuple(signature)
+    try:
+        return os.stat(TEMPLATE_PATH).st_mtime_ns
+    except OSError:
+        return None
 
 
 def _load_cached(force=False):
@@ -282,7 +377,7 @@ def _load_cached(force=False):
             _cache_mtime = mtime
             return _cache
         _cache = payload
-        _cache_mtime = mtime
+        _cache_mtime = _template_signature()
         return _cache
 
 

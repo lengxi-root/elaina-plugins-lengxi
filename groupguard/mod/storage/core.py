@@ -155,15 +155,23 @@ def _ensure_column(connection, table, column, definition):
 
 
 def migrate_legacy_json(connection):
-    """迁移一次旧 JSON 配置，成功后保留为 migrated 文件。"""
+    """迁移旧 JSON 配置并保留原文件。"""
     if not os.path.isfile(LEGACY_JSON):
         return
     try:
         with open(LEGACY_JSON, 'r', encoding='utf-8') as file:
             data = json.load(file)
-        for group_id, config in (data.get('groups') or {}).items():
+        groups = data.get('groups') if isinstance(data, dict) else None
+        if not isinstance(groups, dict):
+            return
+        for group_id, config in groups.items():
+            group_id = str(group_id or '').strip()
+            if not group_id or len(group_id) > 128 or not isinstance(config, dict):
+                continue
+            raw_features = config.get('features')
+            raw_features = raw_features if isinstance(raw_features, dict) else {}
             features = {
-                key: bool((config.get('features') or {}).get(key, False))
+                key: bool(raw_features.get(key, False))
                 for key in FEATURE_KEYS
             }
             policies = {
@@ -182,12 +190,16 @@ def migrate_legacy_json(connection):
                     json.dumps(policies),
                 ),
             )
-            for word in config.get('forbidden_words') or []:
+            words = config.get('forbidden_words') or []
+            words = words if isinstance(words, list) else []
+            for word in words:
+                if not isinstance(word, str) or not 2 <= len(word.strip()) <= 64:
+                    continue
                 connection.execute(
                     'INSERT OR IGNORE INTO forbidden_words (group_id, word) VALUES (?, ?)',
-                    (group_id, word),
+                    (group_id, word.strip()),
                 )
         connection.commit()
-        os.rename(LEGACY_JSON, LEGACY_JSON + '.migrated')
+        os.replace(LEGACY_JSON, LEGACY_JSON + '.migrated')
     except (OSError, json.JSONDecodeError, sqlite3.Error):
         pass

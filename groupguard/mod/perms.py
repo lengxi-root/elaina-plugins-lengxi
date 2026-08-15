@@ -73,18 +73,12 @@ async def _read_group_state(event):
 
 
 async def get_bot_group_state(event, *, refresh=False):
-    """读取机器人权限；仅在数据库未确认管理员时请求 bot_state。
-
-    数据库已确认机器人是管理员时直接使用数据库。数据库无记录或显示
-    非管理员时，最多每群每分钟调用一次 GET /v2/groups/{group_id}/bot_state。
-    refresh 仅为兼容旧调用保留，不会绕过管理员缓存或一分钟限频。
-    """
-    del refresh
+    """读取缓存权限，必要时按群限频刷新机器人状态。"""
     if not event.group_id:
         return None
 
     cached = await _read_group_state(event)
-    if cached and cached['is_admin'] and cached['in_group']:
+    if not refresh and cached and cached['is_admin'] and cached['in_group']:
         return cached
 
     key = (str(event.appid), str(event.group_id))
@@ -94,14 +88,16 @@ async def get_bot_group_state(event, *, refresh=False):
         _state_locks[key] = lock
     async with lock:
         cached = await _read_group_state(event)
-        if cached and cached['is_admin'] and cached['in_group']:
+        if not refresh and cached and cached['is_admin'] and cached['in_group']:
             return cached
 
         now = time.monotonic()
-        if now - _state_last_request.get(key, float('-inf')) < _STATE_REQUEST_INTERVAL:
+        if (not refresh
+                and now - _state_last_request.get(key, float('-inf'))
+                < _STATE_REQUEST_INTERVAL):
             return cached
 
-        # 请求开始前记时，失败请求也占用这一分钟额度。
+        # 失败请求也计入限频。
         _remember_state_request(key, now)
         try:
             data = await event.sender.get_group_bot_state(event.group_id)
@@ -110,7 +106,7 @@ async def get_bot_group_state(event, *, refresh=False):
         state = _state_from_api(data)
         if state is None:
             return cached
-        # get_group_bot_state 成功后框架会同步 data.db；回读失败时用接口结果兜底。
+        # 接口成功后优先使用框架同步的数据。
         return await _read_group_state(event) or state
 
 
@@ -130,45 +126,37 @@ async def check_has_full_msg(event, state=None):
 
 async def ensure_admin_env(event):
     """群管指令前置检查：机器人能力、用户权限和机器人管理权限。"""
-    state = await get_bot_group_state(event)
     action = current_action(event, 'permission_check')
-    if state is None:
-        record_audit(event, action, 'permission', success=False,
-                     details={'reason': 'bot_state_unavailable'})
-        record_audit(event, action, 'result', success=False,
-                     details={'reason': 'bot_state_unavailable'})
-        await respond(event, 'bot_state_failed', audit_action=action)
-        return False
-    if not await check_has_full_msg(event, state):
-        record_audit(event, action, 'permission', success=False,
-                     details={'reason': 'full_message_unavailable'})
-        record_audit(event, action, 'result', success=False,
-                     details={'reason': 'full_message_unavailable'})
-        await respond(event, 'full_message_required', audit_action=action)
-        return False
     if not is_group_admin(event):
-        record_audit(event, action, 'permission', success=False,
-                     details={'reason': 'operator_denied'})
-        record_audit(event, action, 'result', success=False,
-                     details={'reason': 'operator_denied'})
-        await respond(event, 'user_no_permission', audit_action=action)
-        return False
+        return await _deny_admin_env(event, action, 'operator_denied', 'user_no_permission')
+    state = await get_bot_group_state(event)
+    if state is None:
+        return await _deny_admin_env(
+            event, action, 'bot_state_unavailable', 'bot_state_failed'
+        )
     if not await check_bot_is_admin(event, state):
-        record_audit(event, action, 'permission', success=False,
-                     details={'reason': 'bot_not_admin'})
-        record_audit(event, action, 'result', success=False,
-                     details={'reason': 'bot_not_admin'})
-        await respond(event, 'bot_no_admin', audit_action=action)
-        return False
+        return await _deny_admin_env(event, action, 'bot_not_admin', 'bot_no_admin')
+    if not await check_has_full_msg(event, state):
+        return await _deny_admin_env(
+            event, action, 'full_message_unavailable', 'full_message_required'
+        )
     record_audit(event, action, 'permission', success=True)
     return True
+
+
+async def _deny_admin_env(event, action, reason, reply_key):
+    details = {'reason': reason}
+    record_audit(event, action, 'permission', success=False, details=details)
+    record_audit(event, action, 'result', success=False, details=details)
+    await respond(event, reply_key, audit_action=action)
+    return False
 
 
 def get_operable_members(event):
     """提取可被群管操作的普通成员艾特。"""
     ids = []
     seen = set()
-    for mention in event.mentions or []:
+    for mention in getattr(event, 'mentions', None) or []:
         if (
             isinstance(mention, dict)
             and mention.get('id')

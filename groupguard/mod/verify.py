@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from . import state
 from .replies import respond
 from .storage.audit import record_audit, record_received, record_result
+from .utils import api_pair
 
 VERIFY_INITIAL_WAIT = 300   # 首次验证5分钟
 VERIFY_MAX_WAIT = 3600      # 最大等待1小时
@@ -33,16 +34,13 @@ async def _mute_failed_user(event, group_id, user_id):
     expire_at = (
         datetime.now().astimezone() + timedelta(seconds=VERIFY_FAILURE_MUTE)
     ).isoformat(timespec='seconds')
-    try:
-        success, _response = await event.sender.set_group_member_mute(group_id, [{
-            'op': 'add',
-            'member_openid': user_id,
-            'mute_expire_at': expire_at,
-        }])
-        error = ''
-    except Exception as exc:
-        success = False
-        error = type(exc).__name__
+    success, response = await api_pair(event.sender.set_group_member_mute(group_id, [{
+        'op': 'add',
+        'member_openid': user_id,
+        'mute_expire_at': expire_at,
+    }]))
+    success = bool(success)
+    error = '' if success else str(response or 'mute_failed')
     record_audit(event, 'verify_failure_mute', 'api', success=success,
                  target_id=user_id, details={'error': error}, source='verification')
     record_result(event, 'verify_failure_mute', success,

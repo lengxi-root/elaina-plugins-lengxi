@@ -13,9 +13,13 @@ from core.plugin.decorators import interceptor
 from ..mod import db, state
 from ..mod.replies import respond
 from ..mod.storage.audit import record_audit, record_received, record_result
+from ..mod.utils import api_pair
 from ..mod.verify import send_verify
 
-_LINK_RE = re.compile(r'https?://[^\s]+|www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/[^\s]*)?')
+_LINK_RE = re.compile(
+    r'https?://[^\s]+|www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/[^\s]*)?',
+    re.IGNORECASE,
+)
 
 
 async def _recall_safe(event, message_id=None, trigger='automatic'):
@@ -56,18 +60,11 @@ async def _mute_safe(event, minutes, trigger='automatic'):
         'member_openid': str(getattr(event, 'user_id', '') or ''),
         'mute_expire_at': expire_at,
     }]
-    try:
-        result = await event.sender.set_group_member_mute(event.group_id, payload)
-        if isinstance(result, tuple):
-            success = bool(result[0])
-            response = result[1] if len(result) > 1 else None
-        else:
-            success = bool(result)
-            response = None
-        error = '' if success else str(response or 'mute_failed')
-    except Exception as exc:
-        success = False
-        error = type(exc).__name__
+    success, response = await api_pair(
+        event.sender.set_group_member_mute(event.group_id, payload)
+    )
+    success = bool(success)
+    error = '' if success else str(response or 'mute_failed')
     details = {'trigger': trigger, 'minutes': minutes, 'error': error}
     target_id = str(getattr(event, 'user_id', '') or '')
     record_audit(
@@ -186,14 +183,20 @@ def _contains_forward_marker(value, max_nodes=256):
 
 def _strip_media_urls(event):
     """从文本中去掉富媒体附件 URL, 只检测纯文本链接"""
-    content = (event.content or '').strip()
-    for att in event.attachments or []:
-        if isinstance(att, dict) and att.get('url'):
-            ct = (att.get('content_type') or '').lower()
-            if any(ct.startswith(p) for p in ('image/', 'video/', 'audio/', 'voice')):
-                content = content.replace(att['url'], '')
-    if event.image_url:
-        content = content.replace(f'<{event.image_url}>', '').replace(event.image_url, '')
+    content = str(getattr(event, 'content', '') or '').strip()
+    for att in getattr(event, 'attachments', None) or []:
+        if not isinstance(att, dict):
+            continue
+        url = att.get('url')
+        content_type = str(att.get('content_type') or '').lower()
+        if isinstance(url, str) and any(
+            content_type.startswith(prefix)
+            for prefix in ('image/', 'video/', 'audio/', 'voice')
+        ):
+            content = content.replace(url, '')
+    if getattr(event, 'image_url', None):
+        image_url = str(event.image_url)
+        content = content.replace(f'<{image_url}>', '').replace(image_url, '')
     return content.strip()
 
 
@@ -320,7 +323,7 @@ async def monitor_group_messages(event):
                 await send_verify(event, gid, user_id, retry_count=retry_count)
             return True
 
-    content = (event.content or '').strip()
+    content = str(getattr(event, 'content', '') or '').strip()
 
     # 2. 禁止发链接（排除富媒体附件中的链接）
     if content and feat['block_links']:

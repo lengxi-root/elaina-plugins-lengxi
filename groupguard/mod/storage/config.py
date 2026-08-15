@@ -12,6 +12,20 @@ def _default_policy():
     return {'action': 'recall', 'mute_minutes': 10}
 
 
+def _json_object(value):
+    try:
+        decoded = json.loads(value or '{}')
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
+def _as_bool(value):
+    if isinstance(value, str):
+        return value.strip().lower() not in {'', '0', 'false', 'no', 'off', 'none', 'null'}
+    return bool(value)
+
+
 def default_group_config(group_id):
     return {
         'group_id': group_id,
@@ -40,17 +54,13 @@ def _get_group_cfg(group_id):
             'manual',
             '不符合入群要求',
         )
-    try:
-        stored_features = json.loads(row['features'] or '{}')
-    except json.JSONDecodeError:
-        stored_features = {}
-    try:
-        stored_policies = json.loads(row['policies'] or '{}')
-    except (json.JSONDecodeError, TypeError):
-        stored_policies = {}
+    stored_features = _json_object(row['features'])
+    stored_policies = _json_object(row['policies'])
     policy_values = []
     for key in POLICY_KEYS:
         policy = stored_policies.get(key) or {}
+        if not isinstance(policy, dict):
+            policy = {}
         action = policy.get('action', 'recall')
         if action not in ACTION_KEYS:
             action = 'recall'
@@ -59,10 +69,7 @@ def _get_group_cfg(group_id):
         except (TypeError, ValueError):
             mute_minutes = 10
         policy_values.append((action, mute_minutes))
-    try:
-        stored_join_policy = json.loads(row['join_policy'] or '{}')
-    except (json.JSONDecodeError, TypeError):
-        stored_join_policy = {}
+    stored_join_policy = _json_object(row['join_policy'])
     join_mode = stored_join_policy.get('mode', 'manual')
     if join_mode not in JOIN_POLICY_MODES:
         join_mode = 'manual'
@@ -72,9 +79,9 @@ def _get_group_cfg(group_id):
     if not join_reason:
         join_reason = '不符合入群要求'
     return (
-        bool(row['enabled']),
-        bool(row['notify']),
-        tuple(bool(stored_features.get(key, False)) for key in FEATURE_KEYS),
+        _as_bool(row['enabled']),
+        _as_bool(row['notify']),
+        tuple(_as_bool(stored_features.get(key, False)) for key in FEATURE_KEYS),
         tuple(policy_values),
         join_mode,
         join_reason,
