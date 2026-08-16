@@ -16,11 +16,35 @@ def is_bot_owner(event):
     return bool(bot_cfg) and event.user_id in (bot_cfg.get('owner_ids') or [])
 
 
-def is_group_admin(event):
+def is_group_admin(event, member_role=None):
     """用户是否有管理权限：机器人主人，或群管理员/群主。"""
-    if event.member_role in ('admin', 'owner'):
+    role = event.member_role if member_role is None else member_role
+    if role in ('admin', 'owner'):
         return True
     return is_bot_owner(event)
+
+
+async def get_group_member_role(event, member_id=None):
+    """从核心 data.db 的群成员 JSON 中读取成员角色。"""
+    if not event.group_id:
+        return ''
+    target_id = str(member_id or event.user_id or '')
+    if not target_id:
+        return ''
+    try:
+        record = await event.get_group_record(event.group_id)
+    except Exception:
+        return ''
+    users = record.get('users') if isinstance(record, dict) else None
+    if not isinstance(users, list):
+        return ''
+    for item in users:
+        if not isinstance(item, dict):
+            continue
+        user_id = item.get('userid') or item.get('user_id') or item.get('id')
+        if str(user_id or '') == target_id:
+            return str(item.get('member_role') or 'member')
+    return ''
 
 
 _state_locks = weakref.WeakValueDictionary()
@@ -124,10 +148,10 @@ async def check_has_full_msg(event, state=None):
     return state['is_full_access'] and state['allow_proactive_msg']
 
 
-async def ensure_admin_env(event):
+async def ensure_admin_env(event, *, member_role=None):
     """群管指令前置检查：机器人能力、用户权限和机器人管理权限。"""
     action = current_action(event, 'permission_check')
-    if not is_group_admin(event):
+    if not is_group_admin(event, member_role):
         return await _deny_admin_env(event, action, 'operator_denied', 'user_no_permission')
     state = await get_bot_group_state(event)
     if state is None:

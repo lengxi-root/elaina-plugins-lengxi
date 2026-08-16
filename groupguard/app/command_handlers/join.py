@@ -2,11 +2,16 @@
 
 from core.plugin.decorators import handler
 
-from ...mod.perms import ensure_admin_env
+from ...mod.perms import (
+    ensure_admin_env,
+    get_group_member_role,
+    is_group_admin,
+)
 from ...mod.replies import join_review_buttons as join_review_buttons
 from ...mod.utils import reply_at
 from .common import (
     HANDLER_OPTIONS,
+    JOIN_REVIEW_HANDLER_OPTIONS,
     active_action,
     api_pair,
     api_error,
@@ -17,16 +22,17 @@ from .common import (
 
 
 async def ensure_join_reviewer(event):
-    """用群消息事件携带的 member_role 判断审批权限。"""
+    """从核心数据库群成员列表读取审批操作者的角色。"""
     action = active_action(event, 'join_permission')
-    if event.member_role not in ('admin', 'owner'):
+    member_role = await get_group_member_role(event)
+    if not is_group_admin(event, member_role):
         trace_phase(event, action, 'permission', success=False,
                     details={'reason': 'operator_denied'})
         finish_action(event, action, False, details={'reason': 'operator_denied'})
         await reply_at(event, 'join_reviewer_denied')
         return False
     trace_phase(event, action, 'permission', success=True)
-    return await ensure_admin_env(event)
+    return await ensure_admin_env(event, member_role=member_role)
 
 
 @handler(r'^/?(?:入群申请|待审批入群)(?:\s+(\S+))?\s*$', name='入群申请',
@@ -61,7 +67,7 @@ async def cmd_join_requests(event, match):
 
 
 @handler(r'^/?通过入群\s+(\S+)\s+(\S+)\s*$', name='通过入群',
-         desc='通过入群申请', **HANDLER_OPTIONS)
+         desc='通过入群申请', **JOIN_REVIEW_HANDLER_OPTIONS)
 async def cmd_approve_join(event, match):
     begin_action(event, 'approve_join')
     if not await ensure_join_reviewer(event):
@@ -89,7 +95,7 @@ async def cmd_approve_join(event, match):
 
 
 @handler(r'^/?(拒绝入群|拒绝并拉黑)\s+(\S+)\s+(\S+)(?:\s+(.+))?\s*$',
-         name='拒绝入群', desc='拒绝入群申请，可选择拉黑', **HANDLER_OPTIONS)
+         name='拒绝入群', desc='拒绝入群申请，可选择拉黑', **JOIN_REVIEW_HANDLER_OPTIONS)
 async def cmd_decline_join(event, match):
     command, member_id, request_id = match.group(1), match.group(2), match.group(3)
     action_key = 'blacklist_join' if command == '拒绝并拉黑' else 'decline_join'
