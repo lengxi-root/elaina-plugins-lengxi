@@ -3,43 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>群管</title>
+  <title>群管中心</title>
   <link rel="stylesheet" href="/api/ext/groupguard/assets/panel.css">
 </head>
 <body>
   <div class="app sidebar-collapsed" id="app">
     <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="关闭侧边栏"></button>
     <aside class="sidebar" aria-label="群管导航">
-      <div class="brand"><div class="logo" aria-label="群管"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.6 8.9a1.3 1.3 0 0 1-.8 0C7.5 20.5 4 18 4 13V5.8a1 1 0 0 1 .6-.9l7-2.6a1.2 1.2 0 0 1 .8 0l7 2.6a1 1 0 0 1 .6.9Z"/></svg></div><div><strong>群管</strong><small>GroupGuard</small></div></div>
+      <div class="brand"><div class="logo" aria-label="群管"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.6 8.9a1.3 1.3 0 0 1-.8 0C7.5 20.5 4 18 4 13V5.8a1 1 0 0 1 .6-.9l7-2.6a1.2 1.2 0 0 1 .8 0l7 2.6a1 1 0 0 1 .6.9Z"/></svg></div><div><strong>群管中心</strong><small>GroupGuard</small></div></div>
       <nav class="nav">
-        <button class="active" data-page="overview" type="button"><i>01</i><span>概览</span></button>
-        <button data-page="config" type="button"><i>02</i><span>功能设置</span></button>
-        <button data-page="forbidden" type="button"><i>03</i><span>违禁词</span></button>
-        <button data-page="targets" type="button"><i>04</i><span>发言撤回</span></button>
-        <button data-page="templates" type="button"><i>05</i><span>消息模板</span></button>
-        <button data-page="audit" type="button"><i>06</i><span>审计日志</span></button>
+        <button class="active" data-page="audit" type="button" title="审核记录"><i><svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4M7 3h10v3H7zM5 5v16h14V5"/></svg></i><span>审核</span></button>
+        <button data-page="overview" type="button" title="概览"><i><svg viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 4z"/></svg></i><span>概览</span></button>
+        <button data-page="targets" type="button" title="发言撤回"><i><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8M17 8h5M19.5 5.5v5"/></svg></i><span>成员</span></button>
+        <button data-page="forbidden" type="button" title="违禁词"><i><svg viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></i><span>词库</span></button>
+        <button data-page="templates" type="button" title="消息模板"><i><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg></i><span>模板</span></button>
+        <button data-page="config" type="button" title="功能设置"><i><svg viewBox="0 0 24 24"><path d="M4 6h16M7 3v6M4 18h16M17 15v6M4 12h16M12 9v6"/></svg></i><span>设置</span></button>
       </nav>
       <div class="service-state"><span class="pulse"></span><span>群管服务运行中</span></div>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
-        <div class="heading">
-          <button class="icon-btn" id="sidebar-toggle" type="button" title="展开侧边栏" aria-label="展开侧边栏">☰</button>
-          <div><h1 id="page-title">概览</h1><p id="group-caption">选择群聊后查看管理状态</p></div>
+        <button class="icon-btn sidebar-toggle" id="sidebar-toggle" type="button" title="展开导航" aria-label="展开导航">☰</button>
+        <label class="group-picker">
+          <img id="group-avatar" alt="群头像">
+          <span class="group-picker-copy"><b id="group-display-name">群管中心</b><small id="group-caption">选择群聊后查看管理状态</small></span>
+          <select id="group-select" aria-label="选择群聊"><option value="">暂无群聊</option></select>
+          <svg class="picker-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+        </label>
+        <div class="top-actions">
+          <select id="days-select" class="visually-hidden" aria-label="统计周期"><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option><option value="365">365 天</option></select>
+          <button class="theme-toggle" id="theme-toggle" type="button" title="切换明暗主题" aria-label="切换明暗主题"><svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg></button>
+          <div class="bot-avatar" aria-label="群管机器人"><svg viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.6 8.9a1.3 1.3 0 0 1-.8 0C7.5 20.5 4 18 4 13V5.8l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/></svg></div>
         </div>
-        <div class="actions">
-          <label class="select-control"><span>群聊</span><select id="group-select"><option value="">暂无群聊</option></select></label>
-          <label class="select-control"><span>周期</span><select id="days-select"><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option><option value="365">365 天</option></select></label>
-          <button class="icon-btn" id="reload" type="button" title="刷新数据" aria-label="刷新数据">↻</button>
-        </div>
+        <h1 id="page-title" class="visually-hidden">审核记录</h1>
       </header>
 
       <div class="content">
         <div class="loading" id="loading">正在读取群管数据</div>
         <div class="empty-state" id="empty-state" hidden><strong>暂无可管理群聊</strong><span>机器人收到群消息或群管产生配置后，此处会自动显示。</span></div>
 
-        <section class="page active" id="page-overview">
+        <section class="page" id="page-overview">
           <div class="metrics">
             <article class="metric primary"><span>管理操作</span><b id="m-management">0</b><small id="m-source">手动 0 / 自动 0</small></article>
             <article class="metric success"><span>禁言人次</span><b id="m-mute">0</b><small id="m-unmute">解禁 0</small></article>
@@ -146,7 +150,12 @@
             <section class="panel template-editor">
               <div class="panel-head">
                 <div><h2 id="template-title">选择模板</h2><p id="template-key">模板保存在 data/reply_templates.json</p></div>
-                <button class="btn primary" id="save-template" type="button" disabled>保存模板</button>
+                <div class="template-head-actions">
+                  <label class="test-group-field"><span>测试群 ID</span><input id="template-test-group" maxlength="128" inputmode="numeric" placeholder="输入群 ID"></label>
+                  <button class="btn set-test-group-btn" id="set-template-test-group" type="button">设置群 ID</button>
+                  <button class="btn test-template-btn" id="test-template" type="button" disabled>测试模板</button>
+                  <button class="btn primary" id="save-template" type="button" disabled>保存模板</button>
+                </div>
               </div>
               <div class="panel-body template-form" id="template-form" hidden>
                 <div class="template-meta-grid">
@@ -176,16 +185,17 @@
           </div>
         </section>
 
-        <section class="page" id="page-audit">
-          <section class="panel">
-            <div class="panel-head"><div><h2>管理审计</h2><p>按完整操作链路聚合显示</p></div></div>
-            <div class="panel-body filters">
-              <select id="filter-source"><option value="">全部来源</option><option value="command">群命令</option><option value="automatic">自动监管</option><option value="verification">入群验证</option><option value="web">Web 面板</option></select>
-              <select id="filter-status"><option value="">全部状态</option><option value="1">成功</option><option value="0">失败</option></select>
-              <select id="filter-action"><option value="">全部操作</option></select>
+        <section class="page active" id="page-audit">
+          <div class="audit-toolbar">
+            <label class="audit-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="audit-search" autocomplete="off" placeholder="搜索成员、原因或类别"></label>
+            <div class="audit-filters">
+              <label class="filter-chip status-chip"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 3v4M16 3v4M8 12l2 2 4-4"/></svg><select id="filter-status"><option value="">全部状态</option><option value="1">仅成功</option><option value="0">仅失败</option></select></label>
+              <label class="filter-chip"><svg viewBox="0 0 24 24"><path d="m12 3 8 5-8 5-8-5 8-5Zm-8 10 8 5 8-5M4 17l8 5 8-5"/></svg><select id="filter-source"><option value="">全部审核方式</option><option value="command">群命令</option><option value="automatic">自动监管</option><option value="verification">入群验证</option><option value="web">Web 面板</option></select></label>
+              <label class="filter-chip"><svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg><select id="filter-action"><option value="">全部类别</option></select></label>
+              <button class="audit-refresh" id="reload" type="button" title="刷新记录" aria-label="刷新记录"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
             </div>
-            <div class="table-wrap"><table><thead><tr><th>时间</th><th>操作</th><th>来源</th><th>操作者</th><th>目标</th><th>数量</th><th>结果</th><th>Trace</th></tr></thead><tbody id="audit-list"></tbody></table></div>
-          </section>
+          </div>
+          <div class="audit-feed" id="audit-list"></div>
         </section>
       </div>
     </main>

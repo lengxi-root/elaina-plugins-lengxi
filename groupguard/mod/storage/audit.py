@@ -18,6 +18,7 @@ _MANAGEMENT_ACTIONS = {
     'approve_join', 'decline_join', 'blacklist_join', 'verify_pass',
     'verify_failure_mute', 'spam_punish', 'config_change',
     'forbidden_add', 'forbidden_delete', 'forbidden_clear', 'cache_clear',
+    'template_test',
 }
 _MANAGEMENT_ACTIONS_SORTED = tuple(sorted(_MANAGEMENT_ACTIONS))
 _MANAGEMENT_PLACEHOLDERS = ','.join('?' for _ in _MANAGEMENT_ACTIONS_SORTED)
@@ -283,7 +284,14 @@ def get_recent_audit(group_id, limit=10):
     connection = get_db()
     rows = connection.execute(
         "SELECT a.time, a.trace_id, a.operator_id, a.target_id, a.action, "
-        "a.success, a.source, latest.affected_count FROM audit_log a JOIN ("
+        "a.success, a.source, latest.affected_count, "
+        "COALESCE((SELECT m.username FROM message_log m "
+        "WHERE m.group_id = a.group_id AND m.user_id = a.target_id "
+        "AND m.username != '' ORDER BY m.time DESC LIMIT 1), '') target_name, "
+        "COALESCE((SELECT m.username FROM message_log m "
+        "WHERE m.group_id = a.group_id AND m.user_id = a.operator_id "
+        "AND m.username != '' ORDER BY m.time DESC LIMIT 1), '') operator_name "
+        "FROM audit_log a JOIN ("
         "SELECT MAX(id) AS id, SUM(affected_count) AS affected_count "
         "FROM audit_log WHERE group_id = ? AND phase = 'result' "
         f"AND action IN ({_MANAGEMENT_PLACEHOLDERS}) GROUP BY trace_id, action"

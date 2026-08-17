@@ -9,6 +9,7 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.web_pages import register_route, unregister_route
 
 from ..mod import db, state
+from ..mod.replies import api_error, render_template_preview
 from ..mod.reply_templates import list_reply_templates, save_reply_template
 
 log = get_logger(PLUGIN, '群管面板')
@@ -42,6 +43,7 @@ def _routes():
         ('PUT', 'config', _save_config, True),
         ('GET', 'templates', _get_templates, True),
         ('PUT', 'template', _save_template, True),
+        ('POST', 'template/test', _test_template, True),
         ('POST', 'forbidden', _add_forbidden, True),
         ('DELETE', 'forbidden', _delete_forbidden, True),
         ('DELETE', 'target', _delete_target, True),
@@ -311,6 +313,79 @@ async def _save_template(request):
              'error': str(error)},
         )
         return web.json_response({'success': False, 'error': str(error)}, status=400)
+
+
+async def _test_template(request):
+    body = await _json(request)
+    key = str(body.get('key') or '').strip()
+    value = body.get('template')
+    raw_group_id = body.get('group_id')
+    group_id = str(raw_group_id or '').strip()
+    try:
+        if not key:
+            raise ValueError('请先选择消息模板')
+        if not isinstance(value, dict):
+            raise ValueError('模板内容必须是对象')
+        group_id = _require_managed_group(group_id)
+        group = next(
+            (item for item in _group_catalog() if item['group_id'] == group_id),
+            None,
+        )
+        if not group:
+            raise ValueError('未找到目标群对应的机器人')
+
+        from core.application import get_app
+
+        app = get_app()
+        bot = app.get_bot(group.get('appid')) if app else None
+        if not bot or not getattr(bot, 'sender', None):
+            raise ValueError('目标群对应的机器人未运行')
+        sender = bot.sender
+        message = render_template_preview(
+            key, value, group_id=group_id, appid=group.get('appid', ''),
+            bot_name=getattr(sender, '_bot_name', ''),
+            bot_qq=getattr(sender, '_bot_qq', ''),
+        )
+        if not message.content.strip() and not message.buttons:
+            raise ValueError('测试模板没有可发送的正文或按钮')
+        ok, response, _payload = await sender.send_to_group(
+            group_id, message.content, skip_suffix=True,
+            **message.delivery_kwargs(),
+        )
+        if not ok:
+            raise ValueError(f'主动发送失败：{api_error(response)}')
+        db.record_web_action(
+            group_id, 'template_test', True, affected_count=1,
+            appid=group.get('appid', ''),
+            details={'template_key': key},
+        )
+        message_id = (
+            str(response.get('id') or '') if isinstance(response, dict) else ''
+        )
+        return web.json_response({'success': True, 'data': {
+            'group_id': group_id, 'template_key': key,
+            'message_id': message_id,
+        }})
+    except (ValueError, KeyError) as error:
+        if group_id and _is_managed_group(group_id):
+            db.record_web_action(
+                group_id, 'template_test', False,
+                details={'template_key': key, 'error': str(error)},
+            )
+        return web.json_response(
+            {'success': False, 'error': str(error)}, status=400,
+        )
+    except Exception as error:  # noqa: BLE001
+        log.exception('发送测试模板失败: %s', error)
+        if group_id and _is_managed_group(group_id):
+            db.record_web_action(
+                group_id, 'template_test', False,
+                details={'template_key': key, 'error': str(error)},
+            )
+        return web.json_response(
+            {'success': False, 'error': '测试模板发送失败，请查看机器人日志'},
+            status=500,
+        )
 
 
 async def _save_config(request):

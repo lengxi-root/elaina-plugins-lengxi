@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 
-from .reply_templates import _get_cached_template
+from .reply_templates import _get_cached_template, validate_template
 from .storage.audit import record_audit
 
 _UNSET = object()
@@ -447,6 +447,26 @@ def _build(key, data, event=None):
     if message.buttons is None and data.get('buttons'):
         message.buttons = data['buttons']
     return message
+
+
+def render_template_preview(
+    key, template, *, group_id='', appid='', bot_name='', bot_qq='',
+):
+    """Validate and render an editor template for a proactive test message."""
+    template = validate_template(key, template)
+    variables = _base_variables({
+        'group_id': str(group_id or ''),
+        'appid': str(appid or ''),
+        'bot_name': str(bot_name or ''),
+        'bot_qq': str(bot_qq or ''),
+    })
+    return ReplyMessage(
+        content=str(_render_value(template.get('content', ''), variables)),
+        buttons=_button_rows(_render_value(template.get('buttons'), variables)),
+        small_buttons=bool(template.get('small_buttons')),
+        msg_type=template.get('msg_type'),
+        at_user=False,
+    )
 
 
 async def respond(

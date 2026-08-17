@@ -2,8 +2,9 @@ const BASE = '/api/ext/groupguard';
 const $ = id => document.getElementById(id);
 const THEME_MAP = {'--bg':'--host-bg','--bg2':'--host-bg2','--bg3':'--host-bg3','--bg-float':'--host-float','--text':'--host-text','--text2':'--host-text2','--text3':'--host-text3','--border':'--host-border','--accent':'--host-accent','--accent-hover':'--host-accent-hover','--accent-light':'--host-accent-light','--accent-soft':'--host-accent-soft','--success':'--host-success','--danger':'--host-danger','--warning':'--host-warning','--info':'--host-info'};
 const PAGE_TITLES = {overview:'概览',config:'功能设置',forbidden:'违禁词',targets:'发言撤回',templates:'消息模板',audit:'审计日志'};
-const ACTION_LABELS = {mute:'禁言',unmute:'解禁',recall:'撤回消息',speak_recall:'发言撤回',cancel_recall:'取消撤回',approve_join:'通过入群',decline_join:'拒绝入群',blacklist_join:'拒绝并拉黑',verify_pass:'通过验证',verify_failure_mute:'验证失败禁言',spam_punish:'刷屏处罚',config_change:'配置变更',forbidden_add:'添加违禁词',forbidden_delete:'删除违禁词',forbidden_clear:'清空违禁词',cache_clear:'清除缓存'};
+const ACTION_LABELS = {mute:'禁言',unmute:'解禁',recall:'撤回消息',speak_recall:'发言撤回',cancel_recall:'取消撤回',approve_join:'通过入群',decline_join:'拒绝入群',blacklist_join:'拒绝并拉黑',verify_pass:'通过验证',verify_failure_mute:'验证失败禁言',spam_punish:'刷屏处罚',config_change:'配置变更',forbidden_add:'添加违禁词',forbidden_delete:'删除违禁词',forbidden_clear:'清空违禁词',cache_clear:'清除缓存',template_test:'测试模板'};
 const SOURCE_LABELS = {command:'群命令',automatic:'自动监管',verification:'入群验证',web:'Web 面板'};
+const REVIEW_LABELS = {command:'人工审核',automatic:'普通审核',verification:'入群审核',web:'面板审核'};
 const POLICY_FIELDS = [
   ['block_links','cfg-block-links'],
   ['block_cards','cfg-block-cards'],
@@ -69,7 +70,7 @@ let groups = [];
 let dashboard = null;
 let templates = {};
 let selectedTemplateKey = '';
-let activePage = 'overview';
+let activePage = 'audit';
 let templateVariablesOpen = false;
 const sidebarMedia = window.matchMedia('(max-width:700px)');
 
@@ -97,8 +98,10 @@ async function api(path,options={}){
 }
 function currentGroup(){return $('group-select').value}
 function formatGroup(item){const name=item.group_name||('群 '+item.group_id);const state=item.in_group?'':' · 已离群';return `${name} (${item.group_id})${state}`}
-function formatTime(timestamp){return new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(Number(timestamp)*1000))}
+function formatFullTime(timestamp){return new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(Number(timestamp)*1000)).replaceAll('/','-')}
+function timeBucket(timestamp){const then=Number(timestamp)*1000,delta=Math.max(0,Date.now()-then);if(delta<3600000)return Math.max(1,Math.floor(delta/60000))+' 分钟前';if(delta<7200000)return '1 小时前';const date=new Date(then),today=new Date();if(date.toDateString()===today.toDateString())return '今天';return new Intl.DateTimeFormat('zh-CN',{month:'long',day:'numeric'}).format(date)}
 function formatExpire(expire){if(!expire)return '永久';const remain=Number(expire)*1000-Date.now();if(remain<=0)return '已到期';return new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(Number(expire)*1000))}
+function auditReason(item){const count=Number(item.affected_count)||0,target=item.target_name||item.target_id||'';const reasons={mute:'禁言'+(target?'成员 '+target:'成员')+(count?'，共 '+count+' 人':''),unmute:'解除'+(target?'成员 '+target:'成员')+'禁言',recall:'撤回违规消息'+(count?' '+count+' 条':''),speak_recall:'将'+(target?'成员 '+target:'成员')+'加入发言撤回',cancel_recall:'取消'+(target?'成员 '+target:'成员')+'的发言撤回',approve_join:'通过入群申请',decline_join:'拒绝入群申请',blacklist_join:'拒绝入群申请并加入黑名单',verify_pass:'成员已通过入群验证',verify_failure_mute:'入群验证失败并执行禁言',spam_punish:'触发刷屏规则'+(count?'，共处理 '+count+' 条消息':''),config_change:'更新群管配置'+(count?'，共变更 '+count+' 项':''),forbidden_add:'添加新的违禁词规则',forbidden_delete:'删除违禁词规则',forbidden_clear:'清空当前群违禁词',cache_clear:'清除群管缓存',template_test:'向当前群发送测试模板'};return reasons[item.action]||((ACTION_LABELS[item.action]||item.action)+(count?'，影响 '+count+' 项':''))}
 function setSidebar(collapsed){$('app').classList.toggle('sidebar-collapsed',collapsed);document.body.classList.toggle('sidebar-open',sidebarMedia.matches&&!collapsed);const button=$('sidebar-toggle');button.textContent=sidebarMedia.matches?(collapsed?'☰':'×'):(collapsed?'›':'‹');button.title=collapsed?'展开侧边栏':'收起侧边栏';button.setAttribute('aria-label',button.title)}
 function openPage(page){
   activePage=PAGE_TITLES[page]?page:'overview';
@@ -121,6 +124,7 @@ async function loadGroups(){
   if(groups.some(item=>item.group_id===previous))$('group-select').value=previous;
   if(!groups.length){dashboard=null;showReady(false);openPage('templates');return}
   localStorage.setItem('groupguard-group',currentGroup());
+  if(!$('template-test-group').value)$('template-test-group').value=localStorage.getItem('groupguard-test-group')||currentGroup();
   await loadDashboard();
 }
 async function loadTemplates(){
@@ -139,6 +143,8 @@ async function loadDashboard(){
 function renderAll(){
   if(!dashboard)return;
   const group=dashboard.group||{};
+  $('group-display-name').textContent=group.group_name||('群 '+group.group_id);
+  const avatar=$('group-avatar');avatar.hidden=false;avatar.src='https://p.qlogo.cn/gh/'+encodeURIComponent(group.group_id||'0')+'/'+encodeURIComponent(group.group_id||'0')+'/100/';avatar.onerror=()=>{avatar.hidden=true};
   $('group-caption').textContent=`${group.group_name||('群 '+group.group_id)} · ${group.member_count||0} 名成员`;
   renderOverview();renderConfig();renderForbidden();renderTargets();renderAudit();
 }
@@ -178,7 +184,7 @@ function insertTemplateVariable(name){
   field.value=field.value.slice(0,start)+token+field.value.slice(end);field.focus();const cursor=start+token.length;field.setSelectionRange(cursor,cursor);closeTemplateVariables();
 }
 function renderTemplateForm(){
-  const item=selectedTemplate(),has=!!item;$('template-form').hidden=!has;$('template-empty').hidden=has;$('save-template').disabled=!has;
+  const item=selectedTemplate(),has=!!item;$('template-form').hidden=!has;$('template-empty').hidden=has;$('save-template').disabled=!has;$('test-template').disabled=!has;
   if(!has){$('template-title').textContent='选择模板';$('template-key').textContent='模板保存在 data/reply_templates.json';return}
   $('template-title').textContent=templateLabel(selectedTemplateKey,item);$('template-key').textContent=selectedTemplateKey;
   $('tpl-label').value=item.label||'';$('tpl-category').value=item.category||'';$('tpl-small-buttons').checked=!!item.small_buttons;$('tpl-at-user').checked=item.at_user!==false;
@@ -196,6 +202,18 @@ function syncRawTemplate(){try{$('tpl-raw').value=pretty(formTemplate());toast('
 async function saveTemplate(){
   const button=$('save-template');button.disabled=true;
   try{const template=formTemplate();const data=await api('/template',{method:'PUT',body:JSON.stringify({key:selectedTemplateKey,template,group_id:currentGroup()})});templates[selectedTemplateKey]=data.template;renderTemplates();toast('消息模板已保存并立即生效')}catch(error){toast(error.message,true)}finally{button.disabled=false}
+}
+async function testTemplate(){
+  const button=$('test-template'),groupId=$('template-test-group').value.trim();
+  if(!groupId){toast('请输入测试群 ID',true);$('template-test-group').focus();return}
+  button.disabled=true;button.textContent='发送中';
+  try{const template=formTemplate();await api('/template/test',{method:'POST',body:JSON.stringify({key:selectedTemplateKey,template,group_id:groupId})});toast('测试模板已发送到群 '+groupId)}catch(error){toast(error.message,true)}finally{button.disabled=false;button.textContent='测试模板'}
+}
+function setTemplateTestGroup(){
+  const input=$('template-test-group'),groupId=input.value.trim();
+  if(!groupId){toast('请输入测试群 ID',true);input.focus();return}
+  localStorage.setItem('groupguard-test-group',groupId);
+  toast('测试群 ID 已设置为 '+groupId);
 }
 function renderOverview(){
   const stats=dashboard.stats||{};
@@ -224,9 +242,18 @@ function renderTargets(){
   const targets=dashboard.targets||[];$('target-count').textContent=`共 ${targets.length} 人`;$('target-list').innerHTML=targets.length?targets.map(item=>`<tr><td>${esc(item.user_id)}</td><td>${esc(formatExpire(item.expire))}</td><td><span class="result ok">生效中</span></td><td class="action-col"><button class="table-action" type="button" data-delete-target="${esc(item.user_id)}" title="取消发言撤回" aria-label="取消发言撤回">×</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">暂无发言撤回成员</td></tr>';
 }
 function renderAudit(){
-  const rows=dashboard.audit||[];const actions=[...new Set(rows.map(item=>item.action))].sort();const actionSelect=$('filter-action'),previous=actionSelect.value;actionSelect.innerHTML='<option value="">全部操作</option>'+actions.map(action=>`<option value="${esc(action)}">${esc(ACTION_LABELS[action]||action)}</option>`).join('');if(actions.includes(previous))actionSelect.value=previous;
-  const source=$('filter-source').value,status=$('filter-status').value,action=actionSelect.value;const filtered=rows.filter(item=>(!source||item.source===source)&&(!status||String(item.success)===status)&&(!action||item.action===action));
-  $('audit-list').innerHTML=filtered.length?filtered.map(item=>`<tr><td>${esc(formatTime(item.time))}</td><td>${esc(ACTION_LABELS[item.action]||item.action)}</td><td>${esc(SOURCE_LABELS[item.source]||item.source)}</td><td>${esc(item.operator_id||'-')}</td><td>${esc(item.target_id||'-')}</td><td>${Number(item.affected_count)||0}</td><td><span class="result ${item.success?'ok':'fail'}">${item.success?'成功':'失败'}</span></td><td class="trace">#${esc(String(item.trace_id||'').slice(0,8))}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">没有符合条件的审计记录</td></tr>';
+  const rows=dashboard.audit||[],actions=[...new Set(rows.map(item=>item.action))].sort(),actionSelect=$('filter-action'),previous=actionSelect.value;
+  actionSelect.innerHTML='<option value="">全部类别</option>'+actions.map(action=>'<option value="'+esc(action)+'">'+esc(ACTION_LABELS[action]||action)+'</option>').join('');
+  if(actions.includes(previous))actionSelect.value=previous;
+  const source=$('filter-source').value,status=$('filter-status').value,action=actionSelect.value,query=$('audit-search').value.trim().toLowerCase();
+  const filtered=rows.filter(item=>{const searchable=[item.target_name,item.operator_name,item.target_id,item.operator_id,ACTION_LABELS[item.action]||item.action,SOURCE_LABELS[item.source]||item.source,auditReason(item)].join(' ').toLowerCase();return(!source||item.source===source)&&(!status||String(item.success)===status)&&(!action||item.action===action)&&(!query||searchable.includes(query))});
+  if(!filtered.length){$('audit-list').innerHTML='<div class="audit-empty"><b>暂无审核记录</b><span>调整搜索或筛选条件后再试</span></div>';return}
+  let bucket='';
+  $('audit-list').innerHTML=filtered.map((item,index)=>{
+    const nextBucket=timeBucket(item.time),divider=nextBucket!==bucket?'<div class="time-divider"><span>'+esc(nextBucket)+'</span></div>':'';bucket=nextBucket;
+    const userId=item.target_id||item.operator_id||'',name=item.target_name||item.operator_name||(userId?'成员 '+userId:'群管机器人'),actionLabel=ACTION_LABELS[item.action]||item.action,review=REVIEW_LABELS[item.source]||SOURCE_LABELS[item.source]||item.source,initial=name.slice(0,1).toUpperCase(),resultClass=item.success?'ok':'fail',resultText=item.success?'已处理':'处理失败',resultPath=item.success?'m6 12 4 4 8-9':'M7 7l10 10M17 7 7 17';
+    return divider+'<article class="audit-card" style="--card-index:'+index+'"><div class="audit-person"><span class="member-avatar">'+esc(initial)+'</span><div><b>'+esc(name)+'</b><small>'+esc(dashboard.group?.group_name||'当前群')+' · '+esc(formatFullTime(item.time))+'</small></div><svg class="audit-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div><div class="audit-summary"><span class="review-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h5M8 17h3"/></svg></span><div><b>'+esc(auditReason(item))+'</b><small>'+esc(actionLabel)+'</small></div></div><div class="audit-badges"><span class="review-badge"><svg viewBox="0 0 24 24"><path d="M7 8h10M7 12h7M7 16h4M4 4h16v16H4z"/></svg>'+esc(review)+'</span><span class="outcome-badge '+resultClass+'"><svg viewBox="0 0 24 24"><path d="'+resultPath+'"/></svg>'+resultText+'</span></div></article>';
+  }).join('');
 }
 async function saveConfig(){
   const button=$('save-config');button.disabled=true;
@@ -241,10 +268,11 @@ async function deleteTarget(userId){try{const data=await api('/target',{method:'
 document.querySelectorAll('.nav button').forEach(button=>button.addEventListener('click',()=>openPage(button.dataset.page)));
 document.querySelectorAll('[data-open-page]').forEach(button=>button.addEventListener('click',()=>openPage(button.dataset.openPage)));
 $('sidebar-toggle').addEventListener('click',()=>setSidebar(!$('app').classList.contains('sidebar-collapsed')));$('sidebar-scrim').addEventListener('click',()=>setSidebar(true));
-$('reload').addEventListener('click',loadGroups);$('group-select').addEventListener('change',()=>{localStorage.setItem('groupguard-group',currentGroup());loadDashboard()});$('days-select').addEventListener('change',loadDashboard);$('save-config').addEventListener('click',saveConfig);$('forbidden-form').addEventListener('submit',addForbidden);
+$('reload').addEventListener('click',loadGroups);$('group-select').addEventListener('change',()=>{localStorage.setItem('groupguard-group',currentGroup());if(!localStorage.getItem('groupguard-test-group'))$('template-test-group').value=currentGroup();loadDashboard()});$('days-select').addEventListener('change',loadDashboard);$('save-config').addEventListener('click',saveConfig);$('forbidden-form').addEventListener('submit',addForbidden);
 document.querySelectorAll('.policy-action').forEach(select=>select.addEventListener('change',syncPolicyFields));
 $('cfg-join-policy').addEventListener('change',syncJoinPolicyFields);
-$('template-search').addEventListener('input',renderTemplates);$('template-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-key]');if(button){selectedTemplateKey=button.dataset.templateKey;renderTemplates()}});$('save-template').addEventListener('click',saveTemplate);$('apply-template-json').addEventListener('click',applyRawTemplate);$('sync-template-json').addEventListener('click',syncRawTemplate);
+$('template-search').addEventListener('input',renderTemplates);$('template-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-key]');if(button){selectedTemplateKey=button.dataset.templateKey;renderTemplates()}});$('save-template').addEventListener('click',saveTemplate);$('set-template-test-group').addEventListener('click',setTemplateTestGroup);$('test-template').addEventListener('click',testTemplate);$('apply-template-json').addEventListener('click',applyRawTemplate);$('sync-template-json').addEventListener('click',syncRawTemplate);
 document.querySelectorAll('#tpl-content,#tpl-buttons,#tpl-raw').forEach(field=>field.addEventListener('focus',()=>{templateInsertTarget=field.id;updateTemplateVariableContext()}));$('template-variable-toggle').addEventListener('click',()=>setTemplateVariablesOpen(!templateVariablesOpen));$('template-variable-close').addEventListener('click',closeTemplateVariables);$('template-variable-modal').addEventListener('click',event=>{if(event.target.matches('[data-template-variable-close]'))closeTemplateVariables()});$('template-variable-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-variable]');if(button)insertTemplateVariable(button.dataset.templateVariable)});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&templateVariablesOpen)closeTemplateVariables()});
 $('forbidden-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-word]');if(button)deleteForbidden(button.dataset.deleteWord)});$('target-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-target]');if(button)deleteTarget(button.dataset.deleteTarget)});['filter-source','filter-status','filter-action'].forEach(id=>$(id).addEventListener('change',renderAudit));
-sidebarMedia.addEventListener('change',()=>setSidebar(true));setSidebar(true);Promise.all([loadTemplates(),loadGroups()]).catch(error=>{showReady(false);toast(error.message,true)});
+$('audit-search').addEventListener('input',renderAudit);$('theme-toggle').addEventListener('click',()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=theme;localStorage.setItem('groupguard-theme',theme)});document.documentElement.dataset.theme=localStorage.getItem('groupguard-theme')||'light';
+sidebarMedia.addEventListener('change',()=>setSidebar(true));setSidebar(true);openPage('audit');Promise.all([loadTemplates(),loadGroups()]).catch(error=>{showReady(false);toast(error.message,true)});
