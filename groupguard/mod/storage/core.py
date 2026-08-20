@@ -54,6 +54,15 @@ def init_tables(connection):
             policies TEXT DEFAULT '{}',
             join_policy TEXT DEFAULT '{}'
         );
+        CREATE TABLE IF NOT EXISTS global_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            show_join_verification INTEGER DEFAULT 0,
+            apply_global_forbidden_to_groups INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS global_forbidden_words (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word TEXT NOT NULL UNIQUE
+        );
         CREATE TABLE IF NOT EXISTS forbidden_words (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_id TEXT NOT NULL,
@@ -128,6 +137,10 @@ def init_tables(connection):
     """)
     _ensure_column(connection, 'group_config', 'policies', "TEXT DEFAULT '{}'")
     _ensure_column(connection, 'group_config', 'join_policy', "TEXT DEFAULT '{}'")
+    _ensure_column(
+        connection, 'global_settings', 'apply_global_forbidden_to_groups',
+        'INTEGER DEFAULT 0',
+    )
     action_added = _ensure_column(
         connection, 'spam_config', 'action', "TEXT DEFAULT 'recall'",
     )

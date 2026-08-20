@@ -8,6 +8,7 @@ from ...mod.perms import (
     is_group_admin,
 )
 from ...mod.replies import join_review_buttons as join_review_buttons
+from ...mod.storage.global_settings import get_global_settings
 from ...mod.utils import reply_at
 from .common import (
     HANDLER_OPTIONS,
@@ -63,7 +64,10 @@ async def cmd_join_requests(event, match):
         return await reply_at(event, 'join_list_empty')
     next_cursor = page.get('next_cursor') or ''
     finish_action(event, 'join_list', True, details={'count': len(requests)})
-    await reply_at(event, 'join_requests', requests=requests, next_cursor=next_cursor)
+    await reply_at(
+        event, 'join_requests', requests=requests, next_cursor=next_cursor,
+        show_verification=get_global_settings()['show_join_verification'],
+    )
 
 
 @handler(r'^/?通过入群\s+(\S+)\s+(\S+)\s*$', name='通过入群',

@@ -13,7 +13,12 @@ from .storage.audit import current_action, record_audit
 
 def is_bot_owner(event):
     bot_cfg = cfg.get_bot_config(event.appid)
-    return bool(bot_cfg) and event.user_id in (bot_cfg.get('owner_ids') or [])
+    if not bot_cfg:
+        return False
+    user_id = str(getattr(event, 'user_id', '') or '')
+    return user_id in {
+        str(owner_id or '') for owner_id in (bot_cfg.get('owner_ids') or [])
+    }
 
 
 def is_group_admin(event, member_role=None):

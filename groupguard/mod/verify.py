@@ -187,10 +187,15 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
                           target_id=user_id)
 
 
-def pass_verify(group_id, user_id):
+def pass_verify(group_id, user_id, verify_id=None):
     """管理员手动通过验证"""
+    pending = state.pending_verify.get(group_id, {}).get(user_id)
+    if verify_id is not None and (
+        not pending or pending.get('verify_id') != str(verify_id)
+    ):
+        return False
     is_pending = (
-        user_id in state.pending_verify.get(group_id, {})
+        pending is not None
         or user_id in state.unverified.get(group_id, set())
         or user_id in state.verify_cooldown.get(group_id, {})
     )

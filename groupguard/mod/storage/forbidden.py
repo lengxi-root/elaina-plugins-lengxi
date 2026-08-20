@@ -3,6 +3,7 @@
 from functools import lru_cache
 
 from .core import get_db
+from .global_settings import get_global_forbidden, get_global_settings
 
 
 @lru_cache(maxsize=512)
@@ -22,7 +23,10 @@ def get_forbidden(group_id):
 
 def contains_forbidden(group_id, content):
     """Match content against the cached immutable word set."""
-    return any(word in content for word in _get_forbidden(group_id))
+    words = list(_get_forbidden(group_id))
+    if get_global_settings()['apply_global_forbidden_to_groups']:
+        words.extend(get_global_forbidden())
+    return any(word in content for word in words)
 
 
 def add_forbidden(group_id, word):

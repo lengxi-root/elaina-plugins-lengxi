@@ -654,4 +654,41 @@ if not _join_request_lines or _join_request_lines[0] != '{avatar}':
     _join_request_lines.insert(0, '{avatar}')
 JOIN_REQUEST_ITEM_CONTENT = '\n'.join(_join_request_lines)
 _join_requests_template['item_content'] = JOIN_REQUEST_ITEM_CONTENT
-DEFAULT_PAYLOAD['version'] = max(int(DEFAULT_PAYLOAD.get('version', 1)), 3)
+DEFAULT_PAYLOAD['templates']['join_request_notice'] = {
+    'label': '入群申请验证通知',
+    'category': '审批',
+    'content': '📋 收到新的入群申请\n{request_rows}',
+    'item_content': JOIN_REQUEST_ITEM_CONTENT,
+    'next_page_content': '',
+    'unknown_user_text': '未知用户',
+    'empty_text': '无',
+    'button_mode': 'join_requests',
+    'buttons': _join_requests_template['buttons'],
+    'small_buttons': True,
+    'at_user': False,
+}
+DEFAULT_PAYLOAD['templates']['global_owner_required'] = {
+    'label': '全局词权限提示',
+    'category': '违禁词',
+    'content': '仅机器人主人可以修改全局违禁词或全局过滤开关。',
+    'buttons': None,
+    'at_user': False,
+    'small_buttons': False,
+}
+DEFAULT_PAYLOAD['templates']['global_forbidden_apply_changed'] = {
+    'label': '全局词过滤开关结果',
+    'category': '违禁词',
+    'content': '全局违禁词应用于各群消息过滤{state}。',
+    'buttons': None,
+    'at_user': False,
+    'small_buttons': False,
+}
+DEFAULT_PAYLOAD['templates']['verify_passed_by_admin'] = {
+    'label': '管理员跳过验证',
+    'category': '入群验证',
+    'content': '管理员已跳过用户 {target_id} 的入群验证。',
+    'buttons': None,
+    'at_user': False,
+    'small_buttons': False,
+}
+DEFAULT_PAYLOAD['version'] = max(int(DEFAULT_PAYLOAD.get('version', 1)), 5)

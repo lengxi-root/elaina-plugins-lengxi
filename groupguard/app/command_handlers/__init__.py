@@ -5,7 +5,11 @@
 from .common import api_error as _api_error
 from .menu import cmd_category, cmd_gm_off, cmd_gm_on, cmd_show_panel
 from .menu import make_toggle as _make_toggle
-from .forbidden import cmd_fw_add, cmd_fw_clear, cmd_fw_del, cmd_fw_list
+from .forbidden import (
+    cmd_fw_add, cmd_fw_clear, cmd_fw_del, cmd_fw_list,
+    cmd_global_fw_add, cmd_global_fw_apply_groups, cmd_global_fw_del,
+    cmd_global_fw_list,
+)
 from .punishments import cmd_cancel_recall, cmd_punish_list, cmd_speak_recall, cmd_target
 from .recall import cmd_recall_recent
 from .recall import recall_batch as _recall_batch

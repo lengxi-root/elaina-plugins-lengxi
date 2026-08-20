@@ -33,7 +33,12 @@
         </label>
         <div class="top-actions">
           <select id="days-select" class="visually-hidden" aria-label="统计周期"><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option><option value="365">365 天</option></select>
-          <div class="bot-avatar" aria-label="群管机器人"><svg viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.6 8.9a1.3 1.3 0 0 1-.8 0C7.5 20.5 4 18 4 13V5.8l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <label class="bot-picker" title="切换运行中的机器人">
+            <span class="bot-picker-avatar"><img id="bot-avatar-image" alt=""><svg id="bot-avatar-fallback" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.6 8.9a1.3 1.3 0 0 1-.8 0C7.5 20.5 4 18 4 13V5.8l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/></svg></span>
+            <span class="bot-picker-copy"><small>当前机器人</small><b id="bot-display-name">暂无机器人</b></span>
+            <select id="bot-select" aria-label="选择运行中的机器人"><option value="">暂无机器人</option></select>
+            <svg class="bot-picker-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+          </label>
         </div>
         <h1 id="page-title" class="visually-hidden">审核记录</h1>
       </header>
@@ -73,6 +78,13 @@
               <label class="switch"><span><b>群管总开关</b><small>执行自动监管规则</small></span><input id="cfg-enabled" type="checkbox"></label>
               <label class="switch"><span><b>处理提醒</b><small>自动处理后发送结果</small></span><input id="cfg-notify" type="checkbox"></label>
               <label class="switch"><span><b>入群验证</b><small>新成员完成算术验证</small></span><input id="cfg-join-verify" type="checkbox"></label>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><div><h2>全局安全设置</h2><p>作用于所有群，入群申请验证内容仅在开启后发送到群内</p></div></div>
+            <div class="panel-body switches global-switches">
+              <label class="switch"><span><b>群内显示入群验证</b><small>发送前会按全局违禁词自动替换为 *</small></span><input id="cfg-global-show-join" type="checkbox"></label>
+              <label class="switch"><span><b>全局违禁词应用于群过滤</b><small>将全局词同时纳入所有群的消息检测</small></span><input id="cfg-global-apply-groups" type="checkbox"></label>
             </div>
           </section>
           <section class="panel">
@@ -126,6 +138,13 @@
             <div class="panel-body">
               <form class="inline-form" id="forbidden-form"><label class="field grow"><span>新增违禁词</span><input id="forbidden-input" maxlength="64" autocomplete="off"></label><button class="btn primary" type="submit">添加</button></form>
               <div class="tag-list" id="forbidden-list"></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><div><h2>全局违禁词</h2><p id="global-forbidden-count">共 0 个，所有群共用；列表仅显示脱敏结果</p></div></div>
+            <div class="panel-body">
+              <form class="inline-form" id="global-forbidden-form"><label class="field grow"><span>新增全局违禁词</span><input id="global-forbidden-input" maxlength="64" autocomplete="off"></label><button class="btn primary" type="submit">添加</button></form>
+              <div class="tag-list" id="global-forbidden-list"></div>
             </div>
           </section>
         </section>

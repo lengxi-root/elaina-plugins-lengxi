@@ -8,7 +8,7 @@ from aiohttp import web
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.web_pages import register_route, unregister_route
 
-from ..mod import db, state
+from ..mod import db, fw_render, state
 from ..mod.replies import api_error, render_template_preview
 from ..mod.reply_templates import list_reply_templates, save_reply_template
 
@@ -21,7 +21,7 @@ _ASSETS = {
     'panel.js': 'text/javascript; charset=utf-8',
 }
 _CATALOG_TTL = 5
-_catalog_cache = ()
+_catalog_cache = {'bots': (), 'groups': ()}
 _catalog_expires = 0.0
 
 
@@ -41,11 +41,14 @@ def _routes():
         ('GET', 'groups', _get_groups, True),
         ('GET', 'dashboard', _get_dashboard, True),
         ('PUT', 'config', _save_config, True),
+        ('PUT', 'global-settings', _save_global_settings, True),
         ('GET', 'templates', _get_templates, True),
         ('PUT', 'template', _save_template, True),
         ('POST', 'template/test', _test_template, True),
         ('POST', 'forbidden', _add_forbidden, True),
         ('DELETE', 'forbidden', _delete_forbidden, True),
+        ('POST', 'global-forbidden', _add_global_forbidden, True),
+        ('DELETE', 'global-forbidden', _delete_global_forbidden, True),
         ('DELETE', 'target', _delete_target, True),
     ]
     routes.extend(('GET', f'assets/{name}', _asset, False) for name in _ASSETS)
@@ -68,19 +71,35 @@ def _managed_group_ids():
     return {str(row['group_id']) for row in rows if row['group_id']}
 
 
-def _group_catalog():
+def _catalog_data():
     global _catalog_cache, _catalog_expires
     now = time.monotonic()
     if now < _catalog_expires:
-        return [dict(item) for item in _catalog_cache]
+        return {
+            key: [dict(item) for item in _catalog_cache[key]]
+            for key in ('bots', 'groups')
+        }
     managed_group_ids = _managed_group_ids()
     groups = {}
+    bot_items = []
     try:
         from core.application import get_app
 
         app = get_app()
         bots = getattr(app, '_bots', {}) if app else {}
         for appid, bot in bots.items():
+            appid = str(appid)
+            robot_qq = str(getattr(bot, 'robot_qq', '') or '')
+            bot_item = {
+                'appid': appid,
+                'name': str(getattr(bot, 'name', '') or appid),
+                'robot_qq': robot_qq,
+                'avatar': str(getattr(bot, 'avatar_url', '') or (
+                    f'http://q1.qlogo.cn/g?b=qq&nk={robot_qq}&s=100'
+                    if robot_qq else ''
+                )),
+                'group_count': 0,
+            }
             try:
                 rows = bot.log_service.query_data(
                     'SELECT group_id, group_name, group_member_num, in_group, is_admin '
@@ -89,35 +108,56 @@ def _group_catalog():
                 )
             except Exception as error:  # noqa: BLE001
                 log.debug('读取机器人 %s 群资料失败: %s', appid, error)
+                bot_items.append(bot_item)
                 continue
             for row in rows:
                 group_id = str(row.get('group_id') or '')
                 if (not group_id or not bool(row.get('in_group', 1))
                         or not bool(row.get('is_admin'))):
                     continue
-                current = groups.setdefault(group_id, {
+                current = groups.setdefault((appid, group_id), {
                     'group_id': group_id,
                     'group_name': '',
                     'member_count': 0,
                     'in_group': False,
-                    'appid': '',
+                    'appid': appid,
                     'configured': group_id in managed_group_ids,
                 })
                 current.update({
                     'group_name': str(row.get('group_name') or ''),
                     'member_count': int(row.get('group_member_num') or 0),
                     'in_group': bool(row.get('in_group', 1)),
-                    'appid': str(appid),
+                    'appid': appid,
                 })
+            bot_item['group_count'] = sum(
+                1 for key in groups if key[0] == appid
+            )
+            bot_items.append(bot_item)
     except Exception as error:  # noqa: BLE001
         log.debug('读取框架群资料失败: %s', error)
-    result = sorted(
+    group_items = sorted(
         groups.values(),
-        key=lambda item: (not item['in_group'], item['group_name'] or item['group_id']),
+        key=lambda item: (
+            item['appid'], not item['in_group'],
+            item['group_name'] or item['group_id'],
+        ),
     )
-    _catalog_cache = tuple(dict(item) for item in result)
+    bot_items.sort(key=lambda item: (item['name'], item['appid']))
+    result = {'bots': bot_items, 'groups': group_items}
+    _catalog_cache = {
+        key: tuple(dict(item) for item in value)
+        for key, value in result.items()
+    }
     _catalog_expires = now + _CATALOG_TTL
     return result
+
+
+def _bot_catalog():
+    return _catalog_data()['bots']
+
+
+def _group_catalog():
+    return _catalog_data()['groups']
 
 
 def _require_group_id(value):
@@ -127,26 +167,51 @@ def _require_group_id(value):
     return group_id
 
 
-def _is_managed_group(group_id):
-    return any(
-        item.get('group_id') == group_id
+def _managed_group(group_id, appid=''):
+    matches = [
+        item for item in _group_catalog()
+        if item.get('group_id') == group_id
         and item.get('in_group')
         and item.get('appid')
-        for item in _group_catalog()
-    )
+        and (not appid or item.get('appid') == appid)
+    ]
+    if appid:
+        return matches[0] if matches else None
+    appids = {item['appid'] for item in matches}
+    return matches[0] if len(appids) == 1 else None
 
 
-def _require_managed_group(value):
+def _is_managed_group(group_id, appid=''):
+    return _managed_group(group_id, str(appid or '').strip()) is not None
+
+
+def _require_managed_context(value, appid_value=''):
     group_id = _require_group_id(value)
-    if not _is_managed_group(group_id):
+    appid = str(appid_value or '').strip()
+    if len(appid) > 128:
+        raise ValueError('机器人 AppID 无效')
+    group = _managed_group(group_id, appid)
+    if not group:
+        if not appid and any(
+            item.get('group_id') == group_id for item in _group_catalog()
+        ):
+            raise ValueError('该群由多个机器人管理，请先选择机器人')
         raise ValueError('群聊不存在或机器人不是管理员')
-    return group_id
+    return group_id, group['appid'], group
 
 
-def _record_web_error(raw_group_id, action, details):
+def _require_managed_group(value, appid_value=''):
+    return _require_managed_context(value, appid_value)[0]
+
+
+def _record_web_error(raw_group_id, action, details, raw_appid=''):
     group_id = str(raw_group_id or '').strip()
-    if group_id and _is_managed_group(group_id):
-        db.record_web_action(group_id, action, False, details=details)
+    appid = str(raw_appid or '').strip()
+    group = _managed_group(group_id, appid) if group_id else None
+    if group:
+        db.record_web_action(
+            group_id, action, False, details=details, appid=group['appid'],
+        )
 
 
 def _clamp_int(value, minimum, maximum, name):
@@ -231,23 +296,23 @@ async def _asset(request):
 
 
 async def _get_groups(_request):
-    groups = _group_catalog()
-    return web.json_response({'success': True, 'data': {'groups': groups}})
+    catalog = _catalog_data()
+    return web.json_response({'success': True, 'data': catalog})
 
 
-def _dashboard_data(group_id, days):
+def _dashboard_data(group_id, days, appid=''):
     db.purge_expired_targets()
     config = db.get_group_cfg(group_id)
     spam = db.get_spam_config(group_id)
-    group = next(
-        (item for item in _group_catalog() if item['group_id'] == group_id), None
-    )
+    group = _managed_group(group_id, appid)
     return {
         'group': group or {
             'group_id': group_id, 'group_name': '', 'member_count': 0,
             'in_group': False, 'appid': '', 'configured': True,
         },
         'config': config,
+        'global_settings': db.get_global_settings(),
+        'global_forbidden_words': _masked_global_forbidden(),
         'spam': {
             'enabled': bool(spam['enabled']),
             'window_seconds': int(spam['window_seconds']),
@@ -265,14 +330,21 @@ def _dashboard_data(group_id, days):
     }
 
 
+def _masked_global_forbidden():
+    """Expose only the first character and a fixed mask to Web clients."""
+    return [fw_render.mask_word(word) for word in db.get_global_forbidden()]
+
+
 async def _get_dashboard(request):
     try:
-        group_id = _require_managed_group(request.query.get('group_id'))
+        group_id, appid, _group = _require_managed_context(
+            request.query.get('group_id'), request.query.get('appid'),
+        )
         days = _clamp_int(request.query.get('days') or 30, 1, 3650, '统计天数')
     except ValueError as error:
         return web.json_response({'success': False, 'error': str(error)}, status=400)
     return web.json_response({
-        'success': True, 'data': _dashboard_data(group_id, days),
+        'success': True, 'data': _dashboard_data(group_id, days, appid),
     })
 
 
@@ -290,17 +362,19 @@ async def _save_template(request):
     key = str(body.get('key') or '').strip()
     value = body.get('template')
     group_id = str(body.get('group_id') or '').strip()
+    appid = str(body.get('appid') or '').strip()
     try:
         if not key:
             raise ValueError('模板键不能为空')
         if not isinstance(value, dict):
             raise ValueError('模板内容必须是对象')
         if group_id:
-            group_id = _require_managed_group(group_id)
+            group_id, appid, _group = _require_managed_context(group_id, appid)
         template = save_reply_template(key, value)
         if group_id:
             db.record_web_action(
                 group_id, 'config_change', True, affected_count=1,
+                appid=appid,
                 details={'changed': ['reply_template'], 'template_key': key},
             )
         return web.json_response({'success': True, 'data': {
@@ -311,6 +385,7 @@ async def _save_template(request):
             group_id, 'config_change',
             {'changed': ['reply_template'], 'template_key': key,
              'error': str(error)},
+            appid,
         )
         return web.json_response({'success': False, 'error': str(error)}, status=400)
 
@@ -321,23 +396,18 @@ async def _test_template(request):
     value = body.get('template')
     raw_group_id = body.get('group_id')
     group_id = str(raw_group_id or '').strip()
+    appid = str(body.get('appid') or '').strip()
     try:
         if not key:
             raise ValueError('请先选择消息模板')
         if not isinstance(value, dict):
             raise ValueError('模板内容必须是对象')
-        group_id = _require_managed_group(group_id)
-        group = next(
-            (item for item in _group_catalog() if item['group_id'] == group_id),
-            None,
-        )
-        if not group:
-            raise ValueError('未找到目标群对应的机器人')
+        group_id, appid, group = _require_managed_context(group_id, appid)
 
         from core.application import get_app
 
         app = get_app()
-        bot = app.get_bot(group.get('appid')) if app else None
+        bot = app.get_bot(appid) if app else None
         if not bot or not getattr(bot, 'sender', None):
             raise ValueError('目标群对应的机器人未运行')
         sender = bot.sender
@@ -356,20 +426,21 @@ async def _test_template(request):
             raise ValueError(f'主动发送失败：{api_error(response)}')
         db.record_web_action(
             group_id, 'template_test', True, affected_count=1,
-            appid=group.get('appid', ''),
+            appid=appid,
             details={'template_key': key},
         )
         message_id = (
             str(response.get('id') or '') if isinstance(response, dict) else ''
         )
         return web.json_response({'success': True, 'data': {
-            'group_id': group_id, 'template_key': key,
+            'group_id': group_id, 'appid': appid, 'template_key': key,
             'message_id': message_id,
         }})
     except (ValueError, KeyError) as error:
-        if group_id and _is_managed_group(group_id):
+        if group_id and _is_managed_group(group_id, appid):
             db.record_web_action(
                 group_id, 'template_test', False,
+                appid=appid,
                 details={'template_key': key, 'error': str(error)},
             )
         return web.json_response(
@@ -377,9 +448,10 @@ async def _test_template(request):
         )
     except Exception as error:  # noqa: BLE001
         log.exception('发送测试模板失败: %s', error)
-        if group_id and _is_managed_group(group_id):
+        if group_id and _is_managed_group(group_id, appid):
             db.record_web_action(
                 group_id, 'template_test', False,
+                appid=appid,
                 details={'template_key': key, 'error': str(error)},
             )
         return web.json_response(
@@ -391,7 +463,9 @@ async def _test_template(request):
 async def _save_config(request):
     body = await _json(request)
     try:
-        group_id = _require_managed_group(body.get('group_id'))
+        group_id, appid, _group = _require_managed_context(
+            body.get('group_id'), body.get('appid'),
+        )
         days = _clamp_int(request.query.get('days') or 30, 1, 3650, '统计天数')
         features = body.get('features')
         if not isinstance(features, dict):
@@ -462,20 +536,132 @@ async def _save_config(request):
             changed.append('spam_policy')
         db.record_web_action(
             group_id, 'config_change', True, affected_count=len(changed),
+            appid=appid,
             details={'changed': changed},
         )
         return web.json_response({
-            'success': True, 'data': _dashboard_data(group_id, days),
+            'success': True, 'data': _dashboard_data(group_id, days, appid),
         })
     except ValueError as error:
-        _record_web_error(body.get('group_id'), 'config_change', {'error': str(error)})
+        _record_web_error(
+            body.get('group_id'), 'config_change', {'error': str(error)},
+            body.get('appid'),
+        )
+        return web.json_response({'success': False, 'error': str(error)}, status=400)
+
+
+async def _save_global_settings(request):
+    body = await _json(request)
+    try:
+        group_id, appid, _group = _require_managed_context(
+            body.get('group_id'), body.get('appid'),
+        )
+        current = db.get_global_settings()
+        updated = {
+            'show_join_verification': _require_bool(
+                body.get('show_join_verification'), '群内显示入群验证开关',
+            ),
+            'apply_global_forbidden_to_groups': _require_bool(
+                body.get(
+                    'apply_global_forbidden_to_groups',
+                    current.get('apply_global_forbidden_to_groups', False),
+                ),
+                '全局违禁词群过滤开关',
+            ),
+        }
+        db.save_global_settings(updated)
+        changed = [
+            key for key in updated if current.get(key) != updated[key]
+        ]
+        db.record_web_action(
+            group_id, 'config_change', True, affected_count=len(changed),
+            appid=appid,
+            details={'changed': [f'global.{key}' for key in changed]},
+        )
+        return web.json_response({'success': True, 'data': {
+            'global_settings': db.get_global_settings(),
+            'global_forbidden_words': _masked_global_forbidden(),
+        }})
+    except ValueError as error:
+        _record_web_error(
+            body.get('group_id'), 'config_change', {'error': str(error)},
+            body.get('appid'),
+        )
+        return web.json_response({'success': False, 'error': str(error)}, status=400)
+
+
+async def _add_global_forbidden(request):
+    body = await _json(request)
+    try:
+        group_id, appid, _group = _require_managed_context(
+            body.get('group_id'), body.get('appid'),
+        )
+        word = str(body.get('word') or '').strip()
+        if not 2 <= len(word) <= 64:
+            raise ValueError('全局违禁词长度必须在 2 至 64 个字符之间')
+        if any(item.casefold() == word.casefold()
+               for item in db.get_global_forbidden()):
+            raise ValueError('该全局违禁词已存在')
+        db.add_global_forbidden(word)
+        db.record_web_action(
+            group_id, 'forbidden_add', True, affected_count=1, appid=appid,
+            details={'scope': 'global', 'word_length': len(word)},
+        )
+        return web.json_response({'success': True, 'data': {
+            'global_forbidden_words': _masked_global_forbidden(),
+        }})
+    except ValueError as error:
+        _record_web_error(
+            body.get('group_id'), 'forbidden_add', {'error': str(error)},
+            body.get('appid'),
+        )
+        return web.json_response({'success': False, 'error': str(error)}, status=400)
+
+
+async def _delete_global_forbidden(request):
+    body = await _json(request)
+    try:
+        group_id, appid, _group = _require_managed_context(
+            body.get('group_id'), body.get('appid'),
+        )
+        words = db.get_global_forbidden()
+        raw_index = body.get('index')
+        if raw_index is None:
+            # Backward-compatible for older panels; new panels delete by index
+            # because the API never exposes the original term.
+            word = str(body.get('word') or '').strip()
+            if word not in words:
+                raise ValueError('该全局违禁词不存在')
+        else:
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError) as error:
+                raise ValueError('全局违禁词编号无效') from error
+            if not 0 <= index < len(words):
+                raise ValueError('该全局违禁词不存在')
+            word = words[index]
+        db.delete_global_forbidden(word)
+        db.record_web_action(
+            group_id, 'forbidden_delete', True, affected_count=1, appid=appid,
+            details={'scope': 'global', 'word_length': len(word)},
+        )
+        return web.json_response({'success': True, 'data': {
+            'global_forbidden_words': _masked_global_forbidden(),
+        }})
+    except ValueError as error:
+        _record_web_error(
+            body.get('group_id'), 'forbidden_delete', {'error': str(error)},
+            body.get('appid'),
+        )
         return web.json_response({'success': False, 'error': str(error)}, status=400)
 
 
 async def _add_forbidden(request):
     body = await _json(request)
     try:
-        group_id = _require_managed_group(body.get('group_id'))
+        group_id, appid, _group = _require_managed_context(
+            body.get('group_id'), body.get('appid'),
+        )
         word = str(body.get('word') or '').strip()
         if not 2 <= len(word) <= 64:
             raise ValueError('违禁词长度必须在 2 至 64 个字符之间')
@@ -484,46 +670,59 @@ async def _add_forbidden(request):
         db.add_forbidden(group_id, word)
         db.record_web_action(
             group_id, 'forbidden_add', True, affected_count=1,
+            appid=appid,
             details={'word_length': len(word)},
         )
         return web.json_response({'success': True, 'data': {
             'forbidden_words': db.get_forbidden(group_id),
         }})
     except ValueError as error:
-        _record_web_error(body.get('group_id'), 'forbidden_add', {'error': str(error)})
+        _record_web_error(
+            body.get('group_id'), 'forbidden_add', {'error': str(error)},
+            body.get('appid'),
+        )
         return web.json_response({'success': False, 'error': str(error)}, status=400)
 
 
 async def _delete_forbidden(request):
     body = await _json(request)
     try:
-        group_id = _require_managed_group(body.get('group_id'))
+        group_id, appid, _group = _require_managed_context(
+            body.get('group_id'), body.get('appid'),
+        )
         word = str(body.get('word') or '').strip()
         if word not in db.get_forbidden(group_id):
             raise ValueError('该违禁词不存在')
         db.delete_forbidden(group_id, word)
         db.record_web_action(
             group_id, 'forbidden_delete', True, affected_count=1,
+            appid=appid,
             details={'word_length': len(word)},
         )
         return web.json_response({'success': True, 'data': {
             'forbidden_words': db.get_forbidden(group_id),
         }})
     except ValueError as error:
-        _record_web_error(body.get('group_id'), 'forbidden_delete', {'error': str(error)})
+        _record_web_error(
+            body.get('group_id'), 'forbidden_delete', {'error': str(error)},
+            body.get('appid'),
+        )
         return web.json_response({'success': False, 'error': str(error)}, status=400)
 
 
 async def _delete_target(request):
     body = await _json(request)
     try:
-        group_id = _require_managed_group(body.get('group_id'))
+        group_id, appid, _group = _require_managed_context(
+            body.get('group_id'), body.get('appid'),
+        )
         user_id = str(body.get('user_id') or '').strip()
         if not user_id or user_id not in db.get_targets(group_id):
             raise ValueError('该成员不在发言撤回名单中')
         db.delete_target(group_id, user_id)
         db.record_web_action(
             group_id, 'cancel_recall', True, affected_count=1,
+            appid=appid,
             details={'target_id': user_id},
         )
         return web.json_response({'success': True, 'data': {
@@ -533,5 +732,8 @@ async def _delete_target(request):
             ],
         }})
     except ValueError as error:
-        _record_web_error(body.get('group_id'), 'cancel_recall', {'error': str(error)})
+        _record_web_error(
+            body.get('group_id'), 'cancel_recall', {'error': str(error)},
+            body.get('appid'),
+        )
         return web.json_response({'success': False, 'error': str(error)}, status=400)

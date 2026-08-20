@@ -8,6 +8,10 @@ from datetime import datetime
 
 from .reply_templates import _get_cached_template, validate_template
 from .storage.audit import record_audit
+from .storage.global_settings import (
+    get_global_settings,
+    redact_global_forbidden,
+)
 
 _UNSET = object()
 
@@ -249,7 +253,7 @@ def _join_verify_text(verify_info, empty_text='无'):
             answer = str(item.get('answer') or '').strip()
             if question or answer:
                 lines.append(f'问{index}：{question or empty_text}\n答{index}：{answer or empty_text}')
-    return '\n'.join(lines) or empty_text
+    return redact_global_forbidden('\n'.join(lines) or empty_text)
 
 
 def _dynamic_template(key, template, data, event=None):
@@ -296,7 +300,7 @@ def _dynamic_template(key, template, data, event=None):
         variables['forbidden_switch_state'] = (
             '关闭' if features['forbidden_words'] else '开启'
         )
-    elif key == 'join_requests':
+    elif key in ('join_requests', 'join_request_notice'):
         requests = data['requests']
         item_template = template.get('item_content', '')
         button_template = template.get('buttons') or []
@@ -306,9 +310,15 @@ def _dynamic_template(key, template, data, event=None):
             verify_info = verify_info if isinstance(verify_info, dict) else {}
             member_id = str(item.get('member_openid') or '')
             appid = str(variables.get('appid') or '')
+            show_verification = data.get(
+                'show_verification',
+                get_global_settings()['show_join_verification'],
+            )
             item_vars = {
                 'index': index,
-                'username': item.get('username') or template.get('unknown_user_text', '未知用户'),
+                'username': redact_global_forbidden(
+                    item.get('username') or template.get('unknown_user_text', '未知用户')
+                ),
                 'avatar': (
                     f'![头像 #30px #30px]'
                     f'(https://q.qlogo.cn/qqapp/{appid}/{member_id}/640)'
@@ -317,12 +327,14 @@ def _dynamic_template(key, template, data, event=None):
                 'member_id': member_id,
                 'target_id': member_id,
                 'request_id': str(item.get('join_request_id') or ''),
-                'verify_message': _join_verify_text(
-                    verify_info, template.get('empty_text', '无')
+                'verify_message': (
+                    _join_verify_text(verify_info, template.get('empty_text', '无'))
+                    if show_verification else ''
                 ),
             }
             rows.append(_render_value(item_template, {**variables, **item_vars}))
-            if (template.get('button_mode') == 'join_requests'
+            if (data.get('review_buttons', True)
+                    and template.get('button_mode') == 'join_requests'
                     and item_vars['member_id'] and item_vars['request_id']):
                 button_rows.append(_render_value(
                     button_template, {**variables, **item_vars},
@@ -386,6 +398,18 @@ def _dynamic_template(key, template, data, event=None):
                 })
                 for index, option in enumerate(data['options'][:5])
             ]]
+            buttons.append([{
+                'text': '跳过验证',
+                'data': (
+                    f'verify_skip|{data["group_id"]}|{data["member_id"]}|'
+                    f'{data["verify_id"]}'
+                ),
+                'type': 1,
+                'admin': True,
+                'limit': 1,
+                'style': 0,
+                'tips': '仅群管理员可操作',
+            }])
             template = {**template, 'buttons': buttons}
     elif key == 'group_state':
         state = data.get('state') or {}

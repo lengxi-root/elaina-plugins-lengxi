@@ -66,6 +66,7 @@ const TEMPLATE_VARIABLE_GROUPS = [
   ]},
 ];
 let templateInsertTarget = 'tpl-content';
+let bots = [];
 let groups = [];
 let dashboard = null;
 let templates = {};
@@ -96,8 +97,14 @@ async function api(path,options={}){
   if(!response.ok||payload.success===false)throw new Error(payload.error||('HTTP '+response.status));
   return payload.data??payload;
 }
+function currentBot(){return $('bot-select').value}
 function currentGroup(){return $('group-select').value}
+function currentBotData(){return bots.find(item=>item.appid===currentBot())||null}
+function currentBotGroups(){return groups.filter(item=>item.appid===currentBot())}
+function groupStorageKey(appid=currentBot()){return `groupguard-group:${appid}`}
+function testGroupStorageKey(appid=currentBot()){return `groupguard-test-group:${appid}`}
 function formatGroup(item){const name=item.group_name||('群 '+item.group_id);const state=item.in_group?'':' · 已离群';return `${name} (${item.group_id})${state}`}
+function formatBot(item){const identity=item.robot_qq||item.appid;return `${item.name||item.appid} (${identity}) · ${item.group_count||0} 个群`}
 function formatTime(timestamp){return new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(Number(timestamp)*1000))}
 function formatFullTime(timestamp){return new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(Number(timestamp)*1000)).replaceAll('/','-')}
 function timeBucket(timestamp){const then=Number(timestamp)*1000,delta=Math.max(0,Date.now()-then);if(delta<3600000)return Math.max(1,Math.floor(delta/60000))+' 分钟前';if(delta<7200000)return '1 小时前';const date=new Date(then),today=new Date();if(date.toDateString()===today.toDateString())return '今天';return new Intl.DateTimeFormat('zh-CN',{month:'long',day:'numeric'}).format(date)}
@@ -109,7 +116,7 @@ function openPage(page){
   document.querySelectorAll('.nav button').forEach(button=>button.classList.toggle('active',button.dataset.page===activePage));
   document.querySelectorAll('.page').forEach(node=>node.classList.toggle('active',node.id===`page-${activePage}`));
   $('page-title').textContent=PAGE_TITLES[activePage];
-  $('empty-state').hidden=activePage==='templates'||groups.length>0;
+  $('empty-state').hidden=activePage==='templates'||currentBotGroups().length>0;
   if(activePage==='templates'&&!Object.keys(templates).length)loadTemplates();
   if(sidebarMedia.matches)setSidebar(true);
 }
@@ -119,14 +126,40 @@ function showReady(hasGroups=true){
 }
 
 async function loadGroups(){
-  const previous=currentGroup()||localStorage.getItem('groupguard-group')||'';
-  groups=(await api('/groups')).groups||[];
-  $('group-select').innerHTML=groups.length?groups.map(item=>`<option value="${esc(item.group_id)}">${esc(formatGroup(item))}</option>`).join(''):'<option value="">暂无群聊</option>';
-  if(groups.some(item=>item.group_id===previous))$('group-select').value=previous;
-  if(!groups.length){dashboard=null;showReady(false);openPage('templates');return}
-  localStorage.setItem('groupguard-group',currentGroup());
-  if(!$('template-test-group').value)$('template-test-group').value=localStorage.getItem('groupguard-test-group')||currentGroup();
+  const previousBot=currentBot()||localStorage.getItem('groupguard-bot')||'';
+  const previousGroup=currentGroup();
+  const data=await api('/groups');bots=data.bots||[];groups=data.groups||[];
+  $('bot-select').innerHTML=bots.length?bots.map(item=>`<option value="${esc(item.appid)}">${esc(formatBot(item))}</option>`).join(''):'<option value="">暂无运行中的机器人</option>';
+  if(bots.some(item=>item.appid===previousBot))$('bot-select').value=previousBot;
+  if(currentBot())localStorage.setItem('groupguard-bot',currentBot());
+  renderBotIdentity();
+  renderGroupOptions(localStorage.getItem(groupStorageKey())||previousGroup||localStorage.getItem('groupguard-group')||'');
+  if(!currentGroup()){dashboard=null;showReady(false);openPage('templates');return}
+  syncTemplateTestGroup();
+  if(Object.keys(templates).length)renderTemplateForm();
   await loadDashboard();
+}
+function renderBotIdentity(){
+  const bot=currentBotData(),image=$('bot-avatar-image'),fallback=$('bot-avatar-fallback');
+  $('bot-display-name').textContent=bot?.name||'暂无机器人';
+  image.onerror=()=>{image.hidden=true;fallback.hidden=false};
+  if(bot?.avatar){image.hidden=false;fallback.hidden=true;image.src=bot.avatar}else{image.hidden=true;fallback.hidden=false;image.removeAttribute('src')}
+  $('bot-select').closest('.bot-picker').title=bot?`当前机器人：${bot.name}，点击切换`:'暂无运行中的机器人';
+}
+function renderGroupOptions(preferred=''){
+  const scoped=currentBotGroups(),select=$('group-select');
+  select.innerHTML=scoped.length?scoped.map(item=>`<option value="${esc(item.group_id)}">${esc(formatGroup(item))}</option>`).join(''):'<option value="">当前机器人暂无群聊</option>';
+  if(scoped.some(item=>item.group_id===preferred))select.value=preferred;
+  if(currentGroup()){localStorage.setItem(groupStorageKey(),currentGroup());localStorage.setItem('groupguard-group',currentGroup())}
+  const bot=currentBotData();
+  if(!currentGroup()){
+    $('group-display-name').textContent='暂无可管理群聊';
+    $('group-caption').textContent=bot?`${bot.name} 暂无管理员群聊`:'请先启动机器人';
+    $('group-avatar').hidden=true;
+  }
+}
+function syncTemplateTestGroup(){
+  $('template-test-group').value=localStorage.getItem(testGroupStorageKey())||currentGroup();
 }
 async function loadTemplates(){
   try{
@@ -137,17 +170,17 @@ async function loadTemplates(){
   }catch(error){toast(error.message,true)}
 }
 async function loadDashboard(){
-  const groupId=currentGroup();if(!groupId)return;
+  const groupId=currentGroup(),appid=currentBot();if(!groupId||!appid)return;
   $('loading').hidden=false;
-  try{dashboard=await api(`/dashboard?group_id=${encodeURIComponent(groupId)}&days=${encodeURIComponent($('days-select').value)}`);renderAll();showReady(true)}catch(error){$('loading').hidden=true;toast(error.message,true)}
+  try{dashboard=await api(`/dashboard?appid=${encodeURIComponent(appid)}&group_id=${encodeURIComponent(groupId)}&days=${encodeURIComponent($('days-select').value)}`);renderAll();showReady(true)}catch(error){$('loading').hidden=true;toast(error.message,true)}
 }
 function renderAll(){
   if(!dashboard)return;
   const group=dashboard.group||{};
   $('group-display-name').textContent=group.group_name||('群 '+group.group_id);
   const avatar=$('group-avatar');avatar.hidden=false;avatar.src='https://p.qlogo.cn/gh/'+encodeURIComponent(group.group_id||'0')+'/'+encodeURIComponent(group.group_id||'0')+'/100/';avatar.onerror=()=>{avatar.hidden=true};
-  $('group-caption').textContent=`${group.group_name||('群 '+group.group_id)} · ${group.member_count||0} 名成员`;
-  renderOverview();renderConfig();renderForbidden();renderTargets();renderAudit();
+  $('group-caption').textContent=`${currentBotData()?.name||'当前机器人'} · ${group.member_count||0} 名成员`;
+  renderOverview();renderConfig();renderForbidden();renderGlobalSecurity();renderTargets();renderAudit();
 }
 function templateLabel(key,item){return item.label||key}
 function renderTemplates(){
@@ -185,7 +218,7 @@ function insertTemplateVariable(name){
   field.value=field.value.slice(0,start)+token+field.value.slice(end);field.focus();const cursor=start+token.length;field.setSelectionRange(cursor,cursor);closeTemplateVariables();
 }
 function renderTemplateForm(){
-  const item=selectedTemplate(),has=!!item;$('template-form').hidden=!has;$('template-empty').hidden=has;$('save-template').disabled=!has;$('test-template').disabled=!has;
+  const item=selectedTemplate(),has=!!item;$('template-form').hidden=!has;$('template-empty').hidden=has;$('save-template').disabled=!has;$('test-template').disabled=!has||!currentBot();
   if(!has){$('template-title').textContent='选择模板';$('template-key').textContent='模板保存在 data/reply_templates.json';return}
   $('template-title').textContent=templateLabel(selectedTemplateKey,item);$('template-key').textContent=selectedTemplateKey;
   $('tpl-label').value=item.label||'';$('tpl-category').value=item.category||'';$('tpl-small-buttons').checked=!!item.small_buttons;$('tpl-at-user').checked=item.at_user!==false;
@@ -202,19 +235,21 @@ function applyRawTemplate(){try{const item=JSON.parse($('tpl-raw').value);if(!it
 function syncRawTemplate(){try{$('tpl-raw').value=pretty(formTemplate());toast('表单内容已同步到完整 JSON')}catch(error){toast(error.message,true)}}
 async function saveTemplate(){
   const button=$('save-template');button.disabled=true;
-  try{const template=formTemplate();const data=await api('/template',{method:'PUT',body:JSON.stringify({key:selectedTemplateKey,template,group_id:currentGroup()})});templates[selectedTemplateKey]=data.template;renderTemplates();toast('消息模板已保存并立即生效')}catch(error){toast(error.message,true)}finally{button.disabled=false}
+  try{const template=formTemplate();const data=await api('/template',{method:'PUT',body:JSON.stringify({key:selectedTemplateKey,template,appid:currentBot(),group_id:currentGroup()})});templates[selectedTemplateKey]=data.template;renderTemplates();toast('消息模板已保存并立即生效')}catch(error){toast(error.message,true)}finally{button.disabled=false}
 }
 async function testTemplate(){
-  const button=$('test-template'),groupId=$('template-test-group').value.trim();
+  const button=$('test-template'),groupId=$('template-test-group').value.trim(),appid=currentBot();
+  if(!appid){toast('请先选择运行中的机器人',true);$('bot-select').focus();return}
   if(!groupId){toast('请输入测试群 ID',true);$('template-test-group').focus();return}
   button.disabled=true;button.textContent='发送中';
-  try{const template=formTemplate();await api('/template/test',{method:'POST',body:JSON.stringify({key:selectedTemplateKey,template,group_id:groupId})});toast('测试模板已发送到群 '+groupId)}catch(error){toast(error.message,true)}finally{button.disabled=false;button.textContent='测试模板'}
+  try{const template=formTemplate();await api('/template/test',{method:'POST',body:JSON.stringify({key:selectedTemplateKey,template,appid,group_id:groupId})});toast(`${currentBotData()?.name||'当前机器人'} 已发送测试模板到群 ${groupId}`)}catch(error){toast(error.message,true)}finally{button.disabled=false;button.textContent='测试模板'}
 }
 function setTemplateTestGroup(){
   const input=$('template-test-group'),groupId=input.value.trim();
   if(!groupId){toast('请输入测试群 ID',true);input.focus();return}
-  localStorage.setItem('groupguard-test-group',groupId);
-  toast('测试群 ID 已设置为 '+groupId);
+  if(!currentBot()){toast('请先选择运行中的机器人',true);return}
+  localStorage.setItem(testGroupStorageKey(),groupId);
+  toast(`${currentBotData()?.name||'当前机器人'} 的测试群已设置为 ${groupId}`);
 }
 function renderOverview(){
   const stats=dashboard.stats||{};
@@ -233,6 +268,14 @@ function renderConfig(){
   POLICY_FIELDS.forEach(([key,id])=>{const policy=policies[key]||{action:'recall',mute_minutes:10};$(id).checked=!!features[key];$(id+'-action').value=policy.action;$(id+'-mute').value=policy.mute_minutes});
   $('cfg-spam-enabled').checked=!!spam.enabled;$('cfg-spam-window').value=spam.window_seconds;$('cfg-spam-limit').value=spam.limit_count;$('cfg-spam-action').value=spam.action;$('cfg-spam-mute').value=spam.mute_minutes;
   syncPolicyFields();syncJoinPolicyFields();
+}
+function renderGlobalSecurity(){
+  const settings=dashboard.global_settings||{};
+  $('cfg-global-show-join').checked=!!settings.show_join_verification;
+  $('cfg-global-apply-groups').checked=!!settings.apply_global_forbidden_to_groups;
+  const words=dashboard.global_forbidden_words||[];
+  $('global-forbidden-count').textContent=`共 ${words.length} 个，所有群共用；仅显示首字和 ***`;
+  $('global-forbidden-list').innerHTML=words.length?words.map((word,index)=>`<span class="tag"><span>${esc(word)}</span><button type="button" data-delete-global-index="${index}" title="删除全局违禁词" aria-label="删除全局违禁词">×</button></span>`).join(''):'<div class="empty">暂无全局违禁词</div>';
 }
 function syncPolicyFields(){document.querySelectorAll('.policy-action').forEach(select=>{const row=select.closest('.rule-controls');const input=row?.querySelector('.mute-duration input');if(input){const enabled=select.value!=='recall';input.disabled=!enabled;input.closest('.mute-duration').classList.toggle('disabled',!enabled)}})}
 function syncJoinPolicyFields(){const mode=$('cfg-join-policy').value;const enabled=mode==='auto_decline'||mode==='auto_blacklist';$('cfg-join-reason').disabled=!enabled;$('cfg-join-reason-field').classList.toggle('disabled',!enabled)}
@@ -259,21 +302,27 @@ function renderAudit(){
 async function saveConfig(){
   const button=$('save-config');button.disabled=true;
   const features={join_verify:$('cfg-join-verify').checked};const policies={};POLICY_FIELDS.forEach(([key,id])=>{features[key]=$(id).checked;policies[key]={action:$(id+'-action').value,mute_minutes:Number($(id+'-mute').value)}});
-  const payload={group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,features,policies,join_policy:{mode:$('cfg-join-policy').value,reject_reason:$('cfg-join-reason').value.trim()},spam:{enabled:$('cfg-spam-enabled').checked,window_seconds:Number($('cfg-spam-window').value),limit_count:Number($('cfg-spam-limit').value),action:$('cfg-spam-action').value,mute_minutes:Number($('cfg-spam-mute').value)}};
+  const payload={appid:currentBot(),group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,features,policies,join_policy:{mode:$('cfg-join-policy').value,reject_reason:$('cfg-join-reason').value.trim()},spam:{enabled:$('cfg-spam-enabled').checked,window_seconds:Number($('cfg-spam-window').value),limit_count:Number($('cfg-spam-limit').value),action:$('cfg-spam-action').value,mute_minutes:Number($('cfg-spam-mute').value)}};
   try{dashboard=await api(`/config?days=${encodeURIComponent($('days-select').value)}`,{method:'PUT',body:JSON.stringify(payload)});renderAll();toast('群管配置已保存')}catch(error){toast(error.message,true)}finally{button.disabled=false}
 }
-async function addForbidden(event){event.preventDefault();const word=$('forbidden-input').value.trim();if(!word)return;try{const data=await api('/forbidden',{method:'POST',body:JSON.stringify({group_id:currentGroup(),word})});dashboard.forbidden_words=data.forbidden_words;renderForbidden();renderOverview();$('forbidden-input').value='';toast('违禁词已添加');await loadDashboard()}catch(error){toast(error.message,true)}}
-async function deleteForbidden(word){try{const data=await api('/forbidden',{method:'DELETE',body:JSON.stringify({group_id:currentGroup(),word})});dashboard.forbidden_words=data.forbidden_words;renderForbidden();renderOverview();toast('违禁词已删除');await loadDashboard()}catch(error){toast(error.message,true)}}
-async function deleteTarget(userId){try{const data=await api('/target',{method:'DELETE',body:JSON.stringify({group_id:currentGroup(),user_id:userId})});dashboard.targets=data.targets;renderTargets();renderOverview();toast('已取消发言撤回');await loadDashboard()}catch(error){toast(error.message,true)}}
+async function saveGlobalSecurity(){
+  try{const data=await api('/global-settings',{method:'PUT',body:JSON.stringify({appid:currentBot(),group_id:currentGroup(),show_join_verification:$('cfg-global-show-join').checked,apply_global_forbidden_to_groups:$('cfg-global-apply-groups').checked})});dashboard.global_settings=data.global_settings;dashboard.global_forbidden_words=data.global_forbidden_words;renderGlobalSecurity();toast('全局安全设置已保存')}catch(error){toast(error.message,true)}
+}
+async function addForbidden(event){event.preventDefault();const word=$('forbidden-input').value.trim();if(!word)return;try{const data=await api('/forbidden',{method:'POST',body:JSON.stringify({appid:currentBot(),group_id:currentGroup(),word})});dashboard.forbidden_words=data.forbidden_words;renderForbidden();renderOverview();$('forbidden-input').value='';toast('违禁词已添加');await loadDashboard()}catch(error){toast(error.message,true)}}
+async function deleteForbidden(word){try{const data=await api('/forbidden',{method:'DELETE',body:JSON.stringify({appid:currentBot(),group_id:currentGroup(),word})});dashboard.forbidden_words=data.forbidden_words;renderForbidden();renderOverview();toast('违禁词已删除');await loadDashboard()}catch(error){toast(error.message,true)}}
+async function addGlobalForbidden(event){event.preventDefault();const word=$('global-forbidden-input').value.trim();if(!word)return;try{const data=await api('/global-forbidden',{method:'POST',body:JSON.stringify({appid:currentBot(),group_id:currentGroup(),word})});dashboard.global_forbidden_words=data.global_forbidden_words;renderGlobalSecurity();$('global-forbidden-input').value='';toast('全局违禁词已添加')}catch(error){toast(error.message,true)}}
+async function deleteGlobalForbidden(index){try{const data=await api('/global-forbidden',{method:'DELETE',body:JSON.stringify({appid:currentBot(),group_id:currentGroup(),index:Number(index)})});dashboard.global_forbidden_words=data.global_forbidden_words;renderGlobalSecurity();toast('全局违禁词已删除')}catch(error){toast(error.message,true)}}
+async function deleteTarget(userId){try{const data=await api('/target',{method:'DELETE',body:JSON.stringify({appid:currentBot(),group_id:currentGroup(),user_id:userId})});dashboard.targets=data.targets;renderTargets();renderOverview();toast('已取消发言撤回');await loadDashboard()}catch(error){toast(error.message,true)}}
 
 document.querySelectorAll('.nav button').forEach(button=>button.addEventListener('click',()=>openPage(button.dataset.page)));
 document.querySelectorAll('[data-open-page]').forEach(button=>button.addEventListener('click',()=>openPage(button.dataset.openPage)));
 $('sidebar-toggle').addEventListener('click',()=>setSidebar(!$('app').classList.contains('sidebar-collapsed')));$('sidebar-scrim').addEventListener('click',()=>setSidebar(true));
-$('reload').addEventListener('click',loadGroups);$('group-select').addEventListener('change',()=>{localStorage.setItem('groupguard-group',currentGroup());if(!localStorage.getItem('groupguard-test-group'))$('template-test-group').value=currentGroup();loadDashboard()});$('days-select').addEventListener('change',loadDashboard);$('save-config').addEventListener('click',saveConfig);$('forbidden-form').addEventListener('submit',addForbidden);
+$('reload').addEventListener('click',loadGroups);$('bot-select').addEventListener('change',()=>{if(currentBot())localStorage.setItem('groupguard-bot',currentBot());renderBotIdentity();renderGroupOptions(localStorage.getItem(groupStorageKey())||'');syncTemplateTestGroup();renderTemplateForm();if(currentGroup()){loadDashboard()}else{dashboard=null;showReady(false);openPage('templates')}});$('group-select').addEventListener('change',()=>{if(currentGroup()){localStorage.setItem(groupStorageKey(),currentGroup());localStorage.setItem('groupguard-group',currentGroup())}if(!localStorage.getItem(testGroupStorageKey()))$('template-test-group').value=currentGroup();loadDashboard()});$('days-select').addEventListener('change',loadDashboard);$('save-config').addEventListener('click',saveConfig);$('forbidden-form').addEventListener('submit',addForbidden);$('cfg-global-show-join').addEventListener('change',saveGlobalSecurity);$('cfg-global-apply-groups').addEventListener('change',saveGlobalSecurity);$('global-forbidden-form').addEventListener('submit',addGlobalForbidden);
 document.querySelectorAll('.policy-action').forEach(select=>select.addEventListener('change',syncPolicyFields));
 $('cfg-join-policy').addEventListener('change',syncJoinPolicyFields);
 $('template-search').addEventListener('input',renderTemplates);$('template-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-key]');if(button){selectedTemplateKey=button.dataset.templateKey;renderTemplates()}});$('save-template').addEventListener('click',saveTemplate);$('set-template-test-group').addEventListener('click',setTemplateTestGroup);$('test-template').addEventListener('click',testTemplate);$('apply-template-json').addEventListener('click',applyRawTemplate);$('sync-template-json').addEventListener('click',syncRawTemplate);
 document.querySelectorAll('#tpl-content,#tpl-buttons,#tpl-raw').forEach(field=>field.addEventListener('focus',()=>{templateInsertTarget=field.id;updateTemplateVariableContext()}));$('template-variable-toggle').addEventListener('click',()=>setTemplateVariablesOpen(!templateVariablesOpen));$('template-variable-close').addEventListener('click',closeTemplateVariables);$('template-variable-modal').addEventListener('click',event=>{if(event.target.matches('[data-template-variable-close]'))closeTemplateVariables()});$('template-variable-list').addEventListener('click',event=>{const button=event.target.closest('[data-template-variable]');if(button)insertTemplateVariable(button.dataset.templateVariable)});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&templateVariablesOpen)closeTemplateVariables()});
 $('forbidden-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-word]');if(button)deleteForbidden(button.dataset.deleteWord)});$('target-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-target]');if(button)deleteTarget(button.dataset.deleteTarget)});['filter-source','filter-status','filter-action'].forEach(id=>$(id).addEventListener('change',renderAudit));
+$('global-forbidden-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-global-index]');if(button)deleteGlobalForbidden(button.dataset.deleteGlobalIndex)});
 $('audit-search').addEventListener('input',renderAudit);
 sidebarMedia.addEventListener('change',()=>setSidebar(true));setSidebar(true);openPage('audit');Promise.all([loadTemplates(),loadGroups()]).catch(error=>{showReady(false);toast(error.message,true)});
