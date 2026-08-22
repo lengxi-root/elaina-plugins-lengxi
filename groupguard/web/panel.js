@@ -263,7 +263,7 @@ function renderOverview(){
 }
 function renderConfig(){
   const config=dashboard.config,features=config.features||{},policies=config.policies||{},spam=dashboard.spam;
-  $('cfg-enabled').checked=!!config.enabled;$('cfg-notify').checked=!!config.notify;$('cfg-join-verify').checked=!!features.join_verify;
+  $('cfg-enabled').checked=!!config.enabled;$('cfg-notify').checked=!!config.notify;$('cfg-join-verify').checked=!!features.join_verify;$('cfg-verify-mute').checked=!!config.mute_during_verify;
   const joinPolicy=config.join_policy||{mode:'manual',reject_reason:'不符合入群要求'};$('cfg-join-policy').value=joinPolicy.mode;$('cfg-join-reason').value=joinPolicy.reject_reason||'';
   POLICY_FIELDS.forEach(([key,id])=>{const policy=policies[key]||{action:'recall',mute_minutes:10};$(id).checked=!!features[key];$(id+'-action').value=policy.action;$(id+'-mute').value=policy.mute_minutes});
   $('cfg-spam-enabled').checked=!!spam.enabled;$('cfg-spam-window').value=spam.window_seconds;$('cfg-spam-limit').value=spam.limit_count;$('cfg-spam-action').value=spam.action;$('cfg-spam-mute').value=spam.mute_minutes;
@@ -302,7 +302,7 @@ function renderAudit(){
 async function saveConfig(){
   const button=$('save-config');button.disabled=true;
   const features={join_verify:$('cfg-join-verify').checked};const policies={};POLICY_FIELDS.forEach(([key,id])=>{features[key]=$(id).checked;policies[key]={action:$(id+'-action').value,mute_minutes:Number($(id+'-mute').value)}});
-  const payload={appid:currentBot(),group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,features,policies,join_policy:{mode:$('cfg-join-policy').value,reject_reason:$('cfg-join-reason').value.trim()},spam:{enabled:$('cfg-spam-enabled').checked,window_seconds:Number($('cfg-spam-window').value),limit_count:Number($('cfg-spam-limit').value),action:$('cfg-spam-action').value,mute_minutes:Number($('cfg-spam-mute').value)}};
+  const payload={appid:currentBot(),group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,mute_during_verify:$('cfg-verify-mute').checked,features,policies,join_policy:{mode:$('cfg-join-policy').value,reject_reason:$('cfg-join-reason').value.trim()},spam:{enabled:$('cfg-spam-enabled').checked,window_seconds:Number($('cfg-spam-window').value),limit_count:Number($('cfg-spam-limit').value),action:$('cfg-spam-action').value,mute_minutes:Number($('cfg-spam-mute').value)}};
   try{dashboard=await api(`/config?days=${encodeURIComponent($('days-select').value)}`,{method:'PUT',body:JSON.stringify(payload)});renderAll();toast('群管配置已保存')}catch(error){toast(error.message,true)}finally{button.disabled=false}
 }
 async function saveGlobalSecurity(){

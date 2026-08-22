@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from . import state
 from .replies import respond
+from .storage import get_group_cfg
 from .storage.audit import record_audit, record_received, record_result
 from .utils import api_pair
 
@@ -14,6 +15,7 @@ VERIFY_INITIAL_WAIT = 300   # 首次验证5分钟
 VERIFY_MAX_WAIT = 3600      # 最大等待1小时
 VERIFY_FAILURE_MUTE = 600   # 答错后禁言并等待10分钟
 VERIFY_OPTION_COUNT = 4
+VERIFY_MUTE_GRACE = 60
 
 
 def _reply_succeeded(result):
@@ -35,12 +37,20 @@ async def _mute_failed_user(event, group_id, user_id):
     expire_at = (
         datetime.now().astimezone() + timedelta(seconds=VERIFY_FAILURE_MUTE)
     ).isoformat(timespec='seconds')
-    success, response = await api_pair(event.sender.set_group_member_mute(group_id, [{
-        'op': 'add',
-        'member_openid': user_id,
-        'mute_expire_at': expire_at,
-    }]))
+    tracked = state.is_verification_muted(group_id, user_id)
+    operations = ('update', 'add') if tracked else ('add',)
+    success, response = False, None
+    for operation in operations:
+        success, response = await api_pair(event.sender.set_group_member_mute(group_id, [{
+            'op': operation,
+            'member_openid': user_id,
+            'mute_expire_at': expire_at,
+        }]))
+        if success:
+            break
     success = bool(success)
+    if success and tracked:
+        state.clear_verification_muted(group_id, user_id)
     error = '' if success else str(response or 'mute_failed')
     record_audit(event, 'verify_failure_mute', 'api', success=success,
                  target_id=user_id, details={'error': error}, source='verification')
@@ -48,6 +58,77 @@ async def _mute_failed_user(event, group_id, user_id):
                   affected_count=1 if success else 0, target_id=user_id,
                   details={'error': error}, source='verification')
     return bool(success)
+
+
+async def mute_for_verification(event, group_id, user_id, seconds):
+    """Temporarily mute a member and remember that this plugin owns the mute."""
+    expire_at = (
+        datetime.now().astimezone()
+        + timedelta(seconds=max(1, int(seconds)) + VERIFY_MUTE_GRACE)
+    ).isoformat(timespec='seconds')
+    tracked = state.is_verification_muted(group_id, user_id)
+    operations = ('update', 'add') if tracked else ('add',)
+    success, response = False, None
+    for operation in operations:
+        success, response = await api_pair(event.sender.set_group_member_mute(group_id, [{
+            'op': operation,
+            'member_openid': user_id,
+            'mute_expire_at': expire_at,
+        }]))
+        if success:
+            break
+    success = bool(success)
+    if success:
+        state.mark_verification_muted(group_id, user_id)
+    error = '' if success else str(response or 'mute_failed')
+    record_audit(
+        event, 'verify_temporary_mute', 'api', success=success,
+        affected_count=1 if success else 0, target_id=user_id,
+        details={'error': error, 'expire_at': expire_at}, source='verification',
+    )
+    return success
+
+
+async def release_verification_mute(event, group_id, user_id):
+    """Release only a mute that was successfully created by verification."""
+    if not state.is_verification_muted(group_id, user_id):
+        return None
+    success, response = await api_pair(event.sender.set_group_member_mute(group_id, [{
+        'op': 'del',
+        'member_openid': user_id,
+    }]))
+    success = bool(success)
+    if success:
+        state.clear_verification_muted(group_id, user_id)
+    error = '' if success else str(response or 'unmute_failed')
+    record_audit(
+        event, 'verify_temporary_unmute', 'api', success=success,
+        affected_count=1 if success else 0, target_id=user_id,
+        details={'error': error}, source='verification',
+    )
+    return success
+
+
+async def release_group_mutes(sender, group_id):
+    """Release tracked verification mutes when a group setting is disabled."""
+    members = list(state.get_verification_muted(group_id))
+    released = 0
+    failed = 0
+    for offset in range(0, len(members), 10):
+        batch = members[offset:offset + 10]
+        success, _response = await api_pair(sender.set_group_member_mute(
+            group_id, [
+                {'op': 'del', 'member_openid': member_id}
+                for member_id in batch
+            ],
+        ))
+        if success:
+            released += len(batch)
+            for member_id in batch:
+                state.clear_verification_muted(group_id, member_id)
+        else:
+            failed += len(batch)
+    return released, failed
 
 
 async def send_verify(event, group_id, member_id, retry_count=0):
@@ -87,6 +168,18 @@ async def send_verify(event, group_id, member_id, retry_count=0):
     }
     state.clear_cooldown(group_id, member_id)
 
+    config = get_group_cfg(group_id)
+    mute_enabled = bool(
+        config['enabled']
+        and config['features']['join_verify']
+        and config.get('mute_during_verify')
+    )
+    muted = False
+    if mute_enabled:
+        muted = await mute_for_verification(
+            event, group_id, member_id, wait,
+        )
+
     error = ''
     try:
         result = await respond(
@@ -100,6 +193,8 @@ async def send_verify(event, group_id, member_id, retry_count=0):
         error = type(exc).__name__
     if error:
         state.clear_pending(group_id, member_id)
+        if muted:
+            await release_verification_mute(event, group_id, member_id)
         if previous_cooldown is not None:
             state.verify_cooldown.setdefault(group_id, {})[member_id] = (
                 previous_cooldown
@@ -110,12 +205,14 @@ async def send_verify(event, group_id, member_id, retry_count=0):
                 'retry_count': retry_count,
                 'reason': 'reply_failed',
                 'error': error,
+                'muted': muted,
             },
             source='verification',
         )
         return False
     record_result(event, 'verify_challenge', True, affected_count=1,
-                  target_id=member_id, details={'retry_count': retry_count},
+                  target_id=member_id,
+                  details={'retry_count': retry_count, 'muted': muted},
                   source='verification')
     return True
 
@@ -164,9 +261,10 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
         await send_verify(event, group_id, user_id, retry_count)
         return
     if chosen == pending['answer']:
-        state.clear_member(group_id, user_id)
+        unmuted = await release_verification_mute(event, group_id, user_id)
+        state.clear_verification(group_id, user_id)
         record_result(event, 'verify_answer', True, affected_count=1, target_id=user_id,
-                      source='verification')
+                      details={'unmuted': unmuted}, source='verification')
         await respond(event, 'verify_success', at_user=False, target_id=user_id)
     else:
         retry_count = pending.get('retry_count', 0) + 1
@@ -198,8 +296,9 @@ def pass_verify(group_id, user_id, verify_id=None):
         pending is not None
         or user_id in state.unverified.get(group_id, set())
         or user_id in state.verify_cooldown.get(group_id, {})
+        or state.is_verification_muted(group_id, user_id)
     )
     if not is_pending:
         return False
-    state.clear_member(group_id, user_id)
+    state.clear_verification(group_id, user_id)
     return True

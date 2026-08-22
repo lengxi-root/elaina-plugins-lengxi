@@ -144,7 +144,7 @@ async def on_member_add(event, match):
     member_id = event.user_id
     if not member_id:
         return
-    state.clear_member(gid, member_id)
+    state.clear_verification(gid, member_id)
     state.unverified.setdefault(gid, set()).add(member_id)
     await send_verify(event, gid, member_id, retry_count=0)
 
@@ -170,7 +170,8 @@ async def on_verify_click(event, match):
         return
     gc = db.get_group_cfg(gid)
     if not gc['enabled'] or not gc['features']['join_verify']:
-        state.clear_member(gid, member_id)
+        await verify.release_verification_mute(event, gid, member_id)
+        state.clear_verification(gid, member_id)
         return
     try:
         chosen = int(parts[-1])
@@ -225,10 +226,12 @@ async def on_verify_skip(event, match):
             source='verification',
         )
         return
+    unmuted = await verify.release_verification_mute(event, gid, target_id)
     event.set_callback_code(0)
     record_result(
         event, 'verify_pass', True, affected_count=1, target_id=target_id,
-        details={'method': 'skip_button'}, source='verification',
+        details={'method': 'skip_button', 'unmuted': unmuted},
+        source='verification',
     )
     message = _build(
         'verify_passed_by_admin', {'target_id': target_id}, event,

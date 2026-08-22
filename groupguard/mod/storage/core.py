@@ -50,6 +50,7 @@ def init_tables(connection):
             group_id TEXT PRIMARY KEY,
             enabled INTEGER DEFAULT 0,
             notify INTEGER DEFAULT 0,
+            verify_mute INTEGER DEFAULT 0,
             features TEXT DEFAULT '{}',
             policies TEXT DEFAULT '{}',
             join_policy TEXT DEFAULT '{}'
@@ -137,6 +138,7 @@ def init_tables(connection):
     """)
     _ensure_column(connection, 'group_config', 'policies', "TEXT DEFAULT '{}'")
     _ensure_column(connection, 'group_config', 'join_policy', "TEXT DEFAULT '{}'")
+    _ensure_column(connection, 'group_config', 'verify_mute', 'INTEGER DEFAULT 0')
     _ensure_column(
         connection, 'global_settings', 'apply_global_forbidden_to_groups',
         'INTEGER DEFAULT 0',

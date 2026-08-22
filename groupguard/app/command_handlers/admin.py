@@ -165,7 +165,11 @@ async def cmd_verify_pass(event, match):
         finish_action(event, 'verify_pass', False, target_id=target_id,
                       details={'reason': 'not_pending'})
         return await reply_at(event, 'verify_not_pending', target_id=target_id)
+    unmuted = await verify.release_verification_mute(
+        event, event.group_id, target_id,
+    )
     trace_phase(event, 'verify_pass', 'storage', success=True, affected_count=1,
-                target_id=target_id)
-    finish_action(event, 'verify_pass', True, affected_count=1, target_id=target_id)
+                target_id=target_id, details={'unmuted': unmuted})
+    finish_action(event, 'verify_pass', True, affected_count=1, target_id=target_id,
+                  details={'unmuted': unmuted})
     await reply_at(event, 'verify_passed_by_admin', target_id=target_id)

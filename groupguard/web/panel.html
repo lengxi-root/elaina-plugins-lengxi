@@ -73,33 +73,28 @@
 
         <section class="page" id="page-config">
           <section class="panel">
-            <div class="panel-head"><div><h2>功能开关</h2><p>配置仅作用于当前群</p></div><button class="btn primary" id="save-config" type="button">保存配置</button></div>
-            <div class="panel-body switches global-switches">
+            <div class="panel-head"><div><h2>功能开关</h2><p>群级开关与全局安全开关</p></div><button class="btn primary" id="save-config" type="button">保存配置</button></div>
+            <div class="panel-body switches">
               <label class="switch"><span><b>群管总开关</b><small>执行自动监管规则</small></span><input id="cfg-enabled" type="checkbox"></label>
               <label class="switch"><span><b>处理提醒</b><small>自动处理后发送结果</small></span><input id="cfg-notify" type="checkbox"></label>
-              <label class="switch"><span><b>入群验证</b><small>新成员完成算术验证</small></span><input id="cfg-join-verify" type="checkbox"></label>
-            </div>
-          </section>
-          <section class="panel">
-            <div class="panel-head"><div><h2>全局安全设置</h2><p>作用于所有群，入群申请验证内容仅在开启后发送到群内</p></div></div>
-            <div class="panel-body switches global-switches">
               <label class="switch"><span><b>群内显示入群验证</b><small>发送前会按全局违禁词自动替换为 *</small></span><input id="cfg-global-show-join" type="checkbox"></label>
               <label class="switch"><span><b>全局违禁词应用于群过滤</b><small>将全局词同时纳入所有群的消息检测</small></span><input id="cfg-global-apply-groups" type="checkbox"></label>
             </div>
           </section>
           <section class="panel">
-            <div class="panel-head"><div><h2>入群策略</h2><p>入群申请审批与入群后验证分别配置</p></div></div>
-            <div class="rule-row join-policy-rule">
-              <div class="rule-toggle"><span><b>入群申请审批</b><small>自动策略仅在群管总开关开启时执行</small></span></div>
-              <div class="rule-controls join-policy-controls">
-                <label class="field"><span>审批方式</span><select id="cfg-join-policy"><option value="manual">手动审批</option><option value="auto_approve">自动通过</option><option value="auto_decline">自动拒绝</option><option value="auto_blacklist">自动拒绝并拉黑</option></select></label>
-                <label class="field" id="cfg-join-reason-field"><span>拒绝理由</span><input id="cfg-join-reason" maxlength="200" placeholder="不符合入群要求"></label>
-              </div>
-            </div>
-          </section>
-          <section class="panel">
-            <div class="panel-head"><div><h2>内容规则</h2><p>每条规则独立设置处理方式与禁言时间</p></div></div>
+            <div class="panel-head"><div><h2>群管配置</h2><p>集中配置入群验证、内容规则与刷屏处理</p></div></div>
             <div class="rule-list">
+              <div class="rule-row">
+                <label class="rule-toggle"><input id="cfg-join-verify" type="checkbox"><span><b>入群验证</b><small>新成员完成算术验证</small></span></label>
+                <label class="rule-toggle verify-mute-toggle"><input id="cfg-verify-mute" type="checkbox"><span><b>验证期间禁言</b><small>验证通过或管理员跳过后自动解禁</small></span></label>
+              </div>
+              <div class="rule-row join-policy-rule">
+                <div class="rule-toggle"><span><b>入群申请审批</b><small>自动策略仅在群管总开关开启时执行</small></span></div>
+                <div class="rule-controls join-policy-controls">
+                  <label class="field"><span>审批方式</span><select id="cfg-join-policy"><option value="manual">手动审批</option><option value="auto_approve">自动通过</option><option value="auto_decline">自动拒绝</option><option value="auto_blacklist">自动拒绝并拉黑</option></select></label>
+                  <label class="field" id="cfg-join-reason-field"><span>拒绝理由</span><input id="cfg-join-reason" maxlength="200" placeholder="不符合入群要求"></label>
+                </div>
+              </div>
               <div class="rule-row">
                 <label class="rule-toggle"><input id="cfg-block-links" type="checkbox"><span><b>禁发链接</b><small>检测文本中的网页链接</small></span></label>
                 <div class="rule-controls"><label class="field"><span>处理方式</span><select id="cfg-block-links-action" class="policy-action"><option value="recall">仅撤回</option><option value="mute">仅禁言</option><option value="recall_mute">撤回并禁言</option></select></label><label class="field mute-duration"><span>禁言时间（分钟）</span><input id="cfg-block-links-mute" type="number" min="1" max="43200"></label></div>
@@ -116,17 +111,14 @@
                 <label class="rule-toggle"><input id="cfg-forbidden" type="checkbox"><span><b>违禁词过滤</b><small>检测当前群的独立违禁词表</small></span></label>
                 <div class="rule-controls"><label class="field"><span>处理方式</span><select id="cfg-forbidden-action" class="policy-action"><option value="recall">仅撤回</option><option value="mute">仅禁言</option><option value="recall_mute">撤回并禁言</option></select></label><label class="field mute-duration"><span>禁言时间（分钟）</span><input id="cfg-forbidden-mute" type="number" min="1" max="43200"></label></div>
               </div>
-            </div>
-          </section>
-          <section class="panel">
-            <div class="panel-head"><div><h2>刷屏检测</h2><p>按指定秒数和消息条数判断刷屏</p></div></div>
-            <div class="rule-row spam-rule">
-              <label class="rule-toggle"><input id="cfg-spam-enabled" type="checkbox"><span><b>启用刷屏检测</b><small>达到阈值后自动处理</small></span></label>
-              <div class="rule-controls spam-controls">
-                <label class="field"><span>统计时间（秒）</span><input id="cfg-spam-window" type="number" min="5" max="3600"></label>
-                <label class="field"><span>消息条数</span><input id="cfg-spam-limit" type="number" min="3" max="100"></label>
-                <label class="field"><span>处理方式</span><select id="cfg-spam-action" class="policy-action"><option value="recall">仅撤回</option><option value="mute">仅禁言</option><option value="recall_mute">撤回并禁言</option></select></label>
-                <label class="field mute-duration"><span>禁言时间（分钟）</span><input id="cfg-spam-mute" type="number" min="1" max="43200"></label>
+              <div class="rule-row spam-rule">
+                <label class="rule-toggle"><input id="cfg-spam-enabled" type="checkbox"><span><b>启用刷屏检测</b><small>达到阈值后自动处理</small></span></label>
+                <div class="rule-controls spam-controls">
+                  <label class="field"><span>统计时间（秒）</span><input id="cfg-spam-window" type="number" min="5" max="3600"></label>
+                  <label class="field"><span>消息条数</span><input id="cfg-spam-limit" type="number" min="3" max="100"></label>
+                  <label class="field"><span>处理方式</span><select id="cfg-spam-action" class="policy-action"><option value="recall">仅撤回</option><option value="mute">仅禁言</option><option value="recall_mute">撤回并禁言</option></select></label>
+                  <label class="field mute-duration"><span>禁言时间（分钟）</span><input id="cfg-spam-mute" type="number" min="1" max="43200"></label>
+                </div>
               </div>
             </div>
           </section>

@@ -8,7 +8,7 @@ from aiohttp import web
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.web_pages import register_route, unregister_route
 
-from ..mod import db, fw_render, state
+from ..mod import db, fw_render, state, verify
 from ..mod.replies import api_error, render_template_preview
 from ..mod.reply_templates import list_reply_templates, save_reply_template
 
@@ -495,6 +495,13 @@ async def _save_config(request):
             'group_id': group_id,
             'enabled': _require_bool(body.get('enabled'), '群管开关'),
             'notify': _require_bool(body.get('notify'), '撤回提醒开关'),
+            'mute_during_verify': _require_bool(
+                body.get(
+                    'mute_during_verify',
+                    current.get('mute_during_verify', False),
+                ),
+                '验证期间禁言开关',
+            ),
             'features': {
                 key: _require_bool(features[key], f'{key} 开关')
                 for key in db.FEATURE_KEYS
@@ -504,8 +511,21 @@ async def _save_config(request):
         }
         spam_enabled = _require_bool(spam.get('enabled'), '刷屏检测开关')
         db.save_group_cfg(updated)
+        release_verify_mutes = (
+            not updated['enabled']
+            or not updated['features']['join_verify']
+            or not updated['mute_during_verify']
+        )
+        if release_verify_mutes:
+            from core.application import get_app
+
+            app = get_app()
+            bot = app.get_bot(appid) if app else None
+            sender = getattr(bot, 'sender', None) if bot else None
+            if sender:
+                await verify.release_group_mutes(sender, group_id)
         if not updated['enabled'] or not updated['features']['join_verify']:
-            state.clear_group(group_id)
+            state.clear_group_verification(group_id)
         db.save_spam_config(
             group_id, int(spam_enabled), window_seconds, limit_count,
             spam_action, spam_mute_minutes,
@@ -515,6 +535,8 @@ async def _save_config(request):
             changed.append('enabled')
         if current['notify'] != updated['notify']:
             changed.append('notify')
+        if current.get('mute_during_verify') != updated['mute_during_verify']:
+            changed.append('mute_during_verify')
         changed.extend(
             key for key in db.FEATURE_KEYS
             if current['features'][key] != updated['features'][key]

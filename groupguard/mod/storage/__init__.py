@@ -8,6 +8,7 @@ from .config import (
     save_group_cfg,
     set_enabled,
     set_feature,
+    set_verify_mute,
 )
 from .core import (
     DB_PATH,

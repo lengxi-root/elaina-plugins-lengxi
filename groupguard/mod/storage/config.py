@@ -31,6 +31,7 @@ def default_group_config(group_id):
         'group_id': group_id,
         'enabled': False,
         'notify': False,
+        'mute_during_verify': False,
         'features': {key: False for key in FEATURE_KEYS},
         'policies': {key: _default_policy() for key in POLICY_KEYS},
         'join_policy': {'mode': 'manual', 'reject_reason': '不符合入群要求'},
@@ -47,6 +48,7 @@ def _get_group_cfg(group_id):
     connection.close()
     if not row:
         return (
+            False,
             False,
             False,
             tuple(False for _ in FEATURE_KEYS),
@@ -81,6 +83,7 @@ def _get_group_cfg(group_id):
     return (
         _as_bool(row['enabled']),
         _as_bool(row['notify']),
+        _as_bool(row['verify_mute']),
         tuple(_as_bool(stored_features.get(key, False)) for key in FEATURE_KEYS),
         tuple(policy_values),
         join_mode,
@@ -92,6 +95,7 @@ def get_group_cfg(group_id):
     (
         enabled,
         notify,
+        mute_during_verify,
         feature_values,
         policy_values,
         join_mode,
@@ -101,6 +105,7 @@ def get_group_cfg(group_id):
         'group_id': group_id,
         'enabled': enabled,
         'notify': notify,
+        'mute_during_verify': mute_during_verify,
         'features': dict(zip(FEATURE_KEYS, feature_values)),
         'policies': {
             key: {'action': action, 'mute_minutes': mute_minutes}
@@ -114,12 +119,13 @@ def save_group_cfg(config):
     connection = get_db()
     connection.execute(
         'INSERT OR REPLACE INTO group_config '
-        '(group_id, enabled, notify, features, policies, join_policy) '
-        'VALUES (?, ?, ?, ?, ?, ?)',
+        '(group_id, enabled, notify, verify_mute, features, policies, join_policy) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?)',
         (
             config['group_id'],
             int(config['enabled']),
             int(config['notify']),
+            int(bool(config.get('mute_during_verify', False))),
             json.dumps(config['features']),
             json.dumps(config.get('policies') or {}),
             json.dumps(config.get('join_policy') or {}),
@@ -142,4 +148,10 @@ def set_feature(group_id, key, enabled):
         config['notify'] = bool(enabled)
     else:
         config['features'][key] = bool(enabled)
+    save_group_cfg(config)
+
+
+def set_verify_mute(group_id, enabled):
+    config = get_group_cfg(group_id)
+    config['mute_during_verify'] = bool(enabled)
     save_group_cfg(config)

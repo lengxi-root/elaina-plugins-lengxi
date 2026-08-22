@@ -6,6 +6,7 @@ import time
 pending_verify = {}   # {group_id: {user_id: {"answer": idx, "verify_id": str, "expire": ts, ...}}}
 unverified = {}       # {group_id: set(user_id)} — 待验证
 verify_cooldown = {}  # {group_id: {user_id: {"retry_count": n, "next_time": ts}}}
+verification_muted = {}  # {group_id: set(user_id)} — 插件施加的验证临时禁言
 
 _cleanup_task = None
 
@@ -24,14 +25,42 @@ def _discard_member(mapping, group_id, user_id):
 
 def clear_member(group_id, user_id):
     """Release all short-lived verification state for one member."""
-    for mapping in (pending_verify, verify_cooldown, unverified):
+    for mapping in (pending_verify, verify_cooldown, unverified, verification_muted):
         _discard_member(mapping, group_id, user_id)
 
 
 def clear_group(group_id):
     """Release all verification state for a group."""
+    for mapping in (pending_verify, verify_cooldown, unverified, verification_muted):
+        mapping.pop(group_id, None)
+
+
+def clear_group_verification(group_id):
+    """Clear challenges while retaining failed temporary-unmute retries."""
     for mapping in (pending_verify, verify_cooldown, unverified):
         mapping.pop(group_id, None)
+
+
+def clear_verification(group_id, user_id):
+    """Complete verification without losing temporary-mute ownership."""
+    for mapping in (pending_verify, verify_cooldown, unverified):
+        _discard_member(mapping, group_id, user_id)
+
+
+def mark_verification_muted(group_id, user_id):
+    verification_muted.setdefault(group_id, set()).add(user_id)
+
+
+def clear_verification_muted(group_id, user_id):
+    _discard_member(verification_muted, group_id, user_id)
+
+
+def is_verification_muted(group_id, user_id):
+    return user_id in verification_muted.get(group_id, set())
+
+
+def get_verification_muted(group_id):
+    return tuple(sorted(verification_muted.get(group_id, set())))
 
 
 def clear_pending(group_id, user_id):

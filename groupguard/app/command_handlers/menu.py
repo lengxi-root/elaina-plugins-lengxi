@@ -2,7 +2,7 @@
 
 from core.plugin.decorators import handler
 
-from ...mod import db, state
+from ...mod import db, state, verify
 from ...mod.panel import show_category, show_gm_panel
 from ...mod.perms import ensure_admin_env
 from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
@@ -44,7 +44,8 @@ async def cmd_gm_off(event, match):
     if not await ensure_admin_env(event):
         return
     db.set_enabled(event.group_id, False)
-    state.clear_group(event.group_id)
+    await verify.release_group_mutes(event.sender, event.group_id)
+    state.clear_group_verification(event.group_id)
     trace_phase(event, 'config_change', 'storage', success=True, affected_count=1,
                 details={'key': 'enabled', 'value': False})
     finish_action(event, 'config_change', True, affected_count=1,
@@ -57,6 +58,8 @@ TOGGLE_COMMANDS = [
     (r'^/?违禁词关闭\s*$', '违禁词关闭', 'forbidden_words', False),
     (r'^/?入群验证开启\s*$', '入群验证开启', 'join_verify', True),
     (r'^/?入群验证关闭\s*$', '入群验证关闭', 'join_verify', False),
+    (r'^/?入群验证禁言开启\s*$', '入群验证禁言开启', 'mute_during_verify', True),
+    (r'^/?入群验证禁言关闭\s*$', '入群验证禁言关闭', 'mute_during_verify', False),
     (r'^/?禁发链接开启\s*$', '禁发链接开启', 'block_links', True),
     (r'^/?禁发链接关闭\s*$', '禁发链接关闭', 'block_links', False),
     (r'^/?禁发卡片开启\s*$', '禁发卡片开启', 'block_cards', True),
@@ -73,9 +76,15 @@ def make_toggle(key, enabled):
         begin_action(event, 'config_change', {'key': key, 'value': enabled})
         if not await ensure_admin_env(event):
             return
-        db.set_feature(event.group_id, key, enabled)
+        if key == 'mute_during_verify':
+            db.set_verify_mute(event.group_id, enabled)
+            if not enabled:
+                await verify.release_group_mutes(event.sender, event.group_id)
+        else:
+            db.set_feature(event.group_id, key, enabled)
         if key == 'join_verify' and not enabled:
-            state.clear_group(event.group_id)
+            await verify.release_group_mutes(event.sender, event.group_id)
+            state.clear_group_verification(event.group_id)
         trace_phase(event, 'config_change', 'storage', success=True, affected_count=1,
                     details={'key': key, 'value': enabled})
         finish_action(event, 'config_change', True, affected_count=1,
