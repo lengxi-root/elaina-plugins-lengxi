@@ -22,7 +22,7 @@ from . import webapi
 
 __plugin_meta__ = {
     'name': 'QQ 抢红包',
-    'author': '3122662728 / 冷曦',
+    'author': '冷曦',
     'description': '基于内置 QQ 原生协议的可配置红包领取插件',
     'version': '1.1.1',
     'license': 'MIT',
