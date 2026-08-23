@@ -32,6 +32,7 @@ from .join import (
     join_review_buttons as _join_review_buttons,
 )
 from .admin import cmd_auth, cmd_clear_cache, cmd_refresh_group_state, cmd_verify_pass
+from .remote import cmd_bind_groupguard
 from .statistics import cmd_management_log, cmd_management_stats
 
 __all__ = [name for name in globals() if name.startswith('cmd_')] + [

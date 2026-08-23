@@ -6,7 +6,7 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .app import commands, monitor, verify_events, webpanel  # noqa: F401
+from .app import commands, monitor, remote, verify_events, webpanel  # noqa: F401
 from .mod import state
 from .mod.reply_templates import initialize_reply_templates
 
@@ -14,7 +14,7 @@ __plugin_meta__ = {
     'name': '群管',
     'author': '冷曦',
     'description': '违禁词过滤、入群验证、禁言、入群审批、消息撤回等群管理功能',
-    'version': '1.3.6',
+    'version': '1.3.8',
     'license': 'MIT',
 }
 
@@ -38,12 +38,14 @@ async def _init():
         icon=_ICON, html_file=_PANEL_HTML,
     )
     webpanel.register_routes()
+    await remote.start()
     log.info('群管插件已加载')
 
 
 @on_unload
-def _cleanup():
+async def _cleanup():
     state.stop_cleanup()
+    await remote.stop()
     webpanel.unregister_routes()
     unregister_page(_PAGE_KEY)
     log.info('群管插件已卸载')

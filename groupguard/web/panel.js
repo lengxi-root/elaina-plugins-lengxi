@@ -1,10 +1,9 @@
 const BASE = '/api/ext/groupguard';
 const $ = id => document.getElementById(id);
 const THEME_MAP = {'--bg':'--host-bg','--bg2':'--host-bg2','--bg3':'--host-bg3','--bg-float':'--host-float','--text':'--host-text','--text2':'--host-text2','--text3':'--host-text3','--border':'--host-border','--accent':'--host-accent','--accent-hover':'--host-accent-hover','--accent-light':'--host-accent-light','--accent-soft':'--host-accent-soft','--success':'--host-success','--danger':'--host-danger','--warning':'--host-warning','--info':'--host-info'};
-const PAGE_TITLES = {overview:'概览',config:'功能设置',forbidden:'违禁词',targets:'发言撤回',templates:'消息模板',audit:'审计日志'};
+const PAGE_TITLES = {overview:'概览',config:'功能设置',forbidden:'违禁词',templates:'消息模板',audit:'管理记录',developer:'开发者工具'};
 const ACTION_LABELS = {mute:'禁言',unmute:'解禁',recall:'撤回消息',speak_recall:'发言撤回',cancel_recall:'取消撤回',approve_join:'通过入群',decline_join:'拒绝入群',blacklist_join:'拒绝并拉黑',verify_pass:'通过验证',verify_failure_mute:'验证失败禁言',spam_punish:'刷屏处罚',config_change:'配置变更',forbidden_add:'添加违禁词',forbidden_delete:'删除违禁词',forbidden_clear:'清空违禁词',cache_clear:'清除缓存',template_test:'测试模板'};
 const SOURCE_LABELS = {command:'群命令',automatic:'自动监管',verification:'入群验证',web:'Web 面板'};
-const REVIEW_LABELS = {command:'人工审核',automatic:'普通审核',verification:'入群审核',web:'面板审核'};
 const POLICY_FIELDS = [
   ['block_links','cfg-block-links'],
   ['block_cards','cfg-block-cards'],
@@ -73,6 +72,7 @@ let templates = {};
 let selectedTemplateKey = '';
 let activePage = 'audit';
 let templateVariablesOpen = false;
+let developerLoaded = false;
 const sidebarMedia = window.matchMedia('(max-width:700px)');
 
 function syncHostTheme(){
@@ -116,13 +116,42 @@ function openPage(page){
   document.querySelectorAll('.nav button').forEach(button=>button.classList.toggle('active',button.dataset.page===activePage));
   document.querySelectorAll('.page').forEach(node=>node.classList.toggle('active',node.id===`page-${activePage}`));
   $('page-title').textContent=PAGE_TITLES[activePage];
-  $('empty-state').hidden=activePage==='templates'||currentBotGroups().length>0;
+  $('empty-state').hidden=['templates','developer'].includes(activePage)||currentBotGroups().length>0;
   if(activePage==='templates'&&!Object.keys(templates).length)loadTemplates();
+  if(activePage==='developer'&&!developerLoaded)loadDeveloper();
   if(sidebarMedia.matches)setSidebar(true);
 }
 function showReady(hasGroups=true){
   $('loading').hidden=true;$('empty-state').hidden=hasGroups;
-  document.querySelectorAll('.page').forEach(node=>{node.hidden=!hasGroups&&node.id!=='page-templates'});
+  document.querySelectorAll('.page').forEach(node=>{node.hidden=!hasGroups&&!['page-templates','page-developer'].includes(node.id)});
+}
+
+function renderDeveloper(settings){
+  developerLoaded=true;
+  $('dev-enabled').checked=!!settings.enabled;
+  $('dev-url').value=settings.url||'https://i.elaina.vin/etools';
+  $('dev-app-id').value=settings.app_id||'';
+  $('dev-interval').value=settings.sync_interval_seconds||10;
+  $('dev-secret').value='';
+  $('dev-secret').placeholder=settings.secret_configured?'留空则保留当前密钥':'填写 qg_ 开头的专属密钥';
+  $('developer-secret-state').textContent=settings.secret_configured?`已配置（${settings.secret_hint}）`:'尚未配置专属密钥';
+  const status=$('developer-status');
+  status.classList.toggle('on',!!settings.active);
+  status.textContent=settings.active?'同步运行中':settings.enabled?(settings.configured?'等待启动':'配置不完整'):'未启用';
+}
+async function loadDeveloper(){
+  try{renderDeveloper(await api('/developer'))}catch(error){developerLoaded=false;toast(error.message,true)}
+}
+function developerPayload(){
+  return {enabled:$('dev-enabled').checked,url:$('dev-url').value.trim(),app_id:$('dev-app-id').value.trim(),secret:$('dev-secret').value.trim(),sync_interval_seconds:Number($('dev-interval').value)};
+}
+async function saveDeveloper(){
+  const button=$('save-developer');button.disabled=true;
+  try{const settings=await api('/developer',{method:'PUT',body:JSON.stringify(developerPayload())});renderDeveloper(settings);$('developer-result').textContent=settings.active?'配置已应用，远端同步正在运行。':'配置已保存，远端同步当前未启用。';toast('开发者配置已保存')}catch(error){$('developer-result').textContent=error.message;toast(error.message,true)}finally{button.disabled=false}
+}
+async function testDeveloper(){
+  const button=$('test-developer');button.disabled=true;$('developer-result').textContent='正在通过插件服务端测试连接…';
+  try{const result=await api('/developer/test',{method:'POST',body:JSON.stringify(developerPayload())});$('developer-result').textContent=`连接成功，应用 ${result.app_id} 当前已绑定 ${result.group_count} 个群。`;toast('后端连接正常')}catch(error){$('developer-result').textContent=error.message;toast(error.message,true)}finally{button.disabled=false}
 }
 
 async function loadGroups(){
@@ -291,12 +320,12 @@ function renderAudit(){
   if(actions.includes(previous))actionSelect.value=previous;
   const source=$('filter-source').value,status=$('filter-status').value,action=actionSelect.value,query=$('audit-search').value.trim().toLowerCase();
   const filtered=rows.filter(item=>{const searchable=[item.target_name,item.operator_name,item.target_id,item.operator_id,ACTION_LABELS[item.action]||item.action,SOURCE_LABELS[item.source]||item.source,auditReason(item)].join(' ').toLowerCase();return(!source||item.source===source)&&(!status||String(item.success)===status)&&(!action||item.action===action)&&(!query||searchable.includes(query))});
-  if(!filtered.length){$('audit-list').innerHTML='<div class="audit-empty"><b>暂无审核记录</b><span>调整搜索或筛选条件后再试</span></div>';return}
+  if(!filtered.length){$('audit-list').innerHTML='<div class="audit-empty"><b>暂无管理记录</b><span>调整搜索或筛选条件后再试</span></div>';return}
   let bucket='';
   $('audit-list').innerHTML=filtered.map((item,index)=>{
     const nextBucket=timeBucket(item.time),divider=nextBucket!==bucket?'<div class="time-divider"><span>'+esc(nextBucket)+'</span></div>':'';bucket=nextBucket;
-    const userId=item.target_id||item.operator_id||'',name=item.target_name||item.operator_name||(userId?'成员 '+userId:'群管机器人'),actionLabel=ACTION_LABELS[item.action]||item.action,review=REVIEW_LABELS[item.source]||SOURCE_LABELS[item.source]||item.source,initial=name.slice(0,1).toUpperCase(),resultClass=item.success?'ok':'fail',resultText=item.success?'已处理':'处理失败',resultPath=item.success?'m6 12 4 4 8-9':'M7 7l10 10M17 7 7 17';
-    return divider+'<article class="audit-card" style="--card-index:'+index+'"><div class="audit-person"><span class="member-avatar">'+esc(initial)+'</span><div><b>'+esc(name)+'</b><small>'+esc(dashboard.group?.group_name||'当前群')+' · '+esc(formatFullTime(item.time))+'</small></div><svg class="audit-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div><div class="audit-summary"><span class="review-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h5M8 17h3"/></svg></span><div><b>'+esc(auditReason(item))+'</b><small>'+esc(actionLabel)+'</small></div></div><div class="audit-badges"><span class="review-badge"><svg viewBox="0 0 24 24"><path d="M7 8h10M7 12h7M7 16h4M4 4h16v16H4z"/></svg>'+esc(review)+'</span><span class="outcome-badge '+resultClass+'"><svg viewBox="0 0 24 24"><path d="'+resultPath+'"/></svg>'+resultText+'</span></div></article>';
+    const userId=item.target_id||item.operator_id||'',name=item.target_name||item.operator_name||(userId?'成员 '+userId:'群管机器人'),actionLabel=ACTION_LABELS[item.action]||item.action,sourceLabel=SOURCE_LABELS[item.source]||item.source,initial=name.slice(0,1).toUpperCase(),resultClass=item.success?'ok':'fail',resultText=item.success?'已处理':'处理失败',resultPath=item.success?'m6 12 4 4 8-9':'M7 7l10 10M17 7 7 17';
+    return divider+'<article class="audit-card" style="--card-index:'+index+'"><div class="audit-person"><span class="member-avatar">'+esc(initial)+'</span><div><b>'+esc(name)+'</b><small>'+esc(dashboard.group?.group_name||'当前群')+' · '+esc(formatFullTime(item.time))+'</small></div><svg class="audit-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div><div class="audit-summary"><span class="review-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h5M8 17h3"/></svg></span><div><b>'+esc(auditReason(item))+'</b><small>'+esc(actionLabel)+'</small></div></div><div class="audit-badges"><span class="review-badge"><svg viewBox="0 0 24 24"><path d="M7 8h10M7 12h7M7 16h4M4 4h16v16H4z"/></svg>'+esc(sourceLabel)+'</span><span class="outcome-badge '+resultClass+'"><svg viewBox="0 0 24 24"><path d="'+resultPath+'"/></svg>'+resultText+'</span></div></article>';
   }).join('');
 }
 async function saveConfig(){
@@ -325,4 +354,5 @@ document.querySelectorAll('#tpl-content,#tpl-buttons,#tpl-raw').forEach(field=>f
 $('forbidden-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-word]');if(button)deleteForbidden(button.dataset.deleteWord)});$('target-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-target]');if(button)deleteTarget(button.dataset.deleteTarget)});['filter-source','filter-status','filter-action'].forEach(id=>$(id).addEventListener('change',renderAudit));
 $('global-forbidden-list').addEventListener('click',event=>{const button=event.target.closest('[data-delete-global-index]');if(button)deleteGlobalForbidden(button.dataset.deleteGlobalIndex)});
 $('audit-search').addEventListener('input',renderAudit);
+$('save-developer').addEventListener('click',saveDeveloper);$('test-developer').addEventListener('click',testDeveloper);
 sidebarMedia.addEventListener('change',()=>setSidebar(true));setSidebar(true);openPage('audit');Promise.all([loadTemplates(),loadGroups()]).catch(error=>{showReady(false);toast(error.message,true)});

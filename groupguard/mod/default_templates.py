@@ -691,4 +691,10 @@ DEFAULT_PAYLOAD['templates']['verify_passed_by_admin'] = {
     'at_user': False,
     'small_buttons': False,
 }
-DEFAULT_PAYLOAD['version'] = max(int(DEFAULT_PAYLOAD.get('version', 1)), 5)
+DEFAULT_PAYLOAD['templates']['full_message_required']['buttons'] = [{
+    'text': '群管刷新群权限',
+    'data': '群管刷新群权限',
+    'enter': True,
+    'style': 1,
+}]
+DEFAULT_PAYLOAD['version'] = max(int(DEFAULT_PAYLOAD.get('version', 1)), 6)

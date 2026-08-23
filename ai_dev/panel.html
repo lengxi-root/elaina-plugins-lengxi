@@ -179,21 +179,26 @@ input,textarea,select{font-family:inherit}
 .think.collapsed .think-body{display:none}
 .answer:empty{display:none}
 
-.composer{padding:12px 14px;border-top:1px solid var(--line2)}
-.composer .box{display:flex;gap:8px;align-items:flex-end;background:var(--bg2);border:1.5px solid var(--line);
-  border-radius:16px;padding:6px 8px;transition:.2s;cursor:text}
+.composer{padding:12px 14px;border-top:1px solid var(--line2);background:var(--card)}
+.composer .box{display:flex;flex-direction:column;gap:2px;background:var(--bg2);border:1.5px solid var(--line);
+  border-radius:14px;padding:6px;transition:.2s;cursor:text}
 .composer .box:focus-within{border-color:var(--brand);box-shadow:0 0 0 4px var(--brand-soft);background:var(--card)}
-.composer textarea{flex:1;min-width:0;align-self:stretch;border:none;background:none;resize:none;font-size:14.5px;
-  line-height:1.45;min-height:40px;max-height:160px;padding:9px 6px;color:var(--ink)}
+.composer textarea{width:100%;min-width:0;border:none;background:none;resize:none;font-size:14.5px;
+  line-height:1.5;min-height:48px;max-height:160px;padding:10px 11px 6px;color:var(--ink)}
 .composer textarea:focus{outline:none}
-.composer .chat-mode{flex:0 0 auto;align-self:flex-end;height:40px;border:1px solid var(--line);background:var(--card);border-radius:10px;
-  font-size:12.5px;font-weight:600;color:var(--ink2);padding:0 8px;cursor:pointer;outline:none}
+.composer-bar{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 1px}
+.composer-tools{display:flex;align-items:center;gap:4px;min-width:0}
+.composer-state{flex:1;min-width:0;padding:0 5px;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.composer-state.running{color:var(--brand);font-weight:600}
+.composer .chat-mode{flex:0 0 auto;height:36px;border:1px solid var(--line);background:var(--card);border-radius:9px;
+  font-size:12.5px;font-weight:600;color:var(--ink2);padding:0 28px 0 10px;cursor:pointer;outline:none;
+  appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a8a99' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");background-repeat:no-repeat;background-position:right 8px center}
 .composer .chat-mode:focus{border-color:var(--brand)}
-.send{width:40px;height:40px;border-radius:12px;flex:0 0 40px;align-self:flex-end;background:linear-gradient(135deg,var(--brand),var(--brand2));
+.send{width:40px;height:40px;border-radius:11px;flex:0 0 40px;margin-left:auto;background:linear-gradient(135deg,var(--brand),var(--brand2));
   color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;transition:.2s;box-shadow:0 6px 14px color-mix(in srgb,var(--brand) 35%,transparent)}
 .send:hover{transform:translateY(-1px)}
 .send:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.attach{width:40px;height:40px;flex:0 0 40px;align-self:flex-end;border-radius:10px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:.15s}
+.attach{width:36px;height:36px;flex:0 0 36px;border-radius:9px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:.15s}
 .attach:hover{background:var(--brand-soft);color:var(--brand)}
 .composer.drag .box{border-color:var(--brand);background:var(--brand-soft)}
 .composer .thumbs{display:flex;flex-wrap:wrap;gap:8px;padding:0 4px 8px}
@@ -364,10 +369,18 @@ input,textarea,select{font-family:inherit}
     transform:translateX(-105%);transition:transform .25s ease;box-shadow:10px 0 30px rgba(20,24,60,.18);overflow-y:auto}
   .sidebar.open{transform:none}
   .menu-side{display:flex}
+  .messages{padding:14px 12px;gap:14px}
+  .bubble{max-width:86%;padding:12px 14px}
+  .composer{padding:8px 9px calc(8px + env(safe-area-inset-bottom))}
+  .composer .box{border-radius:13px;padding:5px}
+  .composer textarea{font-size:16px;min-height:54px;max-height:132px;padding:10px 10px 7px}
+  .composer-bar{min-height:38px}
+  .composer .hint{display:none}
 }
 @media(max-width:480px){
   .model-pick:not(.site-pick){display:none}
-  .composer{padding:10px}
+  .composer-state{font-size:11px;padding:0 2px}
+  .composer .chat-mode{max-width:116px}
   .bubble .imgs img{max-width:120px;max-height:120px}
 }
 .module-missing #app{filter:grayscale(1);opacity:.48;pointer-events:none;user-select:none}
@@ -423,14 +436,19 @@ body.module-missing .module-missing-overlay{display:grid}
       <div class="composer">
         <div class="thumbs" id="thumbs"></div>
         <div class="box">
-          <button class="attach" id="attachBtn" title="添加图片（也可直接粘贴/拖拽）"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
-          <input type="file" id="fileInput" accept="image/*" multiple hidden>
-          <select id="chatMode" class="chat-mode" title="任务模式：开发执行可修改；只读分析只检查不修改">
-            <option value="dev">开发执行</option>
-            <option value="analyze">只读分析</option>
-          </select>
           <textarea id="input" rows="1" placeholder="对 AI 说点什么… 例如：写一个 ID 命令插件，返回我的 QQ 号"></textarea>
-          <button class="send" id="sendBtn" title="发送"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          <div class="composer-bar">
+            <div class="composer-tools">
+              <button class="attach" id="attachBtn" title="添加图片（也可直接粘贴/拖拽）"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
+              <input type="file" id="fileInput" accept="image/*" multiple hidden>
+              <select id="chatMode" class="chat-mode" title="任务模式：开发执行可修改；只读分析只检查不修改">
+                <option value="dev">开发执行</option>
+                <option value="analyze">只读分析</option>
+              </select>
+            </div>
+            <span class="composer-state" id="composerState">准备就绪</span>
+            <button class="send" id="sendBtn" title="发送"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          </div>
         </div>
         <div class="hint">Enter 发送 · Shift+Enter 换行 · 可粘贴/拖拽图片（需视觉模型）· 可切换「开发执行 / 只读分析」</div>
       </div>
@@ -568,6 +586,7 @@ let SID=localStorage.getItem('ai_dev_sid')||'';
 let MODEL=localStorage.getItem('ai_dev_model')||'';
 let CFG={};
 let FILTER='all', evbuf=[], sending=false, es=null, liveTurn=null;
+let activePayload=null, taskTimer=null, taskSyncing=false, lastFinishedTask='';
 let SESSIONS=[];   // 侧栏会话列表缓存, 切换会话时避免重复请求
 let HIST_CACHE={}; // 已渲染的会话历史 HTML 缓存 {sid: innerHTML}, 实现切换瞬时显示
 let RENDER_TARGET=null; // 批量渲染历史时的目标容器 (DocumentFragment), 避免逐条 reflow
@@ -709,6 +728,7 @@ async function start(){
   await loadSessions(true);
   await loadCalls();
   connectSSE();
+  await restoreTaskState();
   if(!CFG.shared_ai_available)toast(CFG.shared_ai_status?.message||'中央 AI LLM 未就绪');
 }
 
@@ -1002,10 +1022,14 @@ function renderSessionList(){
 /* 切换会话: 只更新高亮 + 拉历史, 不再重新请求整个会话列表 */
 async function selectSession(id){
   if(id===SID){closeDrawers();return;}
+  clearTaskTimer();
+  liveTurn=null;activePayload=null;
+  setSendingState(false,'准备就绪');
   SID=id;localStorage.setItem('ai_dev_sid',id);
   $$('#sessions .sess').forEach(el=>el.classList.toggle('active',el.dataset.id===id));
   closeDrawers();
-  loadHistory();
+  await loadHistory();
+  await restoreTaskState();
 }
 async function delSession(id){
   await api('/api/ext/aidev/sessions/delete',{method:'POST',body:JSON.stringify({session_id:id})});
@@ -1036,6 +1060,86 @@ async function loadHistory(){
   const d=await (await api('/api/ext/aidev/history?session_id='+sid)).json();
   if(sid!==SID)return;   // 期间又切换了, 丢弃过期结果
   renderHistory(d.messages||[],d.events||[]);
+}
+
+function setSendingState(busy,label){
+  sending=!!busy;
+  $('#sendBtn').disabled=sending;
+  const state=$('#composerState');
+  state.textContent=label||(sending?'后台运行中':'准备就绪');
+  state.classList.toggle('running',sending);
+  if(sending)$('#chatMeta').textContent='AI 后台运行中…';
+  else if((label||'')==='准备就绪')$('#chatMeta').textContent='';
+}
+
+function clearTaskTimer(){if(taskTimer){clearTimeout(taskTimer);taskTimer=null;}}
+function scheduleTaskSync(delay){
+  clearTaskTimer();
+  if(!sending||document.hidden)return;
+  taskTimer=setTimeout(()=>restoreTaskState(),delay||1800);
+}
+async function fetchTaskState(sid){
+  const r=await api('/api/ext/aidev/task?session_id='+encodeURIComponent(sid));
+  if(!r.ok)throw new Error('任务状态 HTTP '+r.status);
+  return r.json();
+}
+async function submitActiveTask(payload){
+  const r=await api('/api/ext/aidev/chat',{method:'POST',body:JSON.stringify(payload)});
+  let d={};
+  try{d=await r.json();}catch(e){}
+  if(!r.ok){
+    const error=new Error(d.error||('HTTP '+r.status));
+    error.permanent=r.status>=400&&r.status<500;
+    error.job=d;
+    throw error;
+  }
+  return d;
+}
+async function finishBackgroundTask(job){
+  const key=(job.request_id||'')+':'+job.status+':'+(job.finished_at||0);
+  if(key===lastFinishedTask)return;
+  lastFinishedTask=key;
+  const result=job.result||{success:job.status==='completed',message:job.status==='completed'?'任务已完成':'任务未完成'};
+  if(liveTurn&&liveTurn.sid===SID)finishAiTurn(liveTurn.turn,result);
+  else{
+    delete HIST_CACHE[SID];
+    await loadHistory();
+  }
+  activePayload=null;liveTurn=null;
+  localStorage.removeItem('ai_dev_active_'+SID);
+  setSendingState(false,job.status==='completed'?'已完成':'执行失败');
+  loadSessions(false,true).catch(()=>{});
+}
+async function restoreTaskState(){
+  if(!SID||taskSyncing)return;
+  taskSyncing=true;
+  try{
+    const job=await fetchTaskState(SID);
+    if(job.status==='running'){
+      setSendingState(true,document.hidden?'后台运行中':'任务运行中，可切换应用');
+      scheduleTaskSync(1800);
+    }else if(['completed','failed','cancelled'].includes(job.status)){
+      await finishBackgroundTask(job);
+    }else if(activePayload&&activePayload.session_id===SID){
+      setSendingState(true,'正在重新提交…');
+      await submitActiveTask(activePayload);
+      setSendingState(true,'任务已提交，可切换应用');
+      scheduleTaskSync(900);
+    }else{
+      setSendingState(false,'准备就绪');
+      localStorage.removeItem('ai_dev_active_'+SID);
+    }
+  }catch(e){
+    if(e.permanent){
+      if(liveTurn&&liveTurn.sid===SID)finishAiTurn(liveTurn.turn,{success:false,message:e.message});
+      activePayload=null;liveTurn=null;
+      localStorage.removeItem('ai_dev_active_'+SID);
+      setSendingState(false,'提交失败');
+    }else if(sending){
+      setSendingState(true,navigator.onLine?'连接恢复中，任务仍在后台':'网络已断开，任务仍在后台');
+      scheduleTaskSync(2500);
+    }
+  }finally{taskSyncing=false;}
 }
 /* 刷新后重建对话: 优先用会话事件流还原每个回合的内联工具调用/思考时间线 */
 function renderHistory(msgs,events){
@@ -1142,13 +1246,13 @@ function finishAiTurn(turn,d){
 /* 实时把本回合的思考过程渲染进气泡 */
 function renderLiveReasoning(){
   if(!liveTurn)return;
-  const txt=evbuf.slice(liveTurn.startIdx).filter(e=>e.type==='reasoning').map(e=>(e.data||{}).content||'').filter(Boolean).join('\n\n');
+  const txt=evbuf.slice(liveTurn.startIdx).filter(e=>e.session_id===liveTurn.sid&&e.type==='reasoning').map(e=>(e.data||{}).content||'').filter(Boolean).join('\n\n');
   setThink(liveTurn.turn,txt);
 }
 /* 实时把本回合的工具调用渲染进气泡内的时间线 */
 function renderLiveSteps(){
   if(!liveTurn)return;
-  const rows=buildRows(evbuf.slice(liveTurn.startIdx)).filter(r=>r.kind==='tool');
+  const rows=buildRows(evbuf.slice(liveTurn.startIdx).filter(e=>e.session_id===liveTurn.sid)).filter(r=>r.kind==='tool');
   if(!rows.length){liveTurn.stepsWrap.style.display='none';return;}
   liveTurn.stepsWrap.style.display='';liveTurn.cnt.textContent=rows.length;
   const body=liveTurn.stepsBody;body.innerHTML='';
@@ -1198,20 +1302,35 @@ async function send(){
   const text=inp.value.trim();const imgs=pendingImages.slice();
   if((!text&&!imgs.length)||sending)return;
   if(!SID){const d=await (await api('/api/ext/aidev/sessions',{method:'POST',body:'{}'})).json();SID=d.session.id;localStorage.setItem('ai_dev_sid',SID);}
-  sending=true;$('#sendBtn').disabled=true;
+  const requestId=(crypto.randomUUID?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2)));
+  const submissionSid=SID;
+  const payload={session_id:submissionSid,message:text,model:MODEL,images:imgs,mode:($('#chatMode').value||'dev'),request_id:requestId};
+  activePayload=payload;
+  localStorage.setItem('ai_dev_active_'+submissionSid,requestId);
+  setSendingState(true,'正在提交…');
   addMsg('user',text,true,imgs);inp.value='';pendingImages=[];renderThumbs();autoGrow();
   const turn=startAiTurn();
-  liveTurn={stepsWrap:turn.stepsWrap,stepsBody:turn.stepsBody,cnt:turn.cnt,thinkWrap:turn.thinkWrap,thinkBody:turn.thinkBody,turn,startIdx:evbuf.length};
-  $('#chatMeta').textContent='AI 运行中…';
+  liveTurn={stepsWrap:turn.stepsWrap,stepsBody:turn.stepsBody,cnt:turn.cnt,thinkWrap:turn.thinkWrap,thinkBody:turn.thinkBody,turn,startIdx:evbuf.length,sid:submissionSid};
   try{
-    const r=await api('/api/ext/aidev/chat',{method:'POST',body:JSON.stringify({session_id:SID,message:text,model:MODEL,images:imgs,mode:($('#chatMode').value||'dev')})});
-    const d=await r.json();
-    if(d.session_id&&d.session_id!==SID){SID=d.session_id;localStorage.setItem('ai_dev_sid',SID);}
-    finishAiTurn(turn,d);
-    delete HIST_CACHE[SID];   // 本会话内容已变, 失效缓存, 下次切回重拉
-    loadSessions(false,true);
-  }catch(e){finishAiTurn(turn,{success:false,message:'网络错误: '+e});}
-  sending=false;liveTurn=null;$('#sendBtn').disabled=false;inp.focus();
+    await submitActiveTask(payload);
+    if(SID===submissionSid){
+      setSendingState(true,'任务已提交，可切换应用');
+      scheduleTaskSync(900);
+    }
+  }catch(e){
+    if(SID===submissionSid){
+      if(e.permanent){
+        finishAiTurn(turn,{success:false,message:e.message});
+        activePayload=null;liveTurn=null;
+        localStorage.removeItem('ai_dev_active_'+submissionSid);
+        setSendingState(false,'提交失败');
+      }else{
+        setSendingState(true,navigator.onLine?'连接中断，正在确认后台任务':'网络已断开，任务仍将在后台继续');
+        scheduleTaskSync(1200);
+      }
+    }
+  }
+  inp.focus();
 }
 
 /* ---- activity feed: 调用/结果按 id 配对, 紧凑箭头折叠行 ---- */
@@ -1274,7 +1393,8 @@ function renderEvents(){
 }
 function pushEvent(e){
   evbuf.push(e);if(evbuf.length>600)evbuf=evbuf.slice(-600);
-  renderEvents();if(sending&&liveTurn){renderLiveSteps();renderLiveReasoning();}
+  renderEvents();if(sending&&liveTurn&&e.session_id===liveTurn.sid){renderLiveSteps();renderLiveReasoning();}
+  if(e.session_id===SID&&(e.type==='assistant'||e.type==='error'))scheduleTaskSync(120);
 }
 async function loadCalls(){
   try{const d=await (await api('/api/ext/aidev/calls?limit=300')).json();evbuf=d.events||[];renderEvents();}catch(e){}
@@ -1286,12 +1406,18 @@ $('#actClear').addEventListener('click',()=>{evbuf=[];renderEvents();});
 function connectSSE(){
   if(es)es.close();
   es=new EventSource('/api/ext/aidev/stream');
-  es.onopen=()=>{$('#connDot').className='dot on';$('#connTxt').textContent='已连接';};
+  es.onopen=()=>{$('#connDot').className='dot on';$('#connTxt').textContent='已连接';restoreTaskState();};
   es.onerror=()=>{$('#connDot').className='dot off';$('#connTxt').textContent='重连中…';};
   es.onmessage=ev=>{
     try{const e=JSON.parse(ev.data);if(!e.type||e.type==='init')return;pushEvent(e);}catch(err){}
   };
 }
+
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden){connectSSE();restoreTaskState();}
+});
+window.addEventListener('online',()=>{connectSSE();restoreTaskState();});
+window.addEventListener('offline',()=>{if(sending)setSendingState(true,'网络已断开，任务仍在后台');});
 
 /* ---- init ---- */
 syncTheme();setInterval(syncTheme,1200); // 登录页与面板都跟随框架主题, 并实时跟随切换

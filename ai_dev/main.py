@@ -25,7 +25,7 @@ __plugin_meta__ = {
     'name': 'AI 开发助手',
     'author': '冷曦',
     'description': '通过中央 AI LLM 模块调用模型并自主编写/修改框架插件',
-    'version': '1.1.1',
+    'version': '1.2.0',
     'github': 'https://github.com/lengxi-root/elaina-plugins-lengxi',
 }
 

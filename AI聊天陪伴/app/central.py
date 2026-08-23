@@ -388,7 +388,7 @@ async def complete(
         system_prompt += f'\n\n本轮回复要求：{request_hint}'
     system_prompt += (
         '\n\n只输出准备发送给用户的最终答复。不要输出思考、分析、推理过程，'
-        '也不要输出 <think>、<analysis> 或同类内部标签。'
+        '也不要输出任何内部协议标记。'
     )
     if tools:
         system_prompt += (

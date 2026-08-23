@@ -72,5 +72,12 @@ from .audit import (
     record_result,
     record_web_action,
 )
+from .remote_access import (
+    remote_user_groups,
+    remote_users,
+    replace_remote_user_groups,
+    replace_remote_users,
+    save_remote_user,
+)
 
 __all__ = [name for name in globals() if not name.startswith('_')]

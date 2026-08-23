@@ -8,6 +8,7 @@ from aiohttp import web
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.web_pages import register_route, unregister_route
 
+from . import remote
 from ..mod import db, fw_render, state, verify
 from ..mod.replies import api_error, render_template_preview
 from ..mod.reply_templates import list_reply_templates, save_reply_template
@@ -39,6 +40,9 @@ def unregister_routes():
 def _routes():
     routes = [
         ('GET', 'groups', _get_groups, True),
+        ('GET', 'developer', _get_developer, True),
+        ('PUT', 'developer', _save_developer, True),
+        ('POST', 'developer/test', _test_developer, True),
         ('GET', 'dashboard', _get_dashboard, True),
         ('PUT', 'config', _save_config, True),
         ('PUT', 'global-settings', _save_global_settings, True),
@@ -298,6 +302,34 @@ async def _asset(request):
 async def _get_groups(_request):
     catalog = _catalog_data()
     return web.json_response({'success': True, 'data': catalog})
+
+
+async def _get_developer(_request):
+    return web.json_response({
+        'success': True, 'data': remote.public_settings(),
+    })
+
+
+async def _save_developer(request):
+    body = await _json(request)
+    try:
+        settings = await remote.update_settings(body)
+        return web.json_response({'success': True, 'data': settings})
+    except (ValueError, OSError) as error:
+        return web.json_response(
+            {'success': False, 'error': str(error)}, status=400,
+        )
+
+
+async def _test_developer(request):
+    body = await _json(request)
+    try:
+        result = await remote.test_settings(body)
+        return web.json_response({'success': True, 'data': result})
+    except ValueError as error:
+        return web.json_response(
+            {'success': False, 'error': str(error)}, status=400,
+        )
 
 
 def _dashboard_data(group_id, days, appid=''):

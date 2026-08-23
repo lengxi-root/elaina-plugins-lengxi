@@ -105,11 +105,9 @@ DEFAULT_CONFIG = {
     'image_reference_url': '',
     'image_cooldown_seconds': 900,
     'moderation_enabled': True,
-    'moderation_fail_closed': False,
     'safety_review_prompt': DEFAULT_SAFETY_REVIEW_PROMPT,
-    'moderation_blocked_response': '这条消息未通过内容安全检查，请换一种安全、合规的表达。',
     'blocked_words': [],
-    'blocked_response': '这个话题不适合继续讨论，我们换一个吧。',
+    'blocked_response': '这条消息未通过内容安全检查，请换一种安全、合规的表达。',
     'personalities': copy.deepcopy(BUILTIN_PERSONALITIES),
 }
 
@@ -234,9 +232,6 @@ def validate(value: dict) -> dict:
     ))[:200]
     value['privacy_defaults_version'] = max(2, int(value.get('privacy_defaults_version', 2)))
     value['safety_prompt_version'] = max(3, int(value.get('safety_prompt_version', 3)))
-    value['moderation_blocked_response'] = str(
-        value.get('moderation_blocked_response') or DEFAULT_CONFIG['moderation_blocked_response']
-    ).strip()[:500]
     value['image_size'] = str(value.get('image_size') or '1024x1024')
     if value['image_size'] not in {'256x256', '512x512', '1024x1024', '1024x1536', '1536x1024'}:
         value['image_size'] = '1024x1024'
@@ -343,7 +338,6 @@ def validate(value: dict) -> dict:
         'meme_enabled',
         'image_generation_enabled',
         'moderation_enabled',
-        'moderation_fail_closed',
     ):
         value[key] = bool(value.get(key, DEFAULT_CONFIG[key]))
     return value

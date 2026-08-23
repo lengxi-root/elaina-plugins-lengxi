@@ -26,6 +26,7 @@ _formatter = string.Formatter()
 
 _LEGACY_BOT_NAME_TEXT = '授权后无需@伊蕾娜也可以处理指令'
 _DYNAMIC_BOT_NAME_TEXT = '授权后无需@{bot_name}也可以处理指令'
+_FULL_TEMPLATE_REFRESH_VERSION = 6
 
 _ALLOWED_BUTTON_MODES = {'', 'join_requests', 'verify_options'}
 _STRING_FIELDS = {
@@ -336,31 +337,38 @@ def initialize_reply_templates():
             return copy.deepcopy(defaults)
 
         payload, changed = _read_file(TEMPLATE_PATH)
-        for key, template in defaults['templates'].items():
-            if key not in payload['templates']:
-                payload['templates'][key] = template
+        if payload.get('version', 1) < _FULL_TEMPLATE_REFRESH_VERSION:
+            payload = copy.deepcopy(defaults)
+            changed = True
+        else:
+            for key, template in defaults['templates'].items():
+                if key not in payload['templates']:
+                    payload['templates'][key] = template
+                    changed = True
+            legacy_template = payload['templates'].get('full_message_required')
+            default_template = defaults['templates'].get(
+                'full_message_required',
+            ) or {}
+            default_content = default_template.get('content')
+            legacy_content = (
+                default_content.replace(
+                    _DYNAMIC_BOT_NAME_TEXT, _LEGACY_BOT_NAME_TEXT,
+                )
+                if isinstance(default_content, str) else None
+            )
+            if (isinstance(legacy_template, dict)
+                    and isinstance(legacy_content, str)
+                    and legacy_template.get('content') == legacy_content):
+                legacy_template['content'] = default_content
                 changed = True
-        legacy_template = payload['templates'].get('full_message_required')
-        default_template = defaults['templates'].get('full_message_required') or {}
-        default_content = default_template.get('content')
-        legacy_content = (
-            default_content.replace(_DYNAMIC_BOT_NAME_TEXT, _LEGACY_BOT_NAME_TEXT)
-            if isinstance(default_content, str) else None
-        )
-        if (isinstance(legacy_template, dict)
-                and isinstance(legacy_content, str)
-                and legacy_template.get('content') == legacy_content):
-            legacy_template['content'] = default_content
-            changed = True
-        join_requests_template = payload['templates'].get('join_requests')
-        if (isinstance(join_requests_template, dict)
-                and join_requests_template.get('item_content')
-                == LEGACY_JOIN_REQUEST_ITEM_CONTENT):
-            join_requests_template['item_content'] = JOIN_REQUEST_ITEM_CONTENT
-            changed = True
-        if payload.get('version', 1) < defaults.get('version', 1):
-            payload['version'] = defaults['version']
-            changed = True
+            join_requests_template = payload['templates'].get('join_requests')
+            if (isinstance(join_requests_template, dict)
+                    and join_requests_template.get('item_content')
+                    == LEGACY_JOIN_REQUEST_ITEM_CONTENT):
+                join_requests_template['item_content'] = (
+                    JOIN_REQUEST_ITEM_CONTENT
+                )
+                changed = True
         if changed:
             _write_file(payload)
         return copy.deepcopy(payload)

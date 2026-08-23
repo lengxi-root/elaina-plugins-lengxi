@@ -18,7 +18,7 @@ __plugin_meta__ = {
     'name': 'AI 聊天陪伴',
     'author': 'ElainaBot',
     'description': '支持多人格、中央 LLM、全入口用户独立上下文与 Web 面板',
-    'version': '1.2.2',
+    'version': '1.2.3',
     'github': 'https://github.com/lengxi-plugins/elaina',
     'license': 'MIT',
 }
@@ -122,9 +122,8 @@ async def _input_rejected(current: dict, text: str) -> bool:
     if result.get('flagged'):
         log.warning('用户输入被内容安全审核拦截')
         return True
-    if not result.get('available') and current.get('moderation_fail_closed'):
-        log.warning('Moderation 不可用，按配置阻断输入: %s', result.get('error', ''))
-        return True
+    if not result.get('available'):
+        log.warning('AI 输入审核不可用，已跳过本次审核: %s', result.get('error', ''))
     return False
 
 
@@ -136,8 +135,7 @@ async def _output_rejected(current: dict, text: str) -> bool:
         log.warning('AI 输出被内容安全审核拦截')
         return True
     if not result.get('available'):
-        log.warning('AI 输出审核不可用，按严格策略阻断输出: %s', result.get('error', ''))
-        return True
+        log.warning('AI 输出审核不可用，已跳过本次审核: %s', result.get('error', ''))
     return False
 
 
@@ -171,7 +169,10 @@ async def reply_for_event(event, text: str) -> str:
                 },
             )
             reply, blocked = safety.safe_output(
-                reply, current['blocked_words'], current['blocked_response']
+                reply,
+                current['blocked_words'],
+                current['blocked_response'],
+                enabled=current.get('moderation_enabled', True),
             )
             if not reply:
                 raise RuntimeError('模型没有返回可发送的最终答复')
@@ -349,11 +350,14 @@ async def remember_command(event, match) -> None:
         await _reply_to_user(event, '长期记忆当前未启用。')
         return
     content = str(match.group(1) or '').strip()
-    if safety.find_blocked(content, current['blocked_words']):
-        await _reply_to_user(event, current['moderation_blocked_response'])
+    if (
+        current.get('moderation_enabled')
+        and safety.find_blocked(content, current['blocked_words'])
+    ):
+        await _reply_to_user(event, current['blocked_response'])
         return
     if await _input_rejected(current, content):
-        await _reply_to_user(event, current['moderation_blocked_response'])
+        await _reply_to_user(event, current['blocked_response'])
         return
     await asyncio.to_thread(
         store.add_memory, user_memory_scope(event), content,
@@ -432,35 +436,15 @@ async def chat_message(event, _match) -> None:
             return
     else:
         return
-    blocked = safety.find_blocked(text, current['blocked_words'])
+    blocked = (
+        safety.find_blocked(text, current['blocked_words'])
+        if current.get('moderation_enabled') else ''
+    )
     if blocked:
-        await asyncio.to_thread(
-            store.append,
-            user_context_scope(event),
-            'user',
-            '[消息已被违规词过滤]',
-            current['max_stored_messages'],
-        )
-        await asyncio.to_thread(
-            store.append,
-            user_context_scope(event),
-            'assistant',
-            current['blocked_response'],
-            current['max_stored_messages'],
-        )
         await _reply_to_user(event, current['blocked_response'])
         return
     if await _input_rejected(current, text):
-        response = current['moderation_blocked_response']
-        await asyncio.to_thread(
-            store.append, user_context_scope(event), 'user', '[消息未通过内容审核]',
-            current['max_stored_messages'],
-        )
-        await asyncio.to_thread(
-            store.append, user_context_scope(event), 'assistant', response,
-            current['max_stored_messages'],
-        )
-        await _reply_to_user(event, response)
+        await _reply_to_user(event, current['blocked_response'])
         return
     try:
         reply = await reply_for_event(event, text)

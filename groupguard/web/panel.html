@@ -12,12 +12,12 @@
     <aside class="sidebar" aria-label="群管导航">
       <div class="brand"><div class="logo" aria-label="群管"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.6 8.9a1.3 1.3 0 0 1-.8 0C7.5 20.5 4 18 4 13V5.8a1 1 0 0 1 .6-.9l7-2.6a1.2 1.2 0 0 1 .8 0l7 2.6a1 1 0 0 1 .6.9Z"/></svg></div><div><strong>群管中心</strong><small>GroupGuard</small></div></div>
       <nav class="nav">
-        <button class="active" data-page="audit" type="button" title="审核记录"><i><svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4M7 3h10v3H7zM5 5v16h14V5"/></svg></i><span>审核</span></button>
+        <button class="active" data-page="audit" type="button" title="管理记录"><i><svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4M7 3h10v3H7zM5 5v16h14V5"/></svg></i><span>管理</span></button>
         <button data-page="overview" type="button" title="概览"><i><svg viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 4z"/></svg></i><span>概览</span></button>
-        <button data-page="targets" type="button" title="发言撤回"><i><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8M17 8h5M19.5 5.5v5"/></svg></i><span>成员</span></button>
         <button data-page="forbidden" type="button" title="违禁词"><i><svg viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></i><span>词库</span></button>
         <button data-page="templates" type="button" title="消息模板"><i><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg></i><span>模板</span></button>
         <button data-page="config" type="button" title="功能设置"><i><svg viewBox="0 0 24 24"><path d="M4 6h16M7 3v6M4 18h16M17 15v6M4 12h16M12 9v6"/></svg></i><span>设置</span></button>
+        <button data-page="developer" type="button" title="开发者工具"><i><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6 8.6 7 6.3 4.7a4 4 0 0 0 5 5L4 17l3 3 7.3-7.3a4 4 0 0 0 5-5L17 10l-3.4-3.4Z"/></svg></i><span>开发</span></button>
       </nav>
       <div class="service-state"><span class="pulse"></span><span>群管服务运行中</span></div>
     </aside>
@@ -40,7 +40,7 @@
             <svg class="bot-picker-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
           </label>
         </div>
-        <h1 id="page-title" class="visually-hidden">审核记录</h1>
+        <h1 id="page-title" class="visually-hidden">管理记录</h1>
       </header>
 
       <div class="content">
@@ -124,6 +124,29 @@
           </section>
         </section>
 
+        <section class="page" id="page-developer">
+          <section class="panel developer-panel">
+            <div class="panel-head">
+              <div><h2>小程序互联</h2><p>配置当前群管插件使用的后端应用凭据</p></div>
+              <span class="state-badge" id="developer-status">正在读取</span>
+            </div>
+            <div class="panel-body developer-body">
+              <label class="switch developer-switch"><span><b>启用远端同步</b><small>同步已绑定群的配置，并接受小程序端变更</small></span><input id="dev-enabled" type="checkbox"></label>
+              <div class="developer-form">
+                <label class="field developer-url"><span>后端地址</span><input id="dev-url" type="url" maxlength="512" spellcheck="false" placeholder="https://i.elaina.vin/etools"></label>
+                <label class="field"><span>应用 ID</span><input id="dev-app-id" inputmode="numeric" maxlength="9" autocomplete="off" placeholder="9 位数字"></label>
+                <label class="field developer-secret"><span>专属密钥</span><input id="dev-secret" type="password" maxlength="103" autocomplete="new-password" placeholder="填写 qg_ 开头的专属密钥"><small id="developer-secret-state">未配置</small></label>
+                <label class="field"><span>同步周期（秒）</span><input id="dev-interval" type="number" min="5" max="300" step="1"></label>
+              </div>
+              <div class="developer-result" id="developer-result" role="status">连接测试将在插件服务端完成，专属密钥不会返回浏览器。</div>
+              <div class="developer-actions">
+                <button class="btn" id="test-developer" type="button">测试连接</button>
+                <button class="btn primary" id="save-developer" type="button">保存并应用</button>
+              </div>
+            </div>
+          </section>
+        </section>
+
         <section class="page" id="page-forbidden">
           <section class="panel">
             <div class="panel-head"><div><h2>违禁词</h2><p id="forbidden-count">共 0 个</p></div></div>
@@ -138,13 +161,6 @@
               <form class="inline-form" id="global-forbidden-form"><label class="field grow"><span>新增全局违禁词</span><input id="global-forbidden-input" maxlength="64" autocomplete="off"></label><button class="btn primary" type="submit">添加</button></form>
               <div class="tag-list" id="global-forbidden-list"></div>
             </div>
-          </section>
-        </section>
-
-        <section class="page" id="page-targets">
-          <section class="panel">
-            <div class="panel-head"><div><h2>发言撤回成员</h2><p id="target-count">共 0 人</p></div></div>
-            <div class="table-wrap"><table><thead><tr><th>成员 ID</th><th>到期时间</th><th>状态</th><th class="action-col">操作</th></tr></thead><tbody id="target-list"></tbody></table></div>
           </section>
         </section>
 
@@ -196,16 +212,23 @@
         </section>
 
         <section class="page active" id="page-audit">
-          <div class="audit-toolbar">
-            <label class="audit-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="audit-search" autocomplete="off" placeholder="搜索成员、原因或类别"></label>
+          <section class="panel audit-targets-panel">
+            <div class="panel-head"><div><h2>发言撤回成员</h2><p id="target-count">共 0 人</p></div><span class="state-badge on">当前生效</span></div>
+            <div class="table-wrap"><table><thead><tr><th>成员 ID</th><th>到期时间</th><th>状态</th><th class="action-col">操作</th></tr></thead><tbody id="target-list"></tbody></table></div>
+          </section>
+          <section class="audit-log-section" aria-labelledby="audit-log-title">
+            <div class="audit-section-head"><div><h2 id="audit-log-title">管理日志</h2><p>发言撤回、入群审核、自动处理及面板操作统一记录</p></div></div>
+            <div class="audit-toolbar">
+              <label class="audit-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="audit-search" autocomplete="off" placeholder="搜索成员、处理原因或操作类别"></label>
             <div class="audit-filters">
               <label class="filter-chip status-chip"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 3v4M16 3v4M8 12l2 2 4-4"/></svg><select id="filter-status"><option value="">全部状态</option><option value="1">仅成功</option><option value="0">仅失败</option></select></label>
-              <label class="filter-chip"><svg viewBox="0 0 24 24"><path d="m12 3 8 5-8 5-8-5 8-5Zm-8 10 8 5 8-5M4 17l8 5 8-5"/></svg><select id="filter-source"><option value="">全部审核方式</option><option value="command">群命令</option><option value="automatic">自动监管</option><option value="verification">入群验证</option><option value="web">Web 面板</option></select></label>
+              <label class="filter-chip"><svg viewBox="0 0 24 24"><path d="m12 3 8 5-8 5-8-5 8-5Zm-8 10 8 5 8-5M4 17l8 5 8-5"/></svg><select id="filter-source"><option value="">全部操作来源</option><option value="command">群命令</option><option value="automatic">自动监管</option><option value="verification">入群验证</option><option value="web">Web 面板</option></select></label>
               <label class="filter-chip"><svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg><select id="filter-action"><option value="">全部类别</option></select></label>
               <button class="audit-refresh" id="reload" type="button" title="刷新记录" aria-label="刷新记录"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
             </div>
-          </div>
-          <div class="audit-feed" id="audit-list"></div>
+            </div>
+            <div class="audit-feed" id="audit-list"></div>
+          </section>
         </section>
       </div>
     </main>

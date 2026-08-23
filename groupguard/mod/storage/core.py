@@ -118,6 +118,22 @@ def init_tables(connection):
             duration_ms INTEGER DEFAULT 0,
             details TEXT DEFAULT '{}'
         );
+        CREATE TABLE IF NOT EXISTS remote_users (
+            app_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            scoped_user_id TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (app_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS remote_user_groups (
+            app_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            group_id TEXT NOT NULL,
+            bot_appid TEXT NOT NULL DEFAULT '',
+            group_name TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (app_id, user_id, group_id)
+        );
         CREATE INDEX IF NOT EXISTS idx_forbidden_group ON forbidden_words(group_id);
         CREATE INDEX IF NOT EXISTS idx_targets_group ON targets(group_id);
         CREATE INDEX IF NOT EXISTS idx_spam_log_group_user ON spam_log(group_id, user_id);
@@ -135,6 +151,8 @@ def init_tables(connection):
         CREATE INDEX IF NOT EXISTS idx_audit_action_result
             ON audit_log(group_id, action, phase, success);
         CREATE INDEX IF NOT EXISTS idx_audit_trace ON audit_log(trace_id, id);
+        CREATE INDEX IF NOT EXISTS idx_remote_user_groups_user
+            ON remote_user_groups(app_id, user_id);
     """)
     _ensure_column(connection, 'group_config', 'policies', "TEXT DEFAULT '{}'")
     _ensure_column(connection, 'group_config', 'join_policy', "TEXT DEFAULT '{}'")
