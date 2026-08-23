@@ -21,7 +21,7 @@ __plugin_meta__ = {
     'name': '官机代发拦截',
     'author': '冷曦',
     'description': '拦截插件出站消息，支持文本变换和 QQ 官方机器人代发',
-    'version': '1.0.1',
+    'version': '1.1.0',
     'license': 'MIT',
 }
 

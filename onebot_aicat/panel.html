@@ -6,18 +6,26 @@
 <title>猫娘 AI 配置</title>
 <style>
   :root{
-    --bg:#ffffff; --bg2:#fff6f9; --bg3:#ffe9f1; --bg-float:#ffffff;
-    --text:#4a2c3a; --text2:#7a5666; --text3:#b291a0;
-    --border:#f6d3e1; --border2:rgba(236,137,171,.14);
-    --accent:#f48fb1; --accent-hover:#ec6a97; --accent-light:#f8bbd0;
-    --success:#34c98b; --danger:#f16a86; --warning:#f5a742; --info:#5bb8d4;
+    --host-bg:#f6f7fb; --host-bg2:#ffffff; --host-bg3:#f1f3f7; --host-bg-float:#ffffff;
+    --host-text:#202735; --host-text2:#596171; --host-text3:#8b929e; --host-border:#e5e7ee;
+    --host-accent:#6750a4; --host-accent-hover:#58428f; --host-accent-light:#e9e2f7;
+    --host-success:#16875d; --host-danger:#c43b3b; --host-warning:#ba6b00; --host-info:#3b82f6;
+    --bg:var(--host-bg2); --bg2:var(--host-bg); --bg3:var(--host-bg3); --bg-float:var(--host-bg-float);
+    --text:var(--host-text); --text2:var(--host-text2); --text3:var(--host-text3);
+    --border:var(--host-border); --border2:color-mix(in srgb,var(--border) 65%,transparent);
+    --accent:var(--host-accent); --accent-hover:var(--host-accent-hover); --accent-light:var(--host-accent-light);
+    --success:var(--host-success); --danger:var(--host-danger); --warning:var(--host-warning); --info:var(--host-info);
     --radius:16px; --radius-sm:11px; --radius-lg:22px;
-    --sidebar-bg:#fff0f6;
-    --accent-soft:#ffe4ee; --accent-line:#ffc2d8;
-    --success-soft:#e4faf1; --danger-soft:#fde5ea; --warning-soft:#fef2e0;
-    --shadow:0 1px 3px rgba(219,112,147,.08);
-    --shadow-md:0 4px 12px rgba(219,112,147,.10);
-    --shadow-lg:0 10px 28px rgba(219,112,147,.18);
+    --sidebar-bg:color-mix(in srgb,var(--accent) 6%,var(--bg));
+    --accent-soft:var(--host-accent-soft,color-mix(in srgb,var(--accent) 12%,transparent));
+    --accent-line:color-mix(in srgb,var(--accent) 35%,var(--border));
+    --success-soft:color-mix(in srgb,var(--success) 12%,transparent);
+    --danger-soft:color-mix(in srgb,var(--danger) 12%,transparent);
+    --warning-soft:color-mix(in srgb,var(--warning) 12%,transparent);
+    --shadow:0 1px 3px color-mix(in srgb,var(--text) 8%,transparent);
+    --shadow-md:0 4px 12px color-mix(in srgb,var(--text) 10%,transparent);
+    --shadow-lg:0 10px 28px color-mix(in srgb,var(--text) 18%,transparent);
+    color-scheme:var(--host-color-scheme,light);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
@@ -28,7 +36,7 @@
   }
   ::-webkit-scrollbar{width:5px;height:5px}
   ::-webkit-scrollbar-track{background:transparent}
-  ::-webkit-scrollbar-thumb{background:rgba(236,137,171,.3);border-radius:3px}
+  ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--accent) 32%,transparent);border-radius:3px}
 
   /* 布局 */
   .eb-page{height:100vh;display:flex;overflow:hidden}
@@ -67,7 +75,7 @@
   .eb-content{flex:1;overflow-y:auto;padding:18px 22px}
   .menu-btn{display:none;width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;align-items:center;justify-content:center;flex-shrink:0}
   .menu-btn svg{width:17px;height:17px}
-  .eb-overlay{display:none;position:fixed;inset:0;background:rgba(74,44,58,.35);z-index:40}
+  .eb-overlay{display:none;position:fixed;inset:0;background:color-mix(in srgb,var(--text) 35%,transparent);z-index:40}
 
   /* 按钮 */
   .btn{padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:600;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .12s;text-decoration:none;white-space:nowrap}
@@ -119,7 +127,7 @@
   .toggle-desc{font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px}
   .toggle-switch{position:relative;width:36px;height:20px;cursor:pointer;flex-shrink:0}
   .toggle-switch input{opacity:0;width:0;height:0}
-  .toggle-track{position:absolute;inset:0;background:#e6c6d3;border-radius:10px;transition:background .2s}
+  .toggle-track{position:absolute;inset:0;background:var(--border);border-radius:10px;transition:background .2s}
   .toggle-track::after{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 2px rgba(0,0,0,.15)}
   .toggle-switch input:checked+.toggle-track{background:var(--accent)}
   .toggle-switch input:checked+.toggle-track::after{transform:translateX(16px)}
@@ -428,6 +436,47 @@
 
 <script>
 const API = '/api/ext/aicat';
+const THEME_MAP = {
+  '--bg':'--host-bg','--bg2':'--host-bg2','--bg3':'--host-bg3','--bg-float':'--host-bg-float',
+  '--text':'--host-text','--text2':'--host-text2','--text3':'--host-text3','--border':'--host-border',
+  '--accent':'--host-accent','--accent-hover':'--host-accent-hover','--accent-light':'--host-accent-light',
+  '--accent-soft':'--host-accent-soft','--success':'--host-success','--danger':'--host-danger',
+  '--warning':'--host-warning','--info':'--host-info'
+};
+
+function hostColorScheme(style){
+  const declared = String(style.colorScheme || '').toLowerCase();
+  if(declared === 'dark' || declared.startsWith('dark only')) return 'dark';
+  if(declared === 'light' || declared.startsWith('light only')) return 'light';
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:fixed;visibility:hidden;color:' + (style.getPropertyValue('--bg').trim() || '#fff');
+  document.body.appendChild(probe);
+  const rgb = getComputedStyle(probe).color.match(/[\d.]+/g);
+  probe.remove();
+  return rgb && rgb.length >= 3 && (.2126 * Number(rgb[0]) + .7152 * Number(rgb[1]) + .0722 * Number(rgb[2])) < 128 ? 'dark' : 'light';
+}
+
+function syncHostTheme(){
+  try{
+    if(window.parent === window) return;
+    const hostStyle = window.parent.getComputedStyle(window.parent.document.documentElement);
+    const rootStyle = document.documentElement.style;
+    Object.entries(THEME_MAP).forEach(([source,target])=>{
+      const value = hostStyle.getPropertyValue(source).trim();
+      if(value) rootStyle.setProperty(target,value);
+    });
+    const scheme = hostColorScheme(hostStyle);
+    rootStyle.setProperty('--host-color-scheme',scheme);
+    rootStyle.colorScheme = scheme;
+    document.documentElement.dataset.hostTheme = scheme;
+  }catch(_){}
+}
+
+syncHostTheme();
+if(window.parent !== window){
+  const themeSyncTimer = window.setInterval(syncHostTheme,300);
+  window.addEventListener('pagehide',()=>window.clearInterval(themeSyncTimer),{once:true});
+}
 const TOKEN = new URLSearchParams(location.search).get('access_token')
   || (window.parent !== window && new URLSearchParams(location.search).get('token')) || '';
 const PAGE_TITLES = {interface:'基本设置',models:'模型管理',behavior:'触发行为',chat:'测试对话'};

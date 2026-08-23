@@ -2,6 +2,8 @@
 
 从 napcat-plugin-amsghook 迁移到 ElainaBot-Onebot1 的大型插件。插件拦截框架插件发起的 OneBot 消息发送，按来源插件执行文本替换、追加后缀，并可改由 QQ 官方机器人发送。
 
+框架内插件通过消息处理器、加载/卸载钩子、由这些入口创建的后台任务或插件 Web 路由发送消息时，均按插件文件夹名识别。管理页“来源插件规则”中选择对应目录名即可单独拦截；无法识别来源的调用才归入“OneBot 外部调用”。
+
 ## 依赖与安装
 
 - 需要支持 api_interceptor 和 handler_filter 的 ElainaBot-Onebot1 版本。

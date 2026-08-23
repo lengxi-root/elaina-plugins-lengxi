@@ -44,13 +44,15 @@ HELP_MESSAGE = (
 )
 
 _key_map: dict = {}  # 关键词对应表情代码
+_all_key_map: dict = {}  # 包含已禁用模板的完整关键词映射
 _infos: dict = {}  # 表情代码对应表情信息
+_all_infos: dict = {}  # 包含已禁用模板的完整表情信息
 _list_img_cache = None
 _loaded = False
 
 
 def _load():
-    global _key_map, _infos, _loaded
+    global _key_map, _all_key_map, _infos, _all_infos, _loaded
     if _loaded:
         return
     data = {}
@@ -60,14 +62,25 @@ def _load():
                 data = json.load(f)
     except Exception as e:  # noqa: BLE001
         log.warning(f"加载 bq.json 失败: {e}")
-    key_map, infos = {}, {}
+    disabled = set(config.disabled_meme_codes())
+    all_key_map, key_map, infos = {}, {}, {}
     for code, info in (data or {}).items():
+        if not isinstance(info, dict):
+            continue
+        for kw in info.get("keywords") or []:
+            all_key_map[kw] = code
+        if code in disabled:
+            continue
         infos[code] = info
         for kw in info.get("keywords") or []:
             key_map[kw] = code
-    _key_map, _infos = key_map, infos
+    _key_map, _all_key_map = key_map, all_key_map
+    _infos, _all_infos = infos, data or {}
     _loaded = True
-    log.info(f"Meme 数据加载完成, 共 {len(_key_map)} 个关键词")
+    log.info(
+        f"Meme 数据加载完成, {len(_infos)}/{len(_all_infos)} 个模板可用, "
+        f"共 {len(_key_map)} 个关键词"
+    )
 
 
 def reload_data():
@@ -79,6 +92,8 @@ def reload_data():
 
 def _list_image_b64():
     global _list_img_cache
+    if config.disabled_meme_codes():
+        return None
     if _list_img_cache is not None:
         return _list_img_cache
     if os.path.exists(_LIST_PNG):
@@ -88,12 +103,35 @@ def _list_image_b64():
     return None
 
 
+def catalog() -> list:
+    """返回面板使用的完整模板目录及启用状态。"""
+    _load()
+    disabled = set(config.disabled_meme_codes())
+    items = []
+    for code, info in _all_infos.items():
+        if not isinstance(info, dict):
+            continue
+        keywords = [str(item) for item in info.get("keywords") or [] if item]
+        items.append(
+            {
+                "code": code,
+                "keywords": keywords,
+                "enabled": code not in disabled,
+            }
+        )
+    return sorted(
+        items,
+        key=lambda item: ((item["keywords"] or [item["code"]])[0].casefold()),
+    )
+
+
 def _find_longest_key(msg: str):
-    keys = [k for k in _key_map if msg.startswith(k)]
+    keys = [k for k in _all_key_map if msg.startswith(k)]
     if not keys:
         return None
     keys.sort(key=len, reverse=True)
-    return keys[0]
+    key = keys[0]
+    return key if _key_map.get(key) == _all_key_map[key] else None
 
 
 def _detail(code: str) -> str:

@@ -119,6 +119,16 @@
 
   .muted{color:var(--text3);font-size:11px}
   .status-pill{font-size:11px;color:var(--text2);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:999px;padding:4px 10px;white-space:nowrap}
+  .meme-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 150px;gap:8px;margin-bottom:8px}
+  .meme-summary{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .meme-list{border:1px solid var(--border);border-radius:var(--radius-sm);max-height:520px;overflow:auto;background:var(--bg)}
+  .meme-row{display:flex;align-items:center;gap:12px;padding:9px 11px;border-bottom:1px solid var(--border2)}
+  .meme-row:last-child{border-bottom:0}
+  .meme-row.disabled{background:var(--danger-soft)}
+  .meme-meta{flex:1;min-width:0}
+  .meme-name{font-size:12px;font-weight:650;color:var(--text);overflow-wrap:anywhere}
+  .meme-code{font-family:Consolas,monospace;font-size:10px;color:var(--text3);overflow-wrap:anywhere}
+  .meme-empty{padding:28px 12px;text-align:center;color:var(--text3)}
 
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(16px);background:var(--text);color:#fff;padding:8px 16px;border-radius:var(--radius);font-weight:600;font-size:12px;opacity:0;transition:.2s;z-index:99;pointer-events:none;box-shadow:var(--shadow-lg);max-width:90vw}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -131,10 +141,16 @@
     .eb-sidebar .side-title,.eb-sidebar .nav-label,.eb-sidebar .collapse-label{display:inline}
     .eb-sidebar .nav-item{justify-content:flex-start;padding:8px 12px}
     .eb-overlay.show{display:block}
-    .eb-header{padding:10px 14px}
+    .eb-header{padding:10px 14px;display:grid;grid-template-columns:32px minmax(0,1fr);align-items:center}
+    .eb-header h1{min-width:0;white-space:nowrap}
+    .header-right{grid-column:1/-1;width:100%;display:grid;grid-template-columns:minmax(0,1fr) repeat(3,32px);margin-top:2px}
+    .header-right .status-pill{min-width:0;overflow:hidden;text-overflow:ellipsis}
+    .header-right .btn{width:32px;height:32px;padding:0;justify-content:center;font-size:0}
+    .header-right .btn svg{width:15px;height:15px}
     .eb-content{padding:12px}
     .page.on{grid-template-columns:1fr}
     .grid-2{grid-template-columns:1fr}
+    .meme-toolbar{grid-template-columns:1fr}
   }
 </style>
 </head>
@@ -182,9 +198,9 @@
       <h1 id="page-title">常规设置</h1>
       <div class="header-right">
         <span class="status-pill" id="pstatus">加载中…</span>
-        <button class="btn btn-sm" onclick="loadConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>重新加载</button>
-        <button class="btn btn-sm" onclick="reloadMeme()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>重载表情</button>
-        <button class="btn btn-pri btn-sm" onclick="saveConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>保存配置</button>
+        <button class="btn btn-sm" onclick="loadConfig()" title="重新加载配置" aria-label="重新加载配置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>重新加载</button>
+        <button class="btn btn-sm" onclick="reloadMeme()" title="重载表情数据" aria-label="重载表情数据"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>重载表情</button>
+        <button class="btn btn-pri btn-sm" onclick="saveConfig()" title="保存配置" aria-label="保存配置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>保存配置</button>
       </div>
     </div>
     <div class="eb-content">
@@ -238,6 +254,19 @@
             <div class="field" style="margin-top:10px"><label>主人 QQ <span class="hint">(逗号分隔; 留空则用框架 owner.ids)</span></label><input type="text" id="owner_qqs" placeholder="123456,789012"></div>
           </div>
           <div class="muted" id="meme_off_hint" style="display:none;margin-top:8px">表情包功能已关闭，请在「常规设置」中开启后再配置。</div>
+        </div>
+        <div class="card span2" id="meme_catalog_card">
+          <div class="card-title">单独禁用表情</div>
+          <div class="meme-toolbar">
+            <input type="text" id="meme_search" placeholder="搜索名称、别名或模板代码" oninput="renderMemeCatalog()">
+            <select id="meme_filter" onchange="renderMemeCatalog()">
+              <option value="all">全部表情</option>
+              <option value="enabled">仅已启用</option>
+              <option value="disabled">仅已禁用</option>
+            </select>
+          </div>
+          <div class="meme-summary"><span class="muted" id="meme_summary">正在加载模板目录…</span></div>
+          <div class="meme-list" id="meme_list"><div class="meme-empty">正在加载…</div></div>
         </div>
       </div>
 
@@ -315,6 +344,8 @@ const BOOL = ['enabled','enable_meme','enable_music','enable_draw','debug','enab
 const TEXT = ['meme_api_url','prefix','owner_qqs','music_api_url','hajimi_url',
   'draw_active','draw_i1_type','draw_i1_url','draw_i1_key','draw_i1_model',
   'draw_i2_type','draw_i2_url','draw_i2_key','draw_i2_model'];
+let memeCatalog = [];
+let disabledMemeCodes = new Set();
 
 function tk() { return TOKEN || localStorage.getItem('access_token') || ''; }
 function headers() { const h = { 'Content-Type': 'application/json' }; const t = tk(); if (t) h['Authorization'] = 'Bearer ' + t; return h; }
@@ -353,6 +384,59 @@ function syncDisabled() {
   document.getElementById('draw_off_hint').style.display = drawOn ? 'none' : '';
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderMemeCatalog() {
+  const box = document.getElementById('meme_list');
+  const query = document.getElementById('meme_search').value.trim().toLocaleLowerCase();
+  const filter = document.getElementById('meme_filter').value;
+  const items = memeCatalog.filter(item => {
+    const enabled = !disabledMemeCodes.has(item.code);
+    if (filter === 'enabled' && !enabled) return false;
+    if (filter === 'disabled' && enabled) return false;
+    const haystack = [item.code, ...(item.keywords || [])].join(' ').toLocaleLowerCase();
+    return !query || haystack.includes(query);
+  });
+  document.getElementById('meme_summary').textContent =
+    '共 ' + memeCatalog.length + ' 个 · 已禁用 ' + disabledMemeCodes.size + ' 个 · 当前显示 ' + items.length + ' 个';
+  if (!items.length) { box.innerHTML = '<div class="meme-empty">没有符合条件的表情</div>'; return; }
+  box.innerHTML = items.map(item => {
+    const enabled = !disabledMemeCodes.has(item.code);
+    const keywords = item.keywords || [];
+    const name = keywords[0] || item.code;
+    const aliases = keywords.slice(1).join('、');
+    return '<div class="meme-row' + (enabled ? '' : ' disabled') + '">'
+      + '<div class="meme-meta"><div class="meme-name">' + esc(name) + '</div>'
+      + (aliases ? '<div class="muted">别名：' + esc(aliases) + '</div>' : '')
+      + '<div class="meme-code">' + esc(item.code) + '</div></div>'
+      + '<label class="toggle-switch" title="' + (enabled ? '点击禁用' : '点击启用') + '">'
+      + '<input type="checkbox" data-meme-code="' + esc(item.code) + '"' + (enabled ? ' checked' : '') + '>'
+      + '<span class="toggle-track"></span></label></div>';
+  }).join('');
+  box.querySelectorAll('[data-meme-code]').forEach(input => {
+    input.onchange = () => setMemeEnabled(input.dataset.memeCode, input.checked);
+  });
+}
+async function loadMemeCatalog() {
+  const d = await api('/meme/catalog');
+  if (!d.success) { toast(d.error || '模板目录加载失败', true); return; }
+  memeCatalog = d.items || [];
+  renderMemeCatalog();
+}
+async function setMemeEnabled(code, enabled) {
+  if (enabled) disabledMemeCodes.delete(code); else disabledMemeCodes.add(code);
+  renderMemeCatalog();
+  const d = await api('/config', {
+    method: 'POST',
+    body: JSON.stringify({ disabled_meme_codes: [...disabledMemeCodes] })
+  });
+  if (!d.success) {
+    if (enabled) disabledMemeCodes.add(code); else disabledMemeCodes.delete(code);
+    renderMemeCatalog();
+    toast(d.error || '表情状态保存失败', true);
+    return;
+  }
+  toast(enabled ? '已启用该表情' : '已禁用该表情');
+  loadStatus();
+}
 function renderPresets(list) {
   const box = document.getElementById('preset_list');
   box.innerHTML = '';
@@ -422,27 +506,30 @@ async function loadConfig() {
   BOOL.forEach(k => { const el = document.getElementById(k); if (el) el.checked = !!c[k]; });
   TEXT.forEach(k => { const el = document.getElementById(k); if (el) el.value = c[k] || ''; });
   document.getElementById('max_file_size').value = c.max_file_size || 10;
+  disabledMemeCodes = new Set(c.disabled_meme_codes || []);
   renderPresets(c.draw_presets || []);
   syncDisabled();
-  loadStatus();
+  await Promise.all([loadMemeCatalog(), loadStatus()]);
 }
 async function loadStatus() {
   const d = await api('/status');
   if (d.success) document.getElementById('pstatus').textContent =
-    '表情 ' + d.meme_count + ' · 预设 ' + d.preset_count + ' · 主人 ' + d.owner_count;
+    '表情 ' + d.meme_count + '/' + d.meme_total + ' · 禁用 ' + d.meme_disabled_count
+    + ' · 预设 ' + d.preset_count + ' · 主人 ' + d.owner_count;
 }
 async function saveConfig() {
   const body = {};
   BOOL.forEach(k => { const el = document.getElementById(k); if (el) body[k] = el.checked; });
   TEXT.forEach(k => { const el = document.getElementById(k); if (el) body[k] = el.value.trim(); });
   body.max_file_size = parseInt(document.getElementById('max_file_size').value) || 10;
+  body.disabled_meme_codes = [...disabledMemeCodes];
   body.draw_presets = collectPresets();
   const d = await api('/config', { method: 'POST', body: JSON.stringify(body) });
   if (d.success) { toast('已保存'); loadConfig(); } else toast(d.error || '保存失败', true);
 }
 async function reloadMeme() {
   const d = await api('/meme/reload', { method: 'POST' });
-  if (d.success) { toast('已重载 ' + d.meme_count + ' 个表情'); loadStatus(); } else toast('重载失败', true);
+  if (d.success) { toast('已重载 ' + d.meme_count + '/' + d.meme_total + ' 个表情'); await Promise.all([loadMemeCatalog(), loadStatus()]); } else toast('重载失败', true);
 }
 loadConfig();
 </script>

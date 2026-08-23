@@ -6,17 +6,26 @@
 <title>群管配置</title>
 <style>
   :root{
-    --bg:#ffffff; --bg2:#f4f8ff; --bg3:#e8f0ff;
-    --text:#1e293b; --text2:#475569; --text3:#94a3b8;
-    --border:#d6e4ff; --border2:rgba(59,130,246,.14);
-    --accent:#3b82f6; --accent-hover:#2563eb; --accent-light:#60a5fa;
-    --success:#34c98b; --danger:#f16a86; --warning:#f5a742; --info:#5bb8d4;
+    --host-bg:#f6f7fb; --host-bg2:#ffffff; --host-bg3:#f1f3f7; --host-bg-float:#ffffff;
+    --host-text:#202735; --host-text2:#596171; --host-text3:#8b929e; --host-border:#e5e7ee;
+    --host-accent:#6750a4; --host-accent-hover:#58428f; --host-accent-light:#e9e2f7;
+    --host-success:#16875d; --host-danger:#c43b3b; --host-warning:#ba6b00; --host-info:#3b82f6;
+    --bg:var(--host-bg2); --bg2:var(--host-bg); --bg3:var(--host-bg3); --bg-float:var(--host-bg-float);
+    --text:var(--host-text); --text2:var(--host-text2); --text3:var(--host-text3);
+    --border:var(--host-border); --border2:color-mix(in srgb,var(--border) 65%,transparent);
+    --accent:var(--host-accent); --accent-hover:var(--host-accent-hover); --accent-light:var(--host-accent-light);
+    --success:var(--host-success); --danger:var(--host-danger); --warning:var(--host-warning); --info:var(--host-info);
     --radius:16px; --radius-sm:11px; --radius-lg:22px;
-    --sidebar-bg:#eef4ff;
-    --accent-soft:#e6efff; --accent-line:#bcd4ff;
-    --shadow:0 1px 3px rgba(59,130,246,.08);
-    --shadow-md:0 4px 12px rgba(59,130,246,.10);
-    --shadow-lg:0 10px 28px rgba(59,130,246,.18);
+    --sidebar-bg:color-mix(in srgb,var(--accent) 6%,var(--bg));
+    --accent-soft:var(--host-accent-soft,color-mix(in srgb,var(--accent) 12%,transparent));
+    --accent-line:color-mix(in srgb,var(--accent) 35%,var(--border));
+    --success-soft:color-mix(in srgb,var(--success) 12%,transparent);
+    --danger-soft:color-mix(in srgb,var(--danger) 12%,transparent);
+    --warning-soft:color-mix(in srgb,var(--warning) 12%,transparent);
+    --shadow:0 1px 3px color-mix(in srgb,var(--text) 8%,transparent);
+    --shadow-md:0 4px 12px color-mix(in srgb,var(--text) 10%,transparent);
+    --shadow-lg:0 10px 28px color-mix(in srgb,var(--text) 18%,transparent);
+    color-scheme:var(--host-color-scheme,light);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
@@ -27,7 +36,7 @@
   }
   ::-webkit-scrollbar{width:5px;height:5px}
   ::-webkit-scrollbar-track{background:transparent}
-  ::-webkit-scrollbar-thumb{background:rgba(59,130,246,.3);border-radius:3px}
+  ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--accent) 32%,transparent);border-radius:3px}
 
   /* 布局 */
   .eb-page{height:100vh;display:flex;overflow:hidden}
@@ -39,7 +48,7 @@
 
   .side-header{padding:10px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
   .side-brand{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
-  .logo{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent),var(--accent-light));color:#fff;flex-shrink:0;box-shadow:0 3px 8px rgba(59,130,246,.28)}
+  .logo{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent),var(--accent-light));color:#fff;flex-shrink:0;box-shadow:0 3px 8px color-mix(in srgb,var(--accent) 28%,transparent)}
   .logo svg{width:17px;height:17px;stroke-width:2}
   .side-title{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .side-title small{display:block;font-size:10px;color:var(--text3);font-weight:500}
@@ -65,7 +74,7 @@
   .eb-header h1{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
   .menu-btn{display:none;width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;align-items:center;justify-content:center;flex-shrink:0}
   .menu-btn svg{width:17px;height:17px}
-  .eb-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:40}
+  .eb-overlay{display:none;position:fixed;inset:0;background:color-mix(in srgb,var(--text) 40%,transparent);z-index:40}
   .header-right{display:flex;gap:6px;align-items:center}
   .status-pill{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid var(--border);background:var(--bg);font-size:11px;color:var(--text2)}
   .status-dot{width:7px;height:7px;border-radius:50%;background:var(--danger)}
@@ -79,8 +88,8 @@
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn-pri{background:var(--accent);color:#fff;border-color:var(--accent)}
   .btn-pri:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover);color:#fff}
-  .btn-danger{color:var(--danger);border-color:var(--danger-soft,#fde5ea)}
-  .btn-danger:hover:not(:disabled){background:#fde5ea;border-color:var(--danger);color:var(--danger)}
+  .btn-danger{color:var(--danger);border-color:var(--danger-soft)}
+  .btn-danger:hover:not(:disabled){background:var(--danger-soft);border-color:var(--danger);color:var(--danger)}
   .btn-sm{padding:5px 11px;font-size:11px}
   .btn svg{width:14px;height:14px}
 
@@ -119,7 +128,7 @@
   .toggle-desc{font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px}
   .toggle-switch{position:relative;width:36px;height:20px;cursor:pointer;flex-shrink:0}
   .toggle-switch input{opacity:0;width:0;height:0}
-  .toggle-track{position:absolute;inset:0;background:#c9d6e8;border-radius:999px;transition:background .2s}
+  .toggle-track{position:absolute;inset:0;background:var(--border);border-radius:999px;transition:background .2s}
   .toggle-track::after{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 2px rgba(0,0,0,.15)}
   .toggle-switch input:checked+.toggle-track{background:var(--accent)}
   .toggle-switch input:checked+.toggle-track::after{transform:translateX(16px)}
@@ -156,14 +165,14 @@
   .arrow svg{width:13px;height:13px;stroke-width:2;vertical-align:middle}
 
   /* 日志控制台 */
-  .log-c{background:#0f172a;border-radius:var(--radius-sm);padding:10px;max-height:420px;overflow-y:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.6}
+  .log-c{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;max-height:420px;overflow-y:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.6}
   .log-e{white-space:pre-wrap;word-break:break-all;padding:1px 0}
-  .log-e .lt{color:#64748b}
-  .log-e .lm{color:#e2e8f0}
-  .log-e.log-info .ll{color:#60a5fa}
-  .log-e.log-debug .ll{color:#a5b4fc}
-  .log-e.log-warn .ll{color:#fbbf24}
-  .log-e.log-error .ll{color:#f87171}
+  .log-e .lt{color:var(--text3)}
+  .log-e .lm{color:var(--text)}
+  .log-e.log-info .ll{color:var(--info)}
+  .log-e.log-debug .ll{color:var(--accent)}
+  .log-e.log-warn .ll{color:var(--warning)}
+  .log-e.log-error .ll{color:var(--danger)}
 
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(16px);background:var(--text);color:#fff;padding:8px 16px;border-radius:var(--radius);font-weight:600;font-size:12px;opacity:0;transition:.2s;z-index:99;pointer-events:none;box-shadow:var(--shadow-lg);max-width:90vw}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -479,7 +488,7 @@
             <div class="subtab" onclick="fltLog('warn',this)">WARN</div>
             <div class="subtab" onclick="fltLog('error',this)">ERROR</div>
           </div>
-          <div id="logC" class="log-c"><p style="color:#64748b">加载中...</p></div>
+          <div id="logC" class="log-c"><p style="color:var(--text3)">加载中...</p></div>
           <div class="bar" style="margin-top:8px">
             <span class="muted" id="logCnt">0 条</span>
             <div class="spacer"></div>
@@ -496,6 +505,47 @@
 
 <script>
 const API = '/api/ext/groupguard';
+const THEME_MAP = {
+  '--bg':'--host-bg','--bg2':'--host-bg2','--bg3':'--host-bg3','--bg-float':'--host-bg-float',
+  '--text':'--host-text','--text2':'--host-text2','--text3':'--host-text3','--border':'--host-border',
+  '--accent':'--host-accent','--accent-hover':'--host-accent-hover','--accent-light':'--host-accent-light',
+  '--accent-soft':'--host-accent-soft','--success':'--host-success','--danger':'--host-danger',
+  '--warning':'--host-warning','--info':'--host-info'
+};
+
+function hostColorScheme(style){
+  const declared = String(style.colorScheme || '').toLowerCase();
+  if(declared === 'dark' || declared.startsWith('dark only')) return 'dark';
+  if(declared === 'light' || declared.startsWith('light only')) return 'light';
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:fixed;visibility:hidden;color:' + (style.getPropertyValue('--bg').trim() || '#fff');
+  document.body.appendChild(probe);
+  const rgb = getComputedStyle(probe).color.match(/[\d.]+/g);
+  probe.remove();
+  return rgb && rgb.length >= 3 && (.2126 * Number(rgb[0]) + .7152 * Number(rgb[1]) + .0722 * Number(rgb[2])) < 128 ? 'dark' : 'light';
+}
+
+function syncHostTheme(){
+  try{
+    if(window.parent === window) return;
+    const hostStyle = window.parent.getComputedStyle(window.parent.document.documentElement);
+    const rootStyle = document.documentElement.style;
+    Object.entries(THEME_MAP).forEach(([source,target])=>{
+      const value = hostStyle.getPropertyValue(source).trim();
+      if(value) rootStyle.setProperty(target,value);
+    });
+    const scheme = hostColorScheme(hostStyle);
+    rootStyle.setProperty('--host-color-scheme',scheme);
+    rootStyle.colorScheme = scheme;
+    document.documentElement.dataset.hostTheme = scheme;
+  }catch(_){}
+}
+
+syncHostTheme();
+if(window.parent !== window){
+  const themeSyncTimer = window.setInterval(syncHostTheme,300);
+  window.addEventListener('pagehide',()=>window.clearInterval(themeSyncTimer),{once:true});
+}
 const TOKEN = new URLSearchParams(location.search).get('access_token')
   || (window.parent !== window && new URLSearchParams(location.search).get('token')) || '';
 function headers(){ const h={'Content-Type':'application/json'}; const t=TOKEN||localStorage.getItem('access_token')||''; if(t) h['Authorization']='Bearer '+t; return h; }
@@ -640,7 +690,7 @@ async function doSave(){
 async function reloadAll(){ await Promise.all([loadCfg(),loadGrps()]); editMode=''; toast('已重新加载'); }
 
 // ── dashboard ──
-function badge(id,on){ const e=$(id); if(!e) return; e.textContent=on?'已开启':'已关闭'; e.style.background=on?'var(--success-soft,#e4faf1)':'var(--bg3)'; e.style.color=on?'var(--success)':'var(--text3)'; }
+function badge(id,on){ const e=$(id); if(!e) return; e.textContent=on?'已开启':'已关闭'; e.style.background=on?'var(--success-soft)':'var(--bg3)'; e.style.color=on?'var(--success)':'var(--text3)'; }
 function updDash(){
   $('d-gc').textContent=GL.length;
   $('d-arc').textContent=(C.antiRecallGroups||[]).length;
@@ -748,11 +798,11 @@ async function loadSess(){
 }
 
 // ── logs ──
-async function loadLogs(){ try{ const d=await af('/logs'); if(d.success){ logD=d.logs||[]; rndLogs(); } }catch(e){ $('logC').innerHTML='<p style="color:#ff8aa5">获取失败</p>'; } }
+async function loadLogs(){ try{ const d=await af('/logs'); if(d.success){ logD=d.logs||[]; rndLogs(); } }catch(e){ $('logC').innerHTML='<p style="color:var(--danger)">获取失败</p>'; } }
 function rndLogs(){
   const c=$('logC'), f=logFlt==='all'?logD:logD.filter(l=>(l.level||'').toLowerCase()===logFlt);
   $('logCnt').textContent=`${f.length}/${logD.length} 条`;
-  if(!f.length){ c.innerHTML='<p style="color:#64748b">暂无日志</p>'; return; }
+  if(!f.length){ c.innerHTML='<p style="color:var(--text3)">暂无日志</p>'; return; }
   c.innerHTML=f.map(l=>{ const lv=(l.level||'info').toLowerCase(); return `<div class="log-e log-${lv}"><span class="lt">${esc(l.time)}</span> <span class="ll">[${esc((l.level||'').toUpperCase())}]</span> <span class="lm">${esc(l.message)}</span></div>`; }).join('');
   if($('logAS')?.checked) c.scrollTop=c.scrollHeight;
 }

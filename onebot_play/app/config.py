@@ -13,6 +13,7 @@ DEFAULTS = {
     "enabled": True,
     "prefix": "",
     "enable_meme": True,
+    "disabled_meme_codes": [],
     "meme_api_url": "http://datukuai.top:2233",
     "max_file_size": 10,
     "enable_master_protect": True,
@@ -38,6 +39,7 @@ _WRITABLE = (
     "enabled",
     "prefix",
     "enable_meme",
+    "disabled_meme_codes",
     "meme_api_url",
     "max_file_size",
     "enable_master_protect",
@@ -68,7 +70,7 @@ _BOOL_FIELDS = (
     "enable_draw",
 )
 _INT_FIELDS = ("max_file_size",)
-_LIST_FIELDS = ("draw_presets",)
+_LIST_FIELDS = ("draw_presets", "disabled_meme_codes")
 
 _OVERRIDE_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -107,8 +109,23 @@ def _coerce(key, value):
         except (TypeError, ValueError):
             return DEFAULTS.get(key)
     if key in _LIST_FIELDS:
+        if key == "disabled_meme_codes":
+            return _coerce_string_list(value)
         return _coerce_presets(value)
     return value
+
+
+def _coerce_string_list(value) -> list:
+    if not isinstance(value, list):
+        return []
+    out = []
+    seen = set()
+    for item in value:
+        text = str(item or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+    return out
 
 
 def _coerce_presets(value) -> list:
@@ -197,6 +214,10 @@ def prefix() -> str:
 
 def enable_meme() -> bool:
     return _get_bool("enable_meme")
+
+
+def disabled_meme_codes() -> list:
+    return _coerce_string_list(get("disabled_meme_codes"))
 
 
 def enable_music() -> bool:
@@ -298,6 +319,7 @@ def public_config() -> dict:
         "enabled": enabled(),
         "prefix": prefix(),
         "enable_meme": enable_meme(),
+        "disabled_meme_codes": disabled_meme_codes(),
         "meme_api_url": meme_api_url(),
         "max_file_size": max_file_size(),
         "enable_master_protect": enable_master_protect(),
