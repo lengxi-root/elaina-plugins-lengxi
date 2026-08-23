@@ -4,7 +4,7 @@
 读写框架配置、检查系统状态, 并以插件侧边栏页面提供一个亮色 Web 面板
 与 AI 对话、实时查看完整工具调用与日志。
 
-QQ 内使用 (仅主人): 发送  ai <你的需求>   即可触发 AI 开发助手。
+QQ 内使用 (仅主人): `ai <需求>` 新建任务；`ai 继续 <需求>` 续接上一任务。
 Web 面板:        登录框架后台 → 侧边栏「AI 开发」页面。
 """
 
@@ -22,7 +22,7 @@ __plugin_meta__ = {
     "name": "AI 开发助手",
     "author": "冷曦",
     "description": "接入 OpenAI 让 AI 自主编写/修改框架插件并提供亮色 Web 面板",
-    "version": "1.1.1",
+    "version": "1.2.1",
 }
 
 log = logging.getLogger("ElainaBot.plugins.ai_dev")
@@ -69,27 +69,28 @@ async def cleanup():
 )
 async def handle_ai(event, match):
     """主人在 QQ 中直接驱动 AI 开发助手"""
+    if not aiconfig.enabled():
+        await event.reply("AI 开发助手已停用")
+        return
     if not aiconfig.is_configured():
         await event.reply(
             "AI 未配置: 请在 config/settings.yaml 的 ai.api_key 填入密钥, 或设置环境变量 AI_DEV_API_KEY"
         )
         return
-    prompt = match.group(1).strip()
+    raw_prompt = match.group(1).strip()
+    resume = raw_prompt.startswith("继续 " )
+    prompt = raw_prompt[3:].strip() if resume else raw_prompt
     from core.application import get_app
 
     store = getattr(get_app(), "_ai_dev_store", None)
     if store is None:
         await event.reply("AI 存储未初始化")
         return
-    sid = f"qq_{event.user_id}"
-    if store.get_session(sid) is None:
-        store._sessions[sid] = {
-            "id": sid,
-            "title": f"QQ {event.user_id}",
-            "created": 0,
-            "updated": 0,
-            "messages": [],
-        }
+    source = f"qq:{event.user_id}"
+    session = store.latest_session(source) if resume else None
+    if session is None:
+        session = store.create_session(prompt[:24] or "QQ 开发任务", source=source)
+    sid = session["id"]
     await event.reply("已收到, AI 正在处理...")
     try:
         result = await agentmod.run_agent(store, sid, prompt)

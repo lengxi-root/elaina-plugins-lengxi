@@ -367,6 +367,7 @@ async def handle_packet(event, match=None):
     desc="猫娘 AI 对话: /<内容> 或 @机器人 <内容>",
     priority=-50,
     event_types=["message"],
+    fallback=True,
 )
 async def handle_message(event, match=None):
     if not aiconfig.enabled():

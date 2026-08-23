@@ -20,11 +20,13 @@ from core.onebot.api import ApiCallRequest, bypass_api_interceptors, get_api
 from . import store
 from .audio import convert_to_silk
 from .policy import (
+    button_click_params,
     caller_name,
     extract_media,
     extract_text,
     find_rule,
     group_target,
+    official_message_event,
     official_message_supported,
     parse_replacements,
     replace_text,
@@ -97,25 +99,33 @@ async def restart_bridge():
 
 
 async def handle_gateway_event(event_type, payload, event_id):
+    gateway_identity = str(event_id or payload.get('id') or '')
+    if gateway_identity and not runtime.remember_gateway_event(
+        f'{event_type}:{gateway_identity}',
+    ):
+        return
     if event_type == 'GROUP_AT_MESSAGE_CREATE':
-        content = re.sub(r'<@!\w+>\s*', '', str(payload.get('content') or '')).strip()
+        content = re.sub(r'<@![^>]+>\s*', '', str(payload.get('content') or '')).strip()
         pending = runtime.pending_codes.get(content)
-        if pending is None:
+        if pending is not None:
+            group_openid = str(payload.get('group_id') or '')
+            message_id = str(payload.get('id') or '')
+            if not group_openid or not message_id or runtime.bridge is None:
+                return
+            pending['group_openid'] = group_openid
+            runtime.bootstraps[pending['group_id']] = {
+                'code': content,
+                'group_openid': group_openid,
+                'created_at': time.time(),
+            }
+            await runtime.bridge.send_group_markdown(
+                group_openid, '1', msg_id=message_id, keyboard=CALLBACK_KEYBOARD,
+            )
+            runtime.add_log('info', f'已向群 {pending["group_id"]} 发送映射回调按钮')
             return
-        group_openid = str(payload.get('group_id') or '')
-        message_id = str(payload.get('id') or '')
-        if not group_openid or not message_id or runtime.bridge is None:
-            return
-        pending['group_openid'] = group_openid
-        runtime.bootstraps[pending['group_id']] = {
-            'code': content,
-            'group_openid': group_openid,
-            'created_at': time.time(),
-        }
-        await runtime.bridge.send_group_markdown(
-            group_openid, '1', msg_id=message_id, keyboard=CALLBACK_KEYBOARD,
-        )
-        runtime.add_log('info', f'已向群 {pending["group_id"]} 发送映射回调按钮')
+
+    if event_type in {'GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE'}:
+        await inject_gateway_message(event_type, payload, event_id)
         return
 
     if event_type != 'INTERACTION_CREATE':
@@ -138,6 +148,50 @@ async def handle_gateway_event(event_type, payload, event_id):
         waiter.set_result(interaction_id)
     runtime.add_log('info', f'已刷新群 {group_id} 的官方机器人 event_id')
     runtime.spawn(flush_pending(group_id), name=f'official-relay-flush-{group_id}')
+
+
+def available_self_id(preferred=''):
+    """选择能执行 OneBot 动作的真实账号，优先使用事件原账号。"""
+    try:
+        from core.application import get_app
+
+        app = get_app()
+        adapter = getattr(app, 'adapter', None) if app else None
+        local = getattr(adapter, 'local_actions', {}) or {}
+        bots = getattr(adapter, 'bots', {}) or {}
+        preferred = str(preferred or '')
+        if preferred and (preferred in local or preferred in bots):
+            return preferred
+        if local:
+            return str(next(iter(local)))
+        if bots:
+            return str(next(iter(bots)))
+    except Exception:
+        pass
+    return str(preferred or '')
+
+
+async def inject_gateway_message(event_type, payload, event_id):
+    try:
+        from core.application import get_app
+        from core.onebot.event import parse_event
+
+        app = get_app()
+        if app is None:
+            return
+        openid = str(payload.get('group_id') or '')
+        group_id = _group_id_by_openid(openid) if openid else ''
+        data = official_message_event(
+            event_type, payload, event_id, available_self_id(), group_id=group_id,
+        )
+        event = parse_event(data) if data else None
+        if event is None or not app.submit_event(event):
+            runtime.add_log('warning', '官机入站消息注入失败：框架事件队列不可用')
+            return
+        target = group_id or openid or str(data.get('user_id') or '')
+        runtime.add_log('info', f'官机入站消息已转发到框架插件: {event_type}, 目标={target}')
+    except Exception as exc:
+        runtime.add_log('warning', f'官机入站消息转发失败: {exc}')
 
 
 def _group_id_by_openid(group_openid):
@@ -169,8 +223,10 @@ def record_event_use(group_id, event_id):
         runtime.event_ids.pop(str(group_id), None)
 
 
-async def wake_event(group_id, self_id):
+async def wake_event(group_id, self_id, *, force=False):
     group_id = str(group_id)
+    if force:
+        runtime.event_ids.pop(group_id, None)
     cached = valid_event(group_id)
     if cached:
         return cached
@@ -187,13 +243,13 @@ async def wake_event(group_id, self_id):
         runtime.event_waiters[group_id] = waiter
         config = store.config()
         appid = mapping.get('bot_appid') or config['qqbot'].get('appid')
-        response = await raw_call('click_inline_keyboard_button', {
-            'group_id': group_id,
-            'bot_appid': appid,
-            'button_id': mapping.get('button_id') or '1',
-            'callback_data': mapping.get('callback_data') or '',
-            'msg_seq': str(random.randint(1, 999_999)),
-        }, self_id)
+        payload = button_click_params(
+            group_id, mapping, appid, str(random.randint(1, 999_999)),
+        )
+        runtime.add_log('info', f'点击按钮发包: 群={group_id}, button_id={payload["button_id"]}')
+        response = await raw_call(
+            'click_inline_keyboard_button', payload, available_self_id(self_id),
+        )
         data = unwrap_response(response)
         if isinstance(data, dict) and data.get('ok') is False:
             runtime.event_waiters.pop(group_id, None)
@@ -298,12 +354,61 @@ async def _source_bytes(source):
         return b''
 
 
-async def _media_payload(source, media_type):
+async def _rehost_image_url(source, self_id):
+    """经当前 OneBot 账号自发图片，换取 QQ CDN 地址。"""
+    target_self_id = available_self_id(self_id)
+    if not target_self_id:
+        return ''
+    data = await _source_bytes(source)
+    if not data:
+        return ''
+    target_user = int(target_self_id) if target_self_id.isdigit() else target_self_id
+    try:
+        response = await raw_call('send_private_msg', {
+            'user_id': target_user,
+            'message': [{
+                'type': 'image',
+                'data': {'file': 'base64://' + base64.b64encode(data).decode('ascii')},
+            }],
+        }, target_self_id)
+        sent = unwrap_response(response)
+        message_id = sent.get('message_id') if isinstance(sent, dict) else None
+        if message_id is None:
+            return ''
+        detail = unwrap_response(await raw_call(
+            'get_msg', {'message_id': message_id}, target_self_id,
+        ))
+        segments = detail.get('message') if isinstance(detail, dict) else []
+        for segment in segments if isinstance(segments, list) else []:
+            if not isinstance(segment, dict) or segment.get('type') != 'image':
+                continue
+            image_data = segment.get('data') or {}
+            url = str(image_data.get('url') or image_data.get('file') or '')
+            if url.startswith(('http://', 'https://')):
+                runtime.add_log('info', '图片已通过 OneBot 账号转存到 QQ CDN')
+                return url
+    except Exception as exc:
+        runtime.add_log('warning', f'图片 QQ CDN 转存失败: {exc}')
+    return ''
+
+
+async def _media_payload(
+    source, media_type, *, force_image_rehost=False, self_id='',
+):
     source = str(source or '')
     if media_type == 'record':
         data = await _source_bytes(source)
         converted = await convert_to_silk(data)
         return (base64.b64encode(converted).decode('ascii'), False) if converted else ('', False)
+    if media_type == 'video':
+        data = await _source_bytes(source)
+        return (base64.b64encode(data).decode('ascii'), False) if data else ('', False)
+    if media_type == 'image' and force_image_rehost and source.startswith(('http://', 'https://')):
+        rehosted = await _rehost_image_url(source, self_id)
+        if rehosted:
+            return rehosted, True
+        runtime.add_log('warning', '图片 QQ CDN 转存失败，回退原始 URL')
+        return source, True
     if source.startswith(('http://', 'https://')):
         return source, True
     if source.startswith('base64://'):
@@ -322,6 +427,34 @@ async def _media_payload(source, media_type):
     return base64.b64encode(data).decode('ascii'), False
 
 
+async def _upload_media(bridge, group_openid, payload, file_type, media_type, is_url):
+    first_error = None
+    try:
+        file_info = await bridge.upload_group_media(
+            group_openid, payload, file_type, is_url=is_url,
+        )
+        if file_info or media_type != 'image' or not is_url:
+            return file_info
+    except OfficialBotApiError as exc:
+        if media_type != 'image' or not is_url:
+            raise
+        first_error = exc
+
+    data = await _source_bytes(payload)
+    if data:
+        encoded = base64.b64encode(data).decode('ascii')
+        try:
+            return await bridge.upload_group_media(
+                group_openid, encoded, file_type, is_url=False,
+            )
+        except OfficialBotApiError:
+            if first_error is None:
+                raise
+    if first_error is not None:
+        raise first_error
+    return ''
+
+
 async def _send_with_event(group_id, self_id, message, event):
     bridge = runtime.bridge
     if bridge is None or not bridge.connected:
@@ -335,14 +468,20 @@ async def _send_with_event(group_id, self_id, message, event):
     media = extract_media(message)
     try:
         if media:
-            payload, is_url = await _media_payload(media['source'], media['type'])
+            payload, is_url = await _media_payload(
+                media['source'], media['type'],
+                force_image_rehost=bool(
+                    store.config().get('qqbot', {}).get('force_image_rehost'),
+                ),
+                self_id=self_id,
+            )
             if not payload:
                 if media['type'] == 'record':
                     runtime.add_log('warning', '语音 Silk 转码不可用，回退原始 OneBot 发送')
                 return {'success': False, 'content_violation': False}
             file_type = {'image': 1, 'video': 2, 'record': 3}[media['type']]
-            file_info = await bridge.upload_group_media(
-                group_openid, payload, file_type, is_url=is_url,
+            file_info = await _upload_media(
+                bridge, group_openid, payload, file_type, media['type'], is_url,
             )
             if not file_info:
                 return {'success': False, 'content_violation': False}

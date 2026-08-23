@@ -9,6 +9,7 @@ from core.base.config import cfg
 
 DEFAULTS = {
     "enabled": True,
+    "high_risk_tools_enabled": False,
     "base_url": "https://api.ytea.top/v1",
     "model": "gpt-4.1-nano",
     "temperature": 0.3,
@@ -35,6 +36,7 @@ _WRITABLE = (
     "request_timeout",
     "system_prompt",
     "enabled",
+    "high_risk_tools_enabled",
     "reasoning_effort",
     "history_limit",
     "auto_switch",
@@ -297,14 +299,14 @@ def model() -> str:
 
 def temperature() -> float:
     try:
-        return float(get("temperature"))
+        return min(2.0, max(0.0, float(get("temperature"))))
     except (TypeError, ValueError):
         return DEFAULTS["temperature"]
 
 
 def max_iterations() -> int:
     try:
-        return int(get("max_iterations"))
+        return min(100, max(1, int(get("max_iterations"))))
     except (TypeError, ValueError):
         return DEFAULTS["max_iterations"]
 
@@ -322,6 +324,14 @@ def request_timeout() -> int:
         return int(get("request_timeout"))
     except (TypeError, ValueError):
         return DEFAULTS["request_timeout"]
+
+
+def enabled() -> bool:
+    return bool(get("enabled"))
+
+
+def high_risk_tools_enabled() -> bool:
+    return bool(get("high_risk_tools_enabled"))
 
 
 def system_prompt() -> str:
@@ -347,11 +357,21 @@ def health_check() -> bool:
 CHAT_SYSTEM_PROMPT = (
     "你是一个有用、友好的 AI 助手。请用简洁、准确的中文回答用户的问题。"
 )
+ANALYSIS_SYSTEM_PROMPT = (
+    "你是 ElainaBot OneBot 的只读开发分析助手。使用提供的只读工具收集证据，"
+    "分析代码、配置和运行状态；不得声称已修改任何内容，也不得给出未经工具验证的环境结论。"
+    "用简洁、准确的中文回答。"
+)
+
+
+def analysis_system_prompt() -> str:
+    """只读分析模式提示词；沿用旧 chat_system_prompt 自定义项。"""
+    return str(get("chat_system_prompt") or "").strip() or ANALYSIS_SYSTEM_PROMPT
 
 
 def chat_system_prompt() -> str:
     """普通对话模式的系统提示词, 为空回退内置通用助手提示。"""
-    return str(get("chat_system_prompt") or "").strip() or CHAT_SYSTEM_PROMPT
+    return analysis_system_prompt()
 
 
 def is_configured() -> bool:
@@ -361,7 +381,8 @@ def is_configured() -> bool:
 def public_config() -> dict:
     """返回可暴露给前端的配置 (不含 api_key 明文)"""
     return {
-        "enabled": bool(get("enabled")),
+        "enabled": enabled(),
+        "high_risk_tools_enabled": high_risk_tools_enabled(),
         "base_url": base_url(),
         "model": model(),
         "temperature": temperature(),

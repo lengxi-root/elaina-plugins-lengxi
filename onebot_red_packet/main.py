@@ -12,6 +12,7 @@ from copy import deepcopy
 from datetime import datetime
 
 import core.plugin.context as _ctx_mod
+from core.application import get_app
 from core.base.config import cfg
 from core.onebot.api import get_api
 from core.plugin.decorators import handler, on_load, on_unload
@@ -24,7 +25,7 @@ __plugin_meta__ = {
     'name': 'QQ 抢红包',
     'author': '冷曦',
     'description': '基于内置 QQ 原生协议的可配置红包领取插件',
-    'version': '1.1.1',
+    'version': '1.2.0',
     'license': 'MIT',
 }
 
@@ -196,20 +197,16 @@ def _prune_runtime_cache(now):
         _SEEN.pop(next(iter(_SEEN)))
 
 
-def _unwrap_response(response):
-    if not isinstance(response, dict):
-        return None, '领取接口无响应'
-    if response.get('status') == 'failed':
-        return None, str(response.get('message') or response.get('wording') or '领取接口失败')
-    data = response.get('data', response)
-    if not isinstance(data, dict):
-        return None, '领取接口返回格式错误'
-    return data, ''
+def _red_packet_api():
+    app = get_app()
+    manager = getattr(app, 'embedded_qq', None) if app else None
+    if manager is None:
+        raise RuntimeError('内置 QQ 红包接口尚未初始化')
+    return manager
 
 
-async def _call_api(event, action, params):
-    api = getattr(event, '_api', None) or get_api()
-    return await api.call_api(action, params, self_id=str(event.self_id))
+async def _call_api(self_id, action, params):
+    return await get_api().call_api(action, params, self_id=str(self_id))
 
 
 async def _append_history(self_id, packet, *, success, amount=0.0, error='', skipped=''):
@@ -241,12 +238,12 @@ async def _append_history(self_id, packet, *, success, amount=0.0, error='', ski
         _save_state()
 
 
-async def _send_password(event, packet, settings):
+async def _send_password(self_id, packet, settings):
     password = str(packet.get('password') or packet.get('wishing') or '').strip()
     group_id = str(packet.get('group_id') or '')
     if not password or not group_id:
         return False
-    response = await _call_api(event, 'send_group_msg', {
+    response = await _call_api(self_id, 'send_group_msg', {
         'group_id': int(group_id),
         'message': password,
     })
@@ -258,13 +255,15 @@ async def _send_password(event, packet, settings):
     return True
 
 
-async def _post_success_actions(event, packet, amount, elapsed_ms, settings):
+async def _post_success_actions(self_id, packet, amount, elapsed_ms, settings):
     group_id = str(packet.get('group_id') or '')
     if settings['thanks_reply_enabled'] and group_id:
         if settings['thanks_delay_ms']:
             await asyncio.sleep(settings['thanks_delay_ms'] / 1000)
         message = random.choice(settings['thanks_messages'])
-        await _call_api(event, 'send_group_msg', {'group_id': int(group_id), 'message': message})
+        await _call_api(self_id, 'send_group_msg', {
+            'group_id': int(group_id), 'message': message,
+        })
 
     if settings['notify_owner']:
         target = str(settings.get('notify_target') or '')
@@ -288,10 +287,10 @@ async def _post_success_actions(event, packet, amount, elapsed_ms, settings):
             )
             action = 'send_group_msg' if target_type == 'group' else 'send_private_msg'
             key = 'group_id' if target_type == 'group' else 'user_id'
-            await _call_api(event, action, {key: int(target), 'message': text})
+            await _call_api(self_id, action, {key: int(target), 'message': text})
 
 
-async def _notify_detected(event, packet):
+async def _notify_detected(self_id, packet):
     settings = _STATE['settings']
     target = str(settings.get('notify_target') or settings.get('master_qq') or '')
     target_type = settings.get('notify_target_type') or 'private'
@@ -302,7 +301,7 @@ async def _notify_detected(event, packet):
         target = str(owners[0])
         target_type = 'private'
     if not target:
-        target = str(event.self_id)
+        target = str(self_id)
     if not target:
         return
     group_id = str(packet.get('group_id') or '')
@@ -313,7 +312,7 @@ async def _notify_detected(event, packet):
     )
     action = 'send_group_msg' if target_type == 'group' else 'send_private_msg'
     key = 'group_id' if target_type == 'group' else 'user_id'
-    await _call_api(event, action, {key: int(target), 'message': text})
+    await _call_api(self_id, action, {key: int(target), 'message': text})
 
 
 @on_load
@@ -329,29 +328,29 @@ async def initialize():
         icon=_ICON,
     )
     webapi.register_routes()
-    log.info('QQ 抢红包插件已加载，自动领取已启用，可由主人发送“红包关闭”停用')
+    _red_packet_api().register_red_packet_listener(
+        'onebot_red_packet', handle_red_packet,
+    )
+    log.info('QQ 抢红包插件已直连内置 QQ 红包接口，自动领取已启用')
 
 
 @on_unload
 async def cleanup():
+    app = get_app()
+    manager = getattr(app, 'embedded_qq', None) if app else None
+    if manager is not None:
+        manager.unregister_red_packet_listener('onebot_red_packet')
     webapi.unregister_routes()
     unregister_page(_PAGE_KEY)
     _SEEN.clear()
     _GROUP_PAUSED_UNTIL.clear()
 
 
-@handler(
-    r'.*',
-    name='红包事件处理',
-    desc='处理内置 QQ 上报的红包事件',
-    priority=200,
-    event_types=['notice.elaina_red_packet'],
-)
-async def handle_red_packet(event, _match):
-    packet = event.raw_data.get('red_packet')
+async def handle_red_packet(self_id, packet):
+    """处理内置 QQ 直接推送的红包数据。"""
     if not isinstance(packet, dict):
         return
-    self_id = str(event.self_id or '')
+    self_id = str(self_id or '')
     bill_no = str(packet.get('bill_no') or '')
     if not self_id or not bill_no or not _account_enabled(self_id):
         return
@@ -370,13 +369,13 @@ async def handle_red_packet(event, _match):
     if reason:
         await _append_history(self_id, packet, success=False, skipped=reason)
         if reason == '仅通知模式':
-            await _notify_detected(event, packet)
+            await _notify_detected(self_id, packet)
         return
 
     if (
         int(packet.get('red_channel') or 0) == 32
         and settings['auto_send_password']
-        and not await _send_password(event, packet, settings)
+        and not await _send_password(self_id, packet, settings)
     ):
         await _append_history(self_id, packet, success=False, error='口令发送失败')
         return
@@ -386,10 +385,17 @@ async def handle_red_packet(event, _match):
         await asyncio.sleep(delay_ms / 1000)
 
     started = time.monotonic()
-    response = await _call_api(event, 'elaina_grab_red_packet', {'bill_no': bill_no})
-    result, response_error = _unwrap_response(response)
+    try:
+        result = await _red_packet_api().grab_red_packet(self_id, bill_no)
+    except Exception as exc:
+        result = None
+        response_error = str(exc)
+    else:
+        response_error = (
+            '' if isinstance(result, dict) else '领取接口返回格式错误'
+        )
     elapsed_ms = round((time.monotonic() - started) * 1000) + delay_ms
-    if result is None:
+    if not isinstance(result, dict):
         await _append_history(self_id, packet, success=False, error=response_error)
         log.warning('红包领取失败 [%s]: %s', bill_no, response_error)
         return
@@ -406,7 +412,7 @@ async def handle_red_packet(event, _match):
         _GROUP_PAUSED_UNTIL[(self_id, group_id)] = (
             time.monotonic() + settings['pause_group_minutes'] * 60
         )
-    await _post_success_actions(event, packet, amount, elapsed_ms, settings)
+    await _post_success_actions(self_id, packet, amount, elapsed_ms, settings)
 
 
 @handler(
@@ -414,6 +420,7 @@ async def handle_red_packet(event, _match):
     name='红包控制',
     desc='主人启停当前 QQ 的自动领取或查看统计',
     priority=200,
+    event_types=['message'],
     block=False,
 )
 async def control_red_packet(event, match):
@@ -437,6 +444,7 @@ async def control_red_packet(event, match):
     name='红包兼容管理',
     desc='兼容原 NapCat 抢红包插件的主人管理指令',
     priority=210,
+    event_types=['message'],
     block=False,
 )
 async def control_red_packet_legacy(event, match):

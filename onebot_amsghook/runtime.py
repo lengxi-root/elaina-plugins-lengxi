@@ -20,6 +20,7 @@ class RuntimeState:
         self.event_waiters = {}
         self.event_locks = {}
         self.membership_cache = {}
+        self.gateway_events = {}
         self.tasks = set()
         self.logs = deque(maxlen=500)
         self.log_cursor = 0
@@ -42,6 +43,17 @@ class RuntimeState:
         task.add_done_callback(self.tasks.discard)
         return task
 
+    def remember_gateway_event(self, key):
+        key = str(key or '').strip()
+        if not key:
+            return True
+        if key in self.gateway_events:
+            return False
+        self.gateway_events[key] = time.monotonic()
+        while len(self.gateway_events) > 2048:
+            self.gateway_events.pop(next(iter(self.gateway_events)))
+        return True
+
     async def stop(self):
         bridge = self.bridge
         self.bridge = None
@@ -62,6 +74,7 @@ class RuntimeState:
         self.event_ids.clear()
         self.event_locks.clear()
         self.membership_cache.clear()
+        self.gateway_events.clear()
 
 
 runtime = RuntimeState()

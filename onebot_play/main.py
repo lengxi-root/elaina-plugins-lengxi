@@ -11,7 +11,7 @@ import os
 import re
 
 from core.base.logger import PLUGIN, get_logger
-from core.plugin.decorators import handler, on_load, on_unload
+from core.plugin.decorators import interceptor, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
 from .app import config, draw, meme, menu, music, webpanel
@@ -61,16 +61,13 @@ async def cleanup():
     unregister_page(_PAGE_KEY)
 
 
-@handler(
-    r".",
-    name="play",
-    desc="娱乐插件: 发送「娱乐菜单」查看指令",
-    priority=-40,
-    event_types=["message"],
-)
-async def handle_message(event, match):
+@interceptor(priority=-40)
+async def handle_message(event):
+    """处理娱乐指令后继续分发，使同一消息仍可触发其他插件。"""
+    if getattr(event, "post_type", "") != "message":
+        return False
     if not config.enabled():
-        return
+        return False
     content = (event.content or "").strip()
     if not content:
         content = re.sub(r"\[CQ:[^\]]+\]", "", event.raw_message or "").strip()
@@ -78,7 +75,7 @@ async def handle_message(event, match):
     # 哈基米: 随机语音
     if content == "哈基米":
         await send_record(event, config.hajimi_url())
-        return
+        return False
 
     # 自闭: 自我禁言 (仅群聊)
     m = _SELF_MUTE_RE.match(content)
@@ -96,17 +93,18 @@ async def handle_message(event, match):
         except Exception as e:  # noqa: BLE001
             log.warning(f"自闭禁言失败: {e}")
         await send_reply(event, f"好的，已帮你自闭 {minutes} 分钟 🤐")
-        return
+        return False
 
     # 按优先级处理
     try:
         if await menu.handle(event):
-            return
+            return False
         if config.enable_music() and await music.handle(event):
-            return
+            return False
         if config.enable_draw() and await draw.handle(event):
-            return
+            return False
         if config.enable_meme():
             await meme.handle(event)
     except Exception as e:  # noqa: BLE001
         log.warning(f"消息处理出错: {e}")
+    return False

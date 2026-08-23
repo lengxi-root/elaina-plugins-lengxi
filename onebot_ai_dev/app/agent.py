@@ -18,15 +18,131 @@ SYSTEM_PROMPT = """你是 ElainaBot OneBot 框架内置的 AI 开发助手, 运�
 - 插件用装饰器注册: 从 core.plugin.decorators 导入 handler / on_load / on_unload / interceptor。
   处理器签名为 async def fn(event, match), 用 await event.reply('文本') 回复。
   例: @handler(r'^ping$', name='ping', desc='测试') ; async def h(event, match): await event.reply('pong')
-- 修改或新建插件后, 先用 reload_plugin 热重载并检查 error 字段与 handler 数, 再用 test_command 实际触发指令验证功能。
+- 修改或新建插件后, 先用 check_python 检查语法, 再用 reload_plugin 热重载并检查 error 字段与 handler 数；仅在管理员启用高风险工具时, 才用 test_command 实际触发指令。
 - 配置在 config/settings.yaml, 通过 get_config / set_config 读写。
 
 工作准则:
-1. 动手前可先用 list_dir / read_file / list_plugins 了解现状, 参考 plugins/example/main.py 的写法。
-2. 新建插件用 write_file 写完整文件; 修改已存在的文件 (尤其大插件) 优先用 edit_file 做局部精确替换 (old_string 需逐字符精确且唯一, 带上前后若干行作锚点), 避免整文件重写或误改其它代码; 改完务必 reload_plugin 自测 (若 error 非空则读取报错并修复后重试), 再用 test_command 真实触发指令, 检查 matched/error/replies 确认功能无异常 (网络请求/定时器等会真实运行)。
+1. 动手前先用 list_plugins 核对目标插件, 再用 search_code / list_dir / read_file 了解现状, 参考框架内已有同类插件的写法。
+2. 新建插件用 write_file 写完整文件; 修改已存在的文件 (尤其大插件) 优先用 edit_file 做局部精确替换 (old_string 需逐字符精确且唯一, 带上前后若干行作锚点), 避免整文件重写或误改其它代码; 改完务必 check_python 并 reload_plugin 自测。test_command 可能触发真实网络请求或定时任务, 仅在管理员启用高风险工具时使用。
 3. 操作要谨慎, 不要删除或破坏用户已有的插件与核心代码 (core/ web/ 等), 除非用户明确要求。
-4. 用中文简洁回复, 最终说明你做了什么、文件路径、以及测试结果。
+4. 锁定目标: 只操作用户本次消息明确指定的插件/文件, 以用户最新一条消息为准。找不到或存在多个相似名字时停止执行并说明, 不得凭猜测修改其它插件。
+5. 任何关于插件列表、文件内容、配置值、系统状态、加载错误或执行结果的陈述, 都必须来自本轮真实工具返回。
+6. 开发执行模式下, 用户要求创建或修改时必须实际调用工具完成操作, 不得只给方案却声称已完成。用中文简洁回复, 最终说明实际改动、文件路径和测试结果。
 """
+
+_KEEP_TOOL_ROUNDS = 2
+
+
+def _compact_history(messages: list, keep_rounds: int = _KEEP_TOOL_ROUNDS) -> list:
+    """只为最近若干轮保留工具细节，避免旧任务干扰并控制上下文体积。"""
+    user_idx = [i for i, item in enumerate(messages) if item.get("role") == "user"]
+    if len(user_idx) <= keep_rounds:
+        return messages
+    cutoff = user_idx[len(user_idx) - keep_rounds]
+    compacted = []
+    for index, item in enumerate(messages):
+        if index >= cutoff:
+            compacted.append(item)
+            continue
+        role = item.get("role")
+        if role == "tool":
+            continue
+        if role == "assistant":
+            if not item.get("content"):
+                continue
+            item = {"role": "assistant", "content": item["content"]}
+        compacted.append(item)
+    return compacted
+
+
+def _required_evidence_tools(user_text: str) -> list[str]:
+    text = str(user_text or "").strip().casefold()
+    status_request = ("系统" in text or "框架" in text) and any(
+        word in text for word in ("状态", "检查", "健康", "运行情况")
+    )
+    plugin_request = "插件" in text and any(
+        word in text for word in ("全部", "所有", "列表", "名字", "名称", "列出", "查看")
+    )
+    if status_request:
+        return ["system_info", "list_plugins"]
+    if plugin_request:
+        return ["list_plugins"]
+    return []
+
+
+_CHANGE_WORDS = (
+    "写一个", "写个", "编写", "创建", "新建", "新增", "开发一个", "开发个",
+    "实现", "修改", "修复", "优化", "重构", "删除", "移除", "配置", "改成",
+)
+_EXPLANATION_ONLY_WORDS = (
+    "只给代码", "仅给代码", "不要执行", "不要修改", "不用创建", "不需要创建",
+    "怎么写", "如何写", "示例代码", "代码示例", "讲解", "解释一下",
+)
+
+
+def _successful_tool_event(event: dict) -> bool:
+    if event.get("ok") is False:
+        return False
+    result = event.get("result")
+    if not isinstance(result, dict):
+        return result is not None
+    return not result.get("error") and result.get("ok") is not False
+
+
+def _execution_validator(user_text: str, analysis_mode: bool, allow_high_risk: bool = False):
+    """为开发类请求生成执行证据校验器。"""
+    text = str(user_text or "").strip().casefold()
+    if analysis_mode or any(word in text for word in _EXPLANATION_ONLY_WORDS):
+        return None
+    if not any(word in text for word in _CHANGE_WORDS):
+        return None
+
+    create_plugin = "插件" in text and any(
+        word in text
+        for word in ("写一个插件", "写个插件", "编写插件", "创建插件", "新建插件",
+                     "新增插件", "开发一个插件", "开发个插件", "实现一个插件")
+    )
+    write_tools = {"write_file"} if create_plugin else {"write_file", "edit_file", "delete_file", "set_config"}
+    plugin_delete = "插件" in text and any(word in text for word in ("删除", "移除", "卸载"))
+
+    def validate(_final_text: str, events: list[dict]) -> str | None:
+        completed_events = [item for item in events if _successful_tool_event(item)]
+        completed = {str(item.get("name") or "") for item in completed_events}
+        if not completed.intersection({"list_plugins", "list_dir", "read_file", "search_code"}):
+            return "本任务尚未完成真实执行：下一步需要检查现有代码或插件。"
+        if not completed.intersection(write_tools):
+            return "本任务尚未完成真实执行：下一步需要实际写入改动。"
+
+        write_events = [item for item in completed_events if item.get("name") in write_tools]
+        changed_paths = [
+            str((item.get("arguments") or {}).get("path") or "").lower()
+            for item in write_events if isinstance(item.get("arguments"), dict)
+        ]
+        changed_python = any(path.endswith(".py") for path in changed_paths)
+        plugin_code_change = "插件" in text and not plugin_delete and changed_python
+        if changed_python and "check_python" not in completed:
+            return "本任务尚未完成真实执行：下一步需要检查已改 Python 文件的语法。"
+        if plugin_code_change and "reload_plugin" not in completed:
+            return "本任务尚未完成真实执行：下一步需要热重载目标插件。"
+        command_change = plugin_code_change and ("命令" in text or "指令" in text)
+        if allow_high_risk and command_change and "test_command" not in completed:
+            return "本任务尚未完成真实执行：下一步需要真实触发目标命令。"
+
+        if plugin_code_change:
+            names = [str(item.get("name") or "") for item in completed_events]
+            last_write = max(index for index, name in enumerate(names) if name in write_tools)
+            ordered = [("check_python", "写入后语法检查"), ("reload_plugin", "语法检查后热重载")]
+            if allow_high_risk and command_change:
+                ordered.append(("test_command", "热重载后真实命令测试"))
+            previous = last_write
+            for tool_name, label in ordered:
+                positions = [index for index, name in enumerate(names) if name == tool_name and index > previous]
+                if not positions:
+                    return "本任务尚未完成真实执行顺序：缺少" + label + "。"
+                previous = positions[-1]
+        return None
+
+    return validate
 
 
 class OpenAIError(Exception):
@@ -52,7 +168,7 @@ async def _chat_completion(
     messages: list,
     model: str,
     endpoint: dict = None,
-    use_tools: bool = True,
+    schemas: list | None = None,
 ) -> dict:
     ep = endpoint or {}
     base = (ep.get("base_url") or aiconfig.base_url()).rstrip("/")
@@ -63,8 +179,8 @@ async def _chat_completion(
         "messages": messages,
         "temperature": aiconfig.temperature(),
     }
-    if use_tools:
-        payload["tools"] = toolmod.TOOLS_SCHEMA
+    if schemas:
+        payload["tools"] = schemas
         payload["tool_choice"] = "auto"
     effort = aiconfig.reasoning_effort()
     if effort:
@@ -175,9 +291,12 @@ async def run_agent(
 ) -> dict:
     """执行一轮多步 Agent 对话。返回 {ok, message, iterations}。
 
-    mode: 'dev' = 开发助手 (带工具); 'chat' = 普通对话 (无工具, 通用助手提示)。
+    mode: 'dev' = 开发执行（可修改）; 'analyze' = 只读分析（仅检查工具）。
     过程中向 store 写入事件: user / assistant / tool_call / tool_result / error / info
     """
+    if not aiconfig.enabled():
+        store.add_event("error", {"message": "AI 开发助手已停用"}, session_id)
+        return {"ok": False, "message": "AI 开发助手已停用", "iterations": 0}
     if not aiconfig.is_configured():
         store.add_event(
             "error",
@@ -190,12 +309,21 @@ async def run_agent(
 
     images = images or []
     model = model or aiconfig.model()
-    chat_mode = mode == "chat"
-    use_tools = not chat_mode
+    analysis_mode = mode in {"analyze", "chat"}
+    allow_high_risk = aiconfig.high_risk_tools_enabled()
+    schemas = toolmod.schemas_for_mode(
+        "analyze" if analysis_mode else "dev",
+        allow_high_risk=allow_high_risk,
+    )
+    allowed_tools = {
+        item.get("function", {}).get("name") for item in schemas
+    }
     final_reasoning = ""
     history = store.get_messages(session_id)
     sys_prompt = (
-        aiconfig.chat_system_prompt() if chat_mode else aiconfig.system_prompt()
+        aiconfig.analysis_system_prompt()
+        if analysis_mode
+        else aiconfig.system_prompt()
     )
     user_content = _build_user_content(user_text, images)
     messages = _build_messages(
@@ -203,7 +331,9 @@ async def run_agent(
     )
 
     store.add_event(
-        "user", {"content": user_text, "images": images, "model": model}, session_id
+        "user",
+        {"content": user_text, "images": images, "model": model, "mode": "analyze" if analysis_mode else "dev"},
+        session_id,
     )
 
     # 故障转移链: 第一个为当前模型; 开启「自动切换」后追加其它已启用模型 (按优先级)。
@@ -228,6 +358,12 @@ async def run_agent(
 
     max_iter = aiconfig.max_iterations()
     final_text = ""
+    tool_events = []
+    required_tools = _required_evidence_tools(user_text)
+    completion_validator = _execution_validator(
+        user_text, analysis_mode, allow_high_risk
+    )
+    incomplete_reason = ""
     cur = 0
     async with aiohttp.ClientSession() as session:
         for iteration in range(1, max_iter + 1):
@@ -236,7 +372,7 @@ async def run_agent(
                 ep = chain[cur]
                 try:
                     resp = await _chat_completion(
-                        session, messages, ep["model"], ep, use_tools
+                        session, messages, ep["model"], ep, schemas
                     )
                     break
                 except (OpenAIError, asyncio.TimeoutError, aiohttp.ClientError) as e:
@@ -255,7 +391,10 @@ async def run_agent(
                         "error", {"message": f"模型调用失败: {e}"}, session_id
                     )
                     store.set_messages(
-                        session_id, [m for m in messages if m.get("role") != "system"]
+                        session_id,
+                        _compact_history(
+                            [m for m in messages if m.get("role") != "system"]
+                        ),
                     )
                     return {"ok": False, "message": str(e), "iterations": iteration}
 
@@ -281,7 +420,39 @@ async def run_agent(
             messages.append(assistant_msg)
 
             if not tool_calls:
-                final_text = msg.get("content") or ""
+                candidate = msg.get("content") or ""
+                completed = {
+                    str(item.get("name") or "")
+                    for item in tool_events
+                    if _successful_tool_event(item)
+                }
+                missing = [name for name in required_tools if name not in completed]
+                validation_error = (
+                    completion_validator(candidate, tool_events)
+                    if completion_validator
+                    else None
+                )
+                incomplete_reason = (
+                    ("本任务尚未完成证据收集：下一步需要调用 " + ", ".join(missing) + "。")
+                    if missing
+                    else (validation_error or "")
+                )
+                if incomplete_reason:
+                    store.add_event(
+                        "info",
+                        {"message": incomplete_reason, "iteration": iteration},
+                        session_id,
+                    )
+                    if iteration < max_iter:
+                        messages.append(
+                            {
+                                "role": "system",
+                                "content": incomplete_reason + " 请继续调用允许的工具完成，不要提前给出最终答复。",
+                            }
+                        )
+                        continue
+                    break
+                final_text = candidate
                 final_reasoning = reasoning
                 store.add_event(
                     "assistant",
@@ -322,12 +493,27 @@ async def run_agent(
 
                 start = time.time()
                 try:
+                    if name not in allowed_tools:
+                        raise PermissionError(
+                            f"当前模式或安全设置未授权工具: {name}"
+                        )
                     result = await toolmod.run_tool(name, args)
-                    ok = True
+                    ok = not (
+                        isinstance(result, dict)
+                        and (result.get("error") or result.get("ok") is False)
+                    )
                 except Exception as e:  # noqa: BLE001 — 工具错误需回灌给模型
                     result = {"error": f"{type(e).__name__}: {e}"}
                     ok = False
                 duration_ms = int((time.time() - start) * 1000)
+                tool_events.append(
+                    {
+                        "name": name,
+                        "arguments": args,
+                        "result": result,
+                        "ok": ok,
+                    }
+                )
 
                 store.add_event(
                     "tool_result",
@@ -352,16 +538,27 @@ async def run_agent(
                     }
                 )
         else:
-            final_text = final_text or "(已达到最大迭代步数, 任务可能未完成)"
-            store.add_event(
-                "assistant",
-                {"content": final_text, "iteration": max_iter, "truncated": True},
-                session_id,
-            )
+            incomplete_reason = "任务执行未完成：工具调用已达到最大迭代步数。"
 
-    # 持久化对话历史 (剔除 system, 由下次重建)
+    if incomplete_reason and not final_text:
+        message = incomplete_reason
+        if "最大迭代步数" not in message:
+            message += " 已达到最大迭代步数。"
+        store.add_event("error", {"message": message}, session_id)
+        store.set_messages(
+            session_id,
+            _compact_history([m for m in messages if m.get("role") != "system"]),
+        )
+        return {
+            "ok": False,
+            "message": message,
+            "reasoning": final_reasoning,
+            "iterations": iteration,
+        }
+
+    # 持久化对话历史 (剔除 system, 由下次重建)，并压缩旧轮次工具细节。
     new_history = [m for m in messages if m.get("role") != "system"]
-    store.set_messages(session_id, new_history)
+    store.set_messages(session_id, _compact_history(new_history))
     return {
         "ok": True,
         "message": final_text,

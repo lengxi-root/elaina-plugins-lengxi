@@ -259,6 +259,32 @@ class OfficialBotBridge:
         ) as response:
             return await self._response_json(response)
 
+    @staticmethod
+    def _message_source(body, *, event_id='', msg_id=''):
+        if msg_id:
+            body['msg_id'] = msg_id
+        elif event_id:
+            body['event_id'] = event_id
+        return body
+
+    async def send_group_text(self, group_openid, content, *, event_id='', msg_id=''):
+        body = {
+            'msg_type': 0,
+            'msg_seq': random.randint(1, 999_999),
+            'content': str(content or ''),
+        }
+        self._message_source(body, event_id=event_id, msg_id=msg_id)
+        return await self._post(f'/v2/groups/{group_openid}/messages', body)
+
+    async def send_private_text(self, user_openid, content, *, event_id='', msg_id=''):
+        body = {
+            'msg_type': 0,
+            'msg_seq': random.randint(1, 999_999),
+            'content': str(content or ''),
+        }
+        self._message_source(body, event_id=event_id, msg_id=msg_id)
+        return await self._post(f'/v2/users/{user_openid}/messages', body)
+
     async def send_group_markdown(self, group_openid, content, *, event_id='', msg_id='', keyboard=None):
         body = {
             'msg_type': 2,
@@ -267,11 +293,19 @@ class OfficialBotBridge:
         }
         if keyboard:
             body['keyboard'] = keyboard
-        if msg_id:
-            body['msg_id'] = msg_id
-        elif event_id:
-            body['event_id'] = event_id
+        self._message_source(body, event_id=event_id, msg_id=msg_id)
         return await self._post(f'/v2/groups/{group_openid}/messages', body)
+
+    async def send_private_markdown(self, user_openid, content, *, event_id='', msg_id='', keyboard=None):
+        body = {
+            'msg_type': 2,
+            'msg_seq': random.randint(1, 999_999),
+            'markdown': {'content': content or '1'},
+        }
+        if keyboard:
+            body['keyboard'] = keyboard
+        self._message_source(body, event_id=event_id, msg_id=msg_id)
+        return await self._post(f'/v2/users/{user_openid}/messages', body)
 
     async def upload_group_media(self, group_openid, source, file_type, *, is_url=False):
         body = {'srv_send_msg': False, 'file_type': int(file_type)}
@@ -286,10 +320,7 @@ class OfficialBotBridge:
             'content': content or '',
             'media': {'file_info': file_info},
         }
-        if msg_id:
-            body['msg_id'] = msg_id
-        elif event_id:
-            body['event_id'] = event_id
+        self._message_source(body, event_id=event_id, msg_id=msg_id)
         return await self._post(f'/v2/groups/{group_openid}/messages', body)
 
 

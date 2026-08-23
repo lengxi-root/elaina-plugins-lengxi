@@ -20,8 +20,8 @@ from .runtime import runtime
 __plugin_meta__ = {
     'name': '官机代发拦截',
     'author': '冷曦',
-    'description': '拦截插件出站消息，支持文本变换和 QQ 官方机器人代发',
-    'version': '1.1.0',
+    'description': '拦截插件出站消息，支持文本变换、官方机器人收发与按钮建链',
+    'version': '1.2.0',
     'license': 'MIT',
 }
 
@@ -94,8 +94,11 @@ async def filter_target_plugin(event, target_plugin):
     block=False,
 )
 async def send_by_official_bot(event, match):
-    owner_qq = str(store.config().get('owner_qq') or '')
-    if not owner_qq or str(event.user_id) != owner_qq:
+    config = store.config()
+    master_qq = str(
+        config.get('qqbot', {}).get('master_qq') or config.get('owner_qq') or '',
+    )
+    if not master_qq or str(event.user_id) != master_qq:
         return
     result = await relay.send_dm(event.group_id, event.self_id, match.group(1).strip())
     if result == 'queued':
@@ -112,16 +115,29 @@ async def send_by_official_bot(event, match):
     block=False,
 )
 async def official_bot_status(event, _match):
-    owner_qq = str(store.config().get('owner_qq') or '')
-    if not owner_qq or str(event.user_id) != owner_qq:
+    config = store.config()
+    master_qq = str(
+        config.get('qqbot', {}).get('master_qq') or config.get('owner_qq') or '',
+    )
+    if not master_qq or str(event.user_id) != master_qq:
         return
     bridge = runtime.bridge
     status = '已连接' if bridge is not None and bridge.connected else '未连接'
-    await event.reply(
-        f'官机网关：{status}\n'
-        f'已映射群：{len(store.mappings())}\n'
-        f'待建链消息：{len(runtime.pending_codes)}'
+    lines = [
+        '消息拦截状态',
+        f'总开关：{"已启用" if config.get("enabled") else "已关闭"}',
+        f'规则数：{len(config.get("rules", []))}',
+    ]
+    lines.extend(
+        f'{"HOOK" if rule.get("enabled") else "SKIP"} {rule.get("name")}'
+        for rule in config.get('rules', [])
     )
+    lines.extend([
+        f'官机网关：{status}',
+        f'已映射群：{len(store.mappings())}',
+        f'待建链消息：{len(runtime.pending_codes)}',
+    ])
+    await event.reply('\n'.join(lines))
 
 
 @on_load
