@@ -178,7 +178,9 @@ async def _get_sessions(request: web.Request):
 
 
 async def _create_session(request: web.Request):
-    sess = _store().create_session()
+    body = await _json(request)
+    request_id = str(body.get("request_id", "") or "")[:80]
+    sess = _store().create_session(source="web", request_id=request_id)
     return web.json_response(
         {"success": True, "session": {"id": sess["id"], "title": sess.get("title", "")}}
     )

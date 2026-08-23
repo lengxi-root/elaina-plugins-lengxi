@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>官机代发</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#f3f5f7;--surface:#fff;--line:#d8dee4;--text:#202a32;--muted:#69757f;--accent:#14715a;--danger:#b33a3a;--warm:#c85e22}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1180px;margin:auto;padding:24px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}h1{font-size:24px;margin:0}h2{font-size:16px;margin:0 0 14px}.muted{color:var(--muted)}.status{display:flex;align-items:center;gap:9px}.dot{width:9px;height:9px;border-radius:50%;background:var(--danger)}.dot.on{background:var(--accent)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.section{background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:18px;margin-bottom:18px}.wide{grid-column:1/-1}.fields{display:grid;grid-template-columns:1fr 1fr;gap:13px}.field{display:flex;flex-direction:column;gap:6px}.full{grid-column:1/-1}label{font-weight:600}input,textarea,select{width:100%;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:5px;padding:9px 10px;font:inherit}textarea{min-height:68px;resize:vertical}.checks{display:grid;grid-template-columns:1fr 1fr;gap:10px}.check{display:flex;align-items:center;gap:8px;font-weight:500}.check input{width:16px;height:16px}.actions{display:flex;justify-content:flex-end;gap:10px}button{border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text);padding:8px 13px;font:inherit;cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{color:var(--danger)}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:12px;color:var(--muted)}.rule{display:grid;grid-template-columns:minmax(150px,1fr) auto auto auto;gap:9px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}.rule .span2{grid-column:span 2}.rule input[type=checkbox]{width:16px}.logs{height:210px;overflow:auto;background:#151a1c;color:#d8e0e2;border-radius:5px;padding:10px;white-space:pre-wrap;font:12px/1.55 ui-monospace,monospace}.toast{display:none;position:fixed;right:20px;bottom:20px;max-width:340px;background:#202a32;color:#fff;padding:10px 14px;border-radius:5px}.empty{text-align:center;color:var(--muted);padding:18px}@media(max-width:820px){main{padding:14px}.grid,.fields{grid-template-columns:1fr}.wide,.full{grid-column:auto}.checks{grid-template-columns:1fr}.rule{grid-template-columns:1fr 1fr}.rule .span2{grid-column:1/-1}.top{align-items:flex-start;flex-direction:column}}@media(prefers-color-scheme:dark){:root{--bg:#15191d;--surface:#1d2328;--line:#39434b;--text:#e7ecef;--muted:#a4afb7}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="top"><div><h1>官机代发</h1><div class="muted">出站消息变换、官方机器人代发与群映射</div></div><div class="status"><span id="dot" class="dot"></span><span id="statusText">读取状态</span><button id="refresh">刷新</button></div></div>
+  <div class="grid">
+    <section class="section">
+      <h2>全局策略</h2>
+      <div class="checks">
+        <label class="check"><input id="enabled" type="checkbox">启用插件</label>
+        <label class="check"><input id="globalReplace" type="checkbox">全局官机代发</label>
+        <label class="check"><input id="ownerOnly" type="checkbox">全局仅主人触发</label>
+        <label class="check"><input id="debug" type="checkbox">调试日志</label>
+        <label class="check"><input id="notice" type="checkbox">违规时发送提示</label>
+        <label class="check"><input id="noticeOfficial" type="checkbox">违规提示走官机</label>
+      </div>
+      <div class="fields" style="margin-top:14px">
+        <div class="field"><label for="owner">主人 QQ</label><input id="owner" inputmode="numeric"></div>
+        <div class="field"><label for="timeout">唤醒超时（秒）</label><input id="timeout" type="number" min="5" max="60"></div>
+        <div class="field full"><label for="blockedGroups">全局屏蔽群（逗号分隔）</label><input id="blockedGroups"></div>
+        <div class="field full"><label for="blockedUsers">全局屏蔽用户（逗号分隔）</label><input id="blockedUsers"></div>
+      </div>
+    </section>
+    <section class="section">
+      <h2>QQ 官方机器人</h2>
+      <div class="fields">
+        <div class="field"><label for="appid">AppID</label><input id="appid"></div>
+        <div class="field"><label for="qqNumber">官机 QQ</label><input id="qqNumber" inputmode="numeric"></div>
+        <div class="field full"><label for="secret">Secret</label><input id="secret" type="password" placeholder="留空保留现有 Secret"></div>
+        <div class="field full"><label for="intents">事件订阅（逗号分隔）</label><input id="intents"></div>
+      </div>
+    </section>
+    <section class="section wide">
+      <div class="top" style="margin-bottom:8px"><div><h2>来源插件规则</h2><div class="muted">名称与插件目录名一致；OneBot 外部调用表示无法识别来源的调用</div></div><button id="addRule">添加规则</button></div>
+      <datalist id="pluginNames"></datalist><div id="rules"></div>
+    </section>
+    <section class="section wide">
+      <div class="top" style="margin-bottom:8px"><h2>群映射</h2><span id="mappingSummary" class="muted"></span></div>
+      <div style="overflow:auto"><table><thead><tr><th>QQ群</th><th>群 OpenID</th><th>回调 AppID</th><th>更新时间</th><th></th></tr></thead><tbody id="mappings"></tbody></table></div>
+    </section>
+    <section class="section wide"><div class="top" style="margin-bottom:8px"><h2>运行日志</h2><button id="clearLogs">清空</button></div><div id="logs" class="logs"></div></section>
+  </div>
+  <div class="actions"><button id="reload">放弃修改</button><button id="save" class="primary">保存并重连</button></div>
+</main>
+<div id="toast" class="toast"></div>
+<script>
+  const API='/api/ext/onebot-amsghook';const el=id=>document.getElementById(id);
+  function toast(text){const node=el('toast');node.textContent=text;node.style.display='block';setTimeout(()=>node.style.display='none',2400)}
+  async function request(path,options){const response=await fetch(API+path,options);const data=await response.json();if(!response.ok||data.success===false)throw new Error(data.error||'请求失败');return data}
+  function values(text){return text.split(',').map(item=>item.trim()).filter(Boolean)}
+  function ruleRow(rule){const row=document.createElement('div');row.className='rule';row.innerHTML='<input class="name" list="pluginNames" placeholder="插件目录名"><label class="check"><input class="enabled" type="checkbox">启用规则</label><label class="check"><input class="replace" type="checkbox">官机代发</label><label class="check"><input class="ownerOnly" type="checkbox">仅主人</label><input class="suffix span2" placeholder="消息后缀"><input class="replaceText span2" placeholder="原文=新文;原文2=新文2"><input class="blockedGroups span2" placeholder="该插件屏蔽群，逗号分隔"><input class="blockedUsers" placeholder="该插件屏蔽用户，逗号分隔"><button class="danger">删除</button>';row.querySelector('.name').value=rule.name||'';row.querySelector('.enabled').checked=!!rule.enabled;row.querySelector('.replace').checked=!!rule.replace;row.querySelector('.ownerOnly').checked=!!rule.owner_only;row.querySelector('.suffix').value=rule.suffix||'';row.querySelector('.replaceText').value=rule.replace_text||'';row.querySelector('.blockedGroups').value=(rule.blocked_groups||[]).join(',');row.querySelector('.blockedUsers').value=(rule.blocked_users||[]).join(',');row.querySelector('button').onclick=()=>row.remove();el('rules').appendChild(row)}
+  function renderConfig(c){el('enabled').checked=!!c.enabled;el('globalReplace').checked=!!c.global_replace;el('ownerOnly').checked=!!c.global_owner_only;el('debug').checked=!!c.debug;el('notice').checked=!!c.send_violation_notice;el('noticeOfficial').checked=!!c.violation_notice_by_official;el('owner').value=c.owner_qq||'';el('timeout').value=c.wake_timeout_seconds||15;el('blockedGroups').value=(c.blocked_groups||[]).join(',');el('blockedUsers').value=(c.blocked_users||[]).join(',');el('appid').value=c.qqbot.appid||'';el('qqNumber').value=c.qqbot.qq_number||'';el('secret').value='';el('secret').placeholder=c.qqbot.secret_set?'已保存，留空不修改':'尚未配置';el('intents').value=(c.qqbot.intents||[]).join(',');el('rules').innerHTML='';(c.rules||[]).forEach(ruleRow)}
+  function collect(){return{enabled:el('enabled').checked,global_replace:el('globalReplace').checked,global_owner_only:el('ownerOnly').checked,debug:el('debug').checked,send_violation_notice:el('notice').checked,violation_notice_by_official:el('noticeOfficial').checked,owner_qq:el('owner').value.trim(),wake_timeout_seconds:Number(el('timeout').value||15),blocked_groups:values(el('blockedGroups').value),blocked_users:values(el('blockedUsers').value),rules:[...el('rules').children].map(row=>({name:row.querySelector('.name').value.trim(),enabled:row.querySelector('.enabled').checked,replace:row.querySelector('.replace').checked,owner_only:row.querySelector('.ownerOnly').checked,suffix:row.querySelector('.suffix').value,replace_text:row.querySelector('.replaceText').value,blocked_groups:values(row.querySelector('.blockedGroups').value),blocked_users:values(row.querySelector('.blockedUsers').value)})).filter(item=>item.name),qqbot:{appid:el('appid').value.trim(),secret:el('secret').value,qq_number:el('qqNumber').value.trim(),intents:values(el('intents').value)}}}
+  function renderMappings(items){el('mappingSummary').textContent=items.length+' 个群';el('mappings').innerHTML='';if(!items.length){const tr=document.createElement('tr');tr.innerHTML='<td colspan="5" class="empty">尚未建立群映射</td>';el('mappings').appendChild(tr);return}items.forEach(item=>{const tr=document.createElement('tr');tr.innerHTML='<td></td><td></td><td></td><td></td><td><button class="danger">删除</button></td>';tr.children[0].textContent=item.group_id;tr.children[1].textContent=item.group_openid||'';tr.children[2].textContent=item.bot_appid||'';tr.children[3].textContent=item.updated_at?new Date(item.updated_at*1000).toLocaleString():'-';tr.querySelector('button').onclick=async()=>{try{await request('/mapping',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({group_id:item.group_id})});await load()}catch(error){toast(error.message)}};el('mappings').appendChild(tr)})}
+  async function load(){try{const [config,status,mappings,logs,plugins]=await Promise.all([request('/config'),request('/status'),request('/mappings'),request('/logs'),request('/plugins')]);renderConfig(config.config);el('dot').classList.toggle('on',status.status.connected);el('statusText').textContent=(status.status.connected?'已连接':'未连接')+' · '+status.status.mapping_count+' 个映射 · '+status.status.pending_count+' 条等待';renderMappings(mappings.mappings);el('logs').textContent=logs.logs.map(item=>'['+new Date(item.time).toLocaleTimeString()+'] '+item.level.toUpperCase()+' '+item.message).join('\n')||'暂无日志';el('pluginNames').innerHTML='';plugins.plugins.forEach(name=>{const option=document.createElement('option');option.value=name;el('pluginNames').appendChild(option)})}catch(error){toast(error.message)}}
+  el('addRule').onclick=()=>ruleRow({});el('refresh').onclick=load;el('reload').onclick=load;el('save').onclick=async()=>{try{const data=await request('/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(collect())});renderConfig(data.config);toast('配置已保存并重连');await load()}catch(error){toast(error.message)}};el('clearLogs').onclick=async()=>{try{await request('/logs',{method:'DELETE'});await load()}catch(error){toast(error.message)}};load();
+</script>
+</body>
+</html>

@@ -751,11 +751,6 @@ async def bind_user(event, code):
         },
     )
     runtime.bound = True
-    db.save_remote_user(
-        runtime.settings["app_id"],
-        str(event.user_id),
-        data.get("user_id", ""),
-    )
     users_data = await _json_request(runtime, "GET", "/v1/groupguard/plugin/users")
     access = await _sync_access(runtime, users_data.get("users") or [], force=True)
     data["group_count"] = int((access or {}).get("group_count") or 0)

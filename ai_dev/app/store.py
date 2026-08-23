@@ -70,6 +70,7 @@ class AIStore:
                     "title": s.get("title") or "新对话",
                     "created": s.get("created", 0),
                     "updated": s.get("updated", 0),
+                    "source": s.get("source", ""),
                     "message_count": sum(
                         1
                         for m in s["messages"]
@@ -85,13 +86,21 @@ class AIStore:
     def get_session(self, sid: str) -> dict:
         return self._sessions.get(sid)
 
-    def create_session(self, title: str = "", source: str = "") -> dict:
+    def create_session(
+        self, title: str = "", source: str = "", request_id: str = ""
+    ) -> dict:
+        request_id = str(request_id or "")[:80]
+        if request_id:
+            for session in self._sessions.values():
+                if session.get("create_request_id") == request_id:
+                    return session
         sid = uuid.uuid4().hex[:12]
         now = time.time()
         sess = {
             "id": sid,
             "title": title,
             "source": str(source or ""),
+            "create_request_id": request_id,
             "created": now,
             "updated": now,
             "messages": [],

@@ -96,7 +96,7 @@ async def cmd_bind_groupguard(event, match):
         "remote_bind",
         True,
         affected_count=1,
-        details={"scoped_user_id": result.get("user_id", "")},
+        details={"user_openid": result.get("user_id", "")},
     )
     await event.reply(
         f"<@{event.user_id}> 身份绑定成功，已自动同步 {int(result.get('group_count') or 0)} 个可管理群。"

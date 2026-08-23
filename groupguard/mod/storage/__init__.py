@@ -61,7 +61,6 @@ from .remote_access import (
     remote_users,
     replace_remote_user_groups,
     replace_remote_users,
-    save_remote_user,
 )
 from .spam import (
     get_spam_config,

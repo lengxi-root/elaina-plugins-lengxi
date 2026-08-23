@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QQ 抢红包</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#f4f6f8;--surface:#fff;--line:#d9dfe5;--text:#202930;--muted:#68747d;--accent:#b73838;--gold:#a66b14;--ok:#15705b}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1160px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}h1{font-size:24px;margin:0}h2{font-size:16px;margin:0 0 14px}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.section{background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:18px;margin-bottom:18px}.wide{grid-column:1/-1}.fields{display:grid;grid-template-columns:1fr 1fr;gap:13px}.field{display:flex;flex-direction:column;gap:6px}.full{grid-column:1/-1}label{font-weight:600}input,select,textarea{width:100%;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:5px;padding:9px 10px;font:inherit}textarea{min-height:72px;resize:vertical}.checks{display:grid;grid-template-columns:1fr 1fr;gap:10px}.check{display:flex;align-items:center;gap:8px;font-weight:500}.check input{width:16px;height:16px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{border-left:3px solid var(--gold);padding:8px 10px;background:color-mix(in srgb,var(--surface) 92%,var(--gold))}.stat strong{display:block;font-size:20px}.actions{display:flex;justify-content:flex-end;gap:10px}button{border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text);padding:8px 13px;font:inherit;cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{color:var(--accent)}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}th{font-size:12px;color:var(--muted)}.account{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:9px 0}.empty{text-align:center;color:var(--muted);padding:20px}.toast{display:none;position:fixed;right:20px;bottom:20px;max-width:340px;background:#202930;color:#fff;padding:10px 14px;border-radius:5px}@media(max-width:800px){main{padding:14px}.grid,.fields{grid-template-columns:1fr}.wide,.full{grid-column:auto}.checks{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.top{align-items:flex-start;flex-direction:column}}@media(prefers-color-scheme:dark){:root{--bg:#15191d;--surface:#1d2328;--line:#39434b;--text:#e8ecef;--muted:#a4afb7}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="top"><div><h1>QQ 抢红包</h1><div class="muted">内置 QQ 原生领取、策略控制与统计</div></div><div class="actions"><button id="reload">刷新</button><button id="save" class="primary">保存配置</button></div></div>
+  <div class="grid">
+    <section class="section">
+      <h2>领取策略</h2>
+      <div class="checks">
+        <label class="check"><input id="enabled" type="checkbox">默认启用</label>
+        <label class="check"><input id="notifyOnly" type="checkbox">仅通知不领取</label>
+        <label class="check"><input id="grabNormal" type="checkbox">普通红包</label>
+        <label class="check"><input id="grabExclusive" type="checkbox">专属红包</label>
+        <label class="check"><input id="grabPassword" type="checkbox">口令红包</label>
+        <label class="check"><input id="autoPassword" type="checkbox">自动发送口令</label>
+        <label class="check"><input id="skipAdmin" type="checkbox">跳过群主/管理员</label>
+      </div>
+      <div class="fields" style="margin-top:14px">
+        <div class="field"><label for="delayMin">最小延迟（ms）</label><input id="delayMin" type="number" min="0"></div>
+        <div class="field"><label for="delayMax">最大延迟（ms）</label><input id="delayMax" type="number" min="0"></div>
+        <div class="field"><label for="passwordWait">口令等待（ms）</label><input id="passwordWait" type="number" min="0"></div>
+        <div class="field"><label for="pauseMinutes">领取后暂停该群（分钟）</label><input id="pauseMinutes" type="number" min="0"></div>
+        <div class="field full"><label for="blockKeywords">全局屏蔽词（逗号分隔）</label><input id="blockKeywords"></div>
+      </div>
+    </section>
+    <section class="section">
+      <h2>时间与通知</h2>
+      <div class="checks">
+        <label class="check"><input id="stopByTime" type="checkbox">启用停止时段</label>
+        <label class="check"><input id="thanksEnabled" type="checkbox">领取后感谢</label>
+        <label class="check"><input id="notifyOwner" type="checkbox">发送领取通知</label>
+      </div>
+      <div class="fields" style="margin-top:14px">
+        <div class="field"><label for="stopStart">开始时间</label><input id="stopStart" type="time"></div>
+        <div class="field"><label for="stopEnd">结束时间</label><input id="stopEnd" type="time"></div>
+        <div class="field"><label for="thanksDelay">感谢延迟（ms）</label><input id="thanksDelay" type="number" min="0"></div>
+        <div class="field"><label for="masterQQ">主人 QQ</label><input id="masterQQ" inputmode="numeric"></div>
+        <div class="field full"><label for="thanksMessages">感谢消息（每行一条）</label><textarea id="thanksMessages"></textarea></div>
+        <div class="field"><label for="notifyTarget">通知目标</label><input id="notifyTarget" inputmode="numeric"></div>
+        <div class="field"><label for="notifyType">通知类型</label><select id="notifyType"><option value="private">私聊</option><option value="group">群聊</option></select></div>
+      </div>
+    </section>
+    <section class="section wide">
+      <h2>黑白名单</h2>
+      <div class="fields">
+        <div class="field"><label for="groupMode">过滤模式</label><select id="groupMode"><option value="none">不过滤</option><option value="whitelist">白名单</option><option value="blacklist">黑名单</option></select></div>
+        <div class="field"><label for="historyLimit">历史上限</label><input id="historyLimit" type="number" min="20" max="5000"></div>
+        <div class="field"><label for="whiteGroups">白名单群</label><input id="whiteGroups" placeholder="逗号分隔"></div>
+        <div class="field"><label for="blackGroups">黑名单群</label><input id="blackGroups" placeholder="逗号分隔"></div>
+        <div class="field"><label for="whiteUsers">白名单用户</label><input id="whiteUsers" placeholder="逗号分隔"></div>
+        <div class="field"><label for="blackUsers">黑名单用户</label><input id="blackUsers" placeholder="逗号分隔"></div>
+        <div class="field"><label for="whiteKeywords">白名单关键词</label><input id="whiteKeywords" placeholder="逗号分隔"></div>
+        <div class="field"><label for="blackKeywords">黑名单关键词</label><input id="blackKeywords" placeholder="逗号分隔"></div>
+      </div>
+    </section>
+    <section class="section wide"><h2>统计</h2><div id="stats" class="stats"></div><div class="actions" style="margin-top:12px"><button id="resetStats" class="danger">清空统计与历史</button></div></section>
+    <section class="section"><h2>账号开关</h2><div id="accounts"></div></section>
+    <section class="section"><h2>说明</h2><div class="muted">账号未单独设置时继承“默认启用”。插件只处理内置 QQ 上报的红包事件。主人可发送“红包开启 / 红包关闭 / 红包状态”控制当前账号。</div></section>
+    <section class="section wide"><h2>最近记录</h2><div style="overflow:auto"><table><thead><tr><th>时间</th><th>账号</th><th>群</th><th>发送者</th><th>结果</th><th>金额</th></tr></thead><tbody id="history"></tbody></table></div></section>
+  </div>
+</main>
+<div id="toast" class="toast"></div>
+<script>
+  const API='/api/ext/red-packet';const el=id=>document.getElementById(id);let current={};
+  function toast(text){const node=el('toast');node.textContent=text;node.style.display='block';setTimeout(()=>node.style.display='none',2300)}
+  async function request(path,options){const response=await fetch(API+path,options);const data=await response.json();if(!response.ok||data.success===false)throw new Error(data.error||'请求失败');return data}
+  function split(text){return text.split(',').map(item=>item.trim()).filter(Boolean)}
+  function set(id,value){const node=el(id);if(node.type==='checkbox')node.checked=!!value;else node.value=value==null?'':value}
+  function render(state){current=state;const s=state.settings;set('enabled',s.enabled);set('notifyOnly',s.notify_only);set('grabNormal',s.grab_normal);set('grabExclusive',s.grab_exclusive);set('grabPassword',s.grab_password);set('autoPassword',s.auto_send_password);set('skipAdmin',s.skip_admin_owner);set('delayMin',s.delay_min_ms);set('delayMax',s.delay_max_ms);set('passwordWait',s.password_wait_ms);set('pauseMinutes',s.pause_group_minutes);set('blockKeywords',(s.block_keywords||[]).join(','));set('stopByTime',s.stop_by_time);set('stopStart',s.stop_start_time);set('stopEnd',s.stop_end_time);set('thanksEnabled',s.thanks_reply_enabled);set('thanksDelay',s.thanks_delay_ms);set('thanksMessages',(s.thanks_messages||[]).join('\n'));set('notifyOwner',s.notify_owner);set('notifyTarget',s.notify_target);set('notifyType',s.notify_target_type);set('masterQQ',s.master_qq);set('groupMode',s.group_mode);set('historyLimit',s.history_limit);set('whiteGroups',(s.whitelist_groups||[]).join(','));set('blackGroups',(s.blacklist_groups||[]).join(','));set('whiteUsers',(s.whitelist_users||[]).join(','));set('blackUsers',(s.blacklist_users||[]).join(','));set('whiteKeywords',(s.whitelist_keywords||[]).join(','));set('blackKeywords',(s.blacklist_keywords||[]).join(','));renderStats(state.stats||{});renderAccounts(state.accounts||{});renderHistory(state.history||[])}
+  function renderStats(stats){let count=0,total=0,todayCount=0,todayAmount=0;Object.values(stats).forEach(item=>{count+=Number(item.success_count||0);total+=Number(item.total_amount||0);todayCount+=Number(item.today_count||0);todayAmount+=Number(item.today_amount||0)});el('stats').innerHTML='<div class="stat"><span class="muted">累计次数</span><strong>'+count+'</strong></div><div class="stat"><span class="muted">累计金额</span><strong>¥'+total.toFixed(2)+'</strong></div><div class="stat"><span class="muted">今日次数</span><strong>'+todayCount+'</strong></div><div class="stat"><span class="muted">今日金额</span><strong>¥'+todayAmount.toFixed(2)+'</strong></div>'}
+  function renderAccounts(accounts){el('accounts').innerHTML='';const entries=Object.entries(accounts);if(!entries.length){el('accounts').innerHTML='<div class="empty">尚无账号级设置</div>';return}entries.forEach(([id,item])=>{const row=document.createElement('div');row.className='account';row.innerHTML='<span></span><label class="check"><input type="checkbox">启用</label>';row.querySelector('span').textContent=id;const input=row.querySelector('input');input.checked=item.enabled!==false;input.onchange=async()=>{try{await request('/account',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({self_id:id,enabled:input.checked})});toast('账号设置已保存')}catch(error){toast(error.message)}};el('accounts').appendChild(row)})}
+  function renderHistory(history){el('history').innerHTML='';const rows=[...history].reverse().slice(0,100);if(!rows.length){el('history').innerHTML='<tr><td colspan="6" class="empty">暂无记录</td></tr>';return}rows.forEach(item=>{const tr=document.createElement('tr');const result=item.success?'成功':(item.skipped||item.error||'失败');[new Date(item.time*1000).toLocaleString(),item.self_id,item.group_name||item.group_id||'私聊',item.sender_name||item.sender_id,result,item.success?'¥'+Number(item.amount||0).toFixed(2):'-'].forEach(text=>{const td=document.createElement('td');td.textContent=text;tr.appendChild(td)});el('history').appendChild(tr)})}
+  function collect(){return{enabled:el('enabled').checked,notify_only:el('notifyOnly').checked,grab_normal:el('grabNormal').checked,grab_exclusive:el('grabExclusive').checked,grab_password:el('grabPassword').checked,auto_send_password:el('autoPassword').checked,skip_admin_owner:el('skipAdmin').checked,delay_min_ms:Number(el('delayMin').value||0),delay_max_ms:Number(el('delayMax').value||0),password_wait_ms:Number(el('passwordWait').value||0),pause_group_minutes:Number(el('pauseMinutes').value||0),block_keywords:split(el('blockKeywords').value),stop_by_time:el('stopByTime').checked,stop_start_time:el('stopStart').value||'00:00',stop_end_time:el('stopEnd').value||'00:00',thanks_reply_enabled:el('thanksEnabled').checked,thanks_delay_ms:Number(el('thanksDelay').value||0),thanks_messages:el('thanksMessages').value.split('\n').map(x=>x.trim()).filter(Boolean),notify_owner:el('notifyOwner').checked,notify_target:el('notifyTarget').value.trim(),notify_target_type:el('notifyType').value,master_qq:el('masterQQ').value.trim(),group_mode:el('groupMode').value,history_limit:Number(el('historyLimit').value||300),whitelist_groups:split(el('whiteGroups').value),blacklist_groups:split(el('blackGroups').value),whitelist_users:split(el('whiteUsers').value),blacklist_users:split(el('blackUsers').value),whitelist_keywords:split(el('whiteKeywords').value),blacklist_keywords:split(el('blackKeywords').value)}}
+  async function load(){try{render((await request('/state')).state)}catch(error){toast(error.message)}}
+  el('reload').onclick=load;el('save').onclick=async()=>{try{await request('/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(collect())});toast('配置已保存');await load()}catch(error){toast(error.message)}};el('resetStats').onclick=async()=>{if(!confirm('确定清空全部红包统计与历史记录？'))return;try{await request('/statistics',{method:'DELETE'});toast('统计已清空');await load()}catch(error){toast(error.message)}};load();
+</script>
+</body>
+</html>

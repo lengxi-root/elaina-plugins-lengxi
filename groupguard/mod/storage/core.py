@@ -126,7 +126,6 @@ def init_tables(connection):
         CREATE TABLE IF NOT EXISTS remote_users (
             app_id TEXT NOT NULL,
             user_id TEXT NOT NULL,
-            scoped_user_id TEXT NOT NULL DEFAULT '',
             updated_at INTEGER NOT NULL,
             PRIMARY KEY (app_id, user_id)
         );

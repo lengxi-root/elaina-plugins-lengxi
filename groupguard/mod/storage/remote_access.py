@@ -9,11 +9,11 @@ def remote_users(app_id):
     connection = get_db()
     try:
         rows = connection.execute(
-            "SELECT user_id, scoped_user_id FROM remote_users WHERE app_id = ?",
+            "SELECT user_id FROM remote_users WHERE app_id = ?",
             (str(app_id),),
         ).fetchall()
         return {
-            str(row["user_id"]): str(row["scoped_user_id"] or "")
+            str(row["user_id"]): str(row["user_id"])
             for row in rows
             if row["user_id"]
         }
@@ -21,39 +21,24 @@ def remote_users(app_id):
         connection.close()
 
 
-def save_remote_user(app_id, user_id, scoped_user_id=""):
-    connection = get_db()
-    try:
-        connection.execute(
-            "INSERT INTO remote_users "
-            "(app_id, user_id, scoped_user_id, updated_at) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(app_id, user_id) DO UPDATE SET "
-            "scoped_user_id=excluded.scoped_user_id, updated_at=excluded.updated_at",
-            (str(app_id), str(user_id), str(scoped_user_id or ""), int(time.time())),
-        )
-        connection.commit()
-    finally:
-        connection.close()
-
-
 def replace_remote_users(app_id, users):
     app_id = str(app_id)
     normalized = {
-        str(item.get("external_user_id") or ""): str(item.get("user_id") or "")
+        str(item.get("external_user_id") or item.get("user_id") or "")
         for item in users
-        if isinstance(item, dict) and item.get("external_user_id")
+        if isinstance(item, dict) and (item.get("external_user_id") or item.get("user_id"))
     }
     connection = get_db()
     try:
         now = int(time.time())
         connection.executemany(
             "INSERT INTO remote_users "
-            "(app_id, user_id, scoped_user_id, updated_at) VALUES (?, ?, ?, ?) "
+            "(app_id, user_id, updated_at) VALUES (?, ?, ?) "
             "ON CONFLICT(app_id, user_id) DO UPDATE SET "
-            "scoped_user_id=excluded.scoped_user_id, updated_at=excluded.updated_at",
+            "updated_at=excluded.updated_at",
             [
-                (app_id, user_id, scoped_id, now)
-                for user_id, scoped_id in normalized.items()
+                (app_id, user_id, now)
+                for user_id in normalized
             ],
         )
         if normalized:
