@@ -22,6 +22,7 @@ log = state.log
 #   群:  aiocqhttp:GroupMessage:<group_id>
 #   私聊: aiocqhttp:FriendMessage:<user_id>
 
+
 def make_umo(event) -> str:
     gid = getattr(event, "group_id", None)
     if gid:
@@ -78,13 +79,19 @@ async def _component_to_segment(c) -> dict | None:
             seg_type = "image" if isinstance(c, Image) else "record"
             return {"type": seg_type, "data": {"file": f"base64://{b64}"}}
         except Exception as e:
-            log.warning(f"[astrbot基座] {type(c).__name__} 转 base64 失败, 回退原始文件: {e}")
+            log.warning(
+                f"[astrbot基座] {type(c).__name__} 转 base64 失败, 回退原始文件: {e}"
+            )
     return c.toDict()
 
 
 async def _node_to_dict(node: Node) -> dict:
     content_segs = []
-    for c in _chain_items(node.content) if not isinstance(node.content, str) else [Plain(node.content)]:
+    for c in (
+        _chain_items(node.content)
+        if not isinstance(node.content, str)
+        else [Plain(node.content)]
+    ):
         try:
             seg = await _component_to_segment(c)
             if seg:
@@ -105,9 +112,13 @@ async def _collect_nodes(chain) -> list[dict]:
     nodes: list[dict] = []
     for c in _chain_items(chain):
         if isinstance(c, Nodes):
-            for n in c.nodes:
-                if isinstance(n, Node):
-                    nodes.append(await _node_to_dict(n))
+            nodes.extend(
+                [
+                    await _node_to_dict(node)
+                    for node in c.nodes
+                    if isinstance(node, Node)
+                ]
+            )
         elif isinstance(c, Node):
             nodes.append(await _node_to_dict(c))
     return nodes
@@ -161,7 +172,9 @@ async def send_chain(chain, *, event=None, group_id=None, user_id=None, self_id=
     if _is_forward(chain):
         nodes = await _collect_nodes(chain)
         if nodes:
-            r = await _send_forward(api, group_id=group_id, user_id=user_id, nodes=nodes)
+            r = await _send_forward(
+                api, group_id=group_id, user_id=user_id, nodes=nodes
+            )
             if r is not None:
                 return r
         # 转发失败则回退为普通消息继续发送其余组件

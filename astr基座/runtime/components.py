@@ -31,7 +31,9 @@ class Image(_Component):
 
     def __init__(self, file: str = "", url: str = "", path: str = "", **_):
         self.file = file or url or path or ""
-        self.url = url or (file if str(file).startswith(("http://", "https://")) else "")
+        self.url = url or (
+            file if str(file).startswith(("http://", "https://")) else ""
+        )
         self.path = path or ("" if self.url else file)
 
     @classmethod
@@ -52,7 +54,7 @@ class Image(_Component):
     @classmethod
     def fromBase64(cls, data: str):
         if isinstance(data, str) and data.startswith("base64://"):
-            data = data[len("base64://"):]
+            data = data[len("base64://") :]
         return cls.fromBytes(base64.b64decode(data))
 
     def __repr__(self):
@@ -99,7 +101,9 @@ class Record(_Component):
 class Video(_Component):
     type = "Video"
 
-    def __init__(self, file: str = "", url: str = "", path: str = "", cover: str = "", **_):
+    def __init__(
+        self, file: str = "", url: str = "", path: str = "", cover: str = "", **_
+    ):
         self.file = file or url or path or ""
         self.url = url
         self.path = path
@@ -117,7 +121,9 @@ class Video(_Component):
 class File(_Component):
     type = "File"
 
-    def __init__(self, name: str = "", file: str = "", url: str = "", file_: str = "", **_):
+    def __init__(
+        self, name: str = "", file: str = "", url: str = "", file_: str = "", **_
+    ):
         self.name = name
         self.file = file or file_ or url or ""
         self.file_ = self.file

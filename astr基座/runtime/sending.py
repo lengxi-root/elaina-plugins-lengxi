@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import struct
 
 from . import state
@@ -22,6 +23,7 @@ log = state.log
 
 
 # ---- UMO (统一会话标识): elaina:<appid>:group|c2c:<id> ----
+
 
 def make_umo(event) -> str:
     appid = str(getattr(event, "appid", "") or "") or state.default_appid()
@@ -46,6 +48,7 @@ def parse_umo(umo: str):
 
 
 # ---- 图片尺寸 (官机 markdown 发图需 #wpx #hpx 与实际像素一致) ----
+
 
 def _dims_from_bytes(data: bytes) -> tuple[int, int]:
     """读图片文件头取 (w, h), 不依赖 PIL; 支持 PNG/GIF/BMP/JPEG/WEBP。"""
@@ -84,9 +87,9 @@ def _dims_from_bytes(data: bytes) -> tuple[int, int]:
                     continue
                 marker = data[i + 1]
                 if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
-                    h, w = struct.unpack(">HH", data[i + 5:i + 9])
+                    h, w = struct.unpack(">HH", data[i + 5 : i + 9])
                     return int(w), int(h)
-                i += 2 + struct.unpack(">H", data[i + 2:i + 4])[0]
+                i += 2 + struct.unpack(">H", data[i + 2 : i + 4])[0]
     except Exception:
         pass
     return 0, 0
@@ -121,10 +124,8 @@ async def _prepare_image(sender, image):
             data = None
     w = h = 0
     if data is not None:
-        try:
+        with contextlib.suppress(Exception):
             w, h = _parse_size(await sender.get_image_size(data))
-        except Exception:
-            pass
         if (not w or not h) and isinstance(data, bytes):
             w, h = _dims_from_bytes(data)
     return data, w, h
@@ -174,33 +175,41 @@ async def _host_image(img_bytes: bytes):
             return None
         if provider == "cos":
             import time
-            r = await method(img_bytes, f"astr_{int(time.time() * 1000)}.png",
-                             custom_path="astrbot_base/")
+
+            r = await method(
+                img_bytes,
+                f"astr_{int(time.time() * 1000)}.png",
+                custom_path="astrbot_base/",
+            )
         else:
             r = await method(img_bytes)
         url = _host_url(r)
         if url:
             log.info(f"[astr基座] 图床[{provider}]上传成功: {url}")
         elif isinstance(r, tuple):
-            log.warning(f"[astr基座] 图床[{provider}]上传失败: {r[1] if len(r) > 1 else r}")
+            log.warning(
+                f"[astr基座] 图床[{provider}]上传失败: {r[1] if len(r) > 1 else r}"
+            )
         return url
     except Exception as e:
         log.warning(f"[astr基座] 图床[{provider}]上传失败: {e}")
     return None
 
 
-_QQ_CONTENT_MAX = 4000   # QQ markdown/文本单条上限约 4096, 留余量
-_CAPTION_MAX = 1024      # 图片说明超此长基本是「原始数据误当文案」
+_QQ_CONTENT_MAX = 4000  # QQ markdown/文本单条上限约 4096, 留余量
+_CAPTION_MAX = 1024  # 图片说明超此长基本是「原始数据误当文案」
 
 
 def _clip_text(content: str) -> str:
     if content and len(content) > _QQ_CONTENT_MAX:
         log.info(f"[astr基座] 文本过长({len(content)}字)已截断")
-        return content[:_QQ_CONTENT_MAX - 16] + "\n…(内容过长已截断)"
+        return content[: _QQ_CONTENT_MAX - 16] + "\n…(内容过长已截断)"
     return content
 
 
-async def _send_text(sender, *, event=None, group_id=None, user_id=None, content, buttons=None):
+async def _send_text(
+    sender, *, event=None, group_id=None, user_id=None, content, buttons=None
+):
     if not content:
         return False
     content = _clip_text(content)
@@ -219,7 +228,9 @@ async def _send_text(sender, *, event=None, group_id=None, user_id=None, content
         return False
 
 
-async def _send_one_image(sender, *, event=None, group_id=None, user_id=None, image, content=""):
+async def _send_one_image(
+    sender, *, event=None, group_id=None, user_id=None, image, content=""
+):
     """单图: 优先官机 markdown 直链, 失败回退 QQ 原生富媒体。"""
     data, w, h = await _prepare_image(sender, image)
     if data is None:
@@ -234,18 +245,30 @@ async def _send_one_image(sender, *, event=None, group_id=None, user_id=None, im
         caption = ""
 
     if state._CONFIG.get("image_as_markdown", True):
-        url = data if (isinstance(data, str) and data.startswith(("http://", "https://"))) else None
+        url = (
+            data
+            if (isinstance(data, str) and data.startswith(("http://", "https://")))
+            else None
+        )
         if url is None and isinstance(data, bytes):
             url = await _host_image(data)
         if url and w and h:
-            md = f"{caption}\n![图片 #{w}px #{h}px]({url})".strip() if caption else f"![图片 #{w}px #{h}px]({url})"
-            res = await _send_text(sender, event=event, group_id=group_id, user_id=user_id, content=md)
+            md = (
+                f"{caption}\n![图片 #{w}px #{h}px]({url})".strip()
+                if caption
+                else f"![图片 #{w}px #{h}px]({url})"
+            )
+            res = await _send_text(
+                sender, event=event, group_id=group_id, user_id=user_id, content=md
+            )
             if res:
                 log.info(f"[astr基座] markdown 发图 ({w}x{h})")
                 return res
             log.info("[astr基座] markdown 发图被拒, 回退富媒体")
         else:
-            log.info(f"[astr基座] 未走 markdown 发图 (url={bool(url)}, w={w}, h={h}), 回退富媒体")
+            log.info(
+                f"[astr基座] 未走 markdown 发图 (url={bool(url)}, w={w}, h={h}), 回退富媒体"
+            )
 
     try:
         if event is not None:
@@ -263,7 +286,11 @@ async def _send_one_image(sender, *, event=None, group_id=None, user_id=None, im
 
 
 def _chain_items(chain):
-    items = chain.chain if isinstance(chain, MessageChain) else (chain if isinstance(chain, list) else [])
+    items = (
+        chain.chain
+        if isinstance(chain, MessageChain)
+        else (chain if isinstance(chain, list) else [])
+    )
     return _flatten_nodes(items)
 
 
@@ -310,15 +337,25 @@ async def send_chain(sender, chain, *, event=None, group_id=None, user_id=None):
 
     text = "".join(text_parts).strip()
     if len(images) == 1 and images[0] is not None:  # 单图+文本: 文本作 caption 合并发
-        res = await _send_one_image(sender, event=event, group_id=group_id, user_id=user_id,
-                                    image=images[0], content=text)
+        res = await _send_one_image(
+            sender,
+            event=event,
+            group_id=group_id,
+            user_id=user_id,
+            image=images[0],
+            content=text,
+        )
         return res if isinstance(res, dict) else None
     last = None
     if text:
-        last = await _send_text(sender, event=event, group_id=group_id, user_id=user_id, content=text)
+        last = await _send_text(
+            sender, event=event, group_id=group_id, user_id=user_id, content=text
+        )
     for img in images:
         if img is not None:
-            last = await _send_one_image(sender, event=event, group_id=group_id, user_id=user_id, image=img)
+            last = await _send_one_image(
+                sender, event=event, group_id=group_id, user_id=user_id, image=img
+            )
     return last if isinstance(last, dict) else None
 
 

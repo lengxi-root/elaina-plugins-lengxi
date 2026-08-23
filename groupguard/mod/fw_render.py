@@ -1,11 +1,13 @@
 """渲染并上传脱敏的违禁词列表。"""
 
-import io
 import asyncio
+import contextlib
 import hashlib
+import io
 
 try:
     from PIL import Image, ImageDraw, ImageFont
+
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -13,16 +15,15 @@ except ImportError:
 
 def mask_word(word: str) -> str:
     """脱敏: 只显示开头一个字, 其余以 *** 代替"""
-    return (word[0] if word else '') + '***'
+    return (word[0] if word else "") + "***"
 
 
 def _get_hosting():
-    try:
+    with contextlib.suppress(ImportError, AttributeError):
         from core.bot.manager import _bot_manager_ref
+
         if _bot_manager_ref and _bot_manager_ref.module_manager:
-            return _bot_manager_ref.module_manager.get('image_hosting')
-    except Exception:
-        pass
+            return _bot_manager_ref.module_manager.get("image_hosting")
     return None
 
 
@@ -31,9 +32,9 @@ async def _upload_meme(image_data: bytes, name: str):
     hosting = _get_hosting()
     if not hosting or not hosting.is_cos_available():
         return None
-    fn = f"{name}_{hashlib.md5(image_data).hexdigest()[:8]}.png"
+    fn = f"{name}_{hashlib.sha256(image_data).hexdigest()[:12]}.png"
     r = await hosting.upload_cos(image_data, fn, custom_path=f"meme/{fn}")
-    return r if isinstance(r, dict) and r.get('file_url') else None
+    return r if isinstance(r, dict) and r.get("file_url") else None
 
 
 _font_cache = {}
@@ -43,18 +44,21 @@ def _font(size, bold=False):
     key = (size, bold)
     if key in _font_cache:
         return _font_cache[key]
-    names = ('msyhbd.ttc', 'msyh.ttc') if bold else ('msyh.ttc',)
-    paths = [base + n for n in names
-             for base in ('/usr/share/fonts/truetype/', 'C:/Windows/Fonts/')]
-    paths += ['/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
-              '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc']
+    names = ("msyhbd.ttc", "msyh.ttc") if bold else ("msyh.ttc",)
+    paths = [
+        base + n
+        for n in names
+        for base in ("/usr/share/fonts/truetype/", "C:/Windows/Fonts/")
+    ]
+    paths += [
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    ]
     for path in paths:
-        try:
+        with contextlib.suppress(OSError):
             f = ImageFont.truetype(path, size)
             _font_cache[key] = f
             return f
-        except Exception:
-            pass
     f = ImageFont.load_default()
     _font_cache[key] = f
     return f
@@ -67,7 +71,7 @@ _TEXT = (45, 52, 70)
 _MUTED = (135, 144, 165)
 _ACCENT = (205, 70, 70)
 _CARD = (255, 255, 255, 240)
-_COLS = 3          # 每行列数
+_COLS = 3  # 每行列数
 _ROWS_PER_COL = 15  # 每列最多条数
 
 
@@ -88,39 +92,55 @@ def _render_sync(words: list) -> bytes:
     f_num = _font(17 * S, bold=True)
 
     # 宽度自适应: 条目少时也不能窄于标题/副标题宽度, 避免文字被截断
-    _m = ImageDraw.Draw(Image.new('RGB', (1, 1)))
-    title_w = int(_m.textlength('违禁词列表', font=f_title)) + 22 * S
-    sub_w = int(_m.textlength(
-        f'共 {n} 个 · 已脱敏, 删除请用编号: 违禁词删除 编号', font=f_sub)) + 22 * S
+    _m = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    title_w = int(_m.textlength("违禁词列表", font=f_title)) + 22 * S
+    sub_w = (
+        int(
+            _m.textlength(
+                f"共 {n} 个 · 已脱敏, 删除请用编号: 违禁词删除 编号", font=f_sub
+            )
+        )
+        + 22 * S
+    )
     W = max(pad + (col_w + pad) * cols, pad * 2 + max(title_w, sub_w))
     H = header_h + rows * row_h + pad + 40 * S
 
-    img = Image.new('RGB', (W, H), (250, 240, 240))
-    d = ImageDraw.Draw(img, 'RGBA')
+    img = Image.new("RGB", (W, H), (250, 240, 240))
+    d = ImageDraw.Draw(img, "RGBA")
 
-    d.rounded_rectangle((pad, 20 * S, pad + 8 * S, 20 * S + 52 * S), 4 * S, fill=_ACCENT)
-    d.text((pad + 22 * S, 18 * S), '违禁词列表', font=f_title, fill=_TEXT)
-    d.text((pad + 22 * S, 60 * S), f'共 {n} 个 · 已脱敏, 删除请用编号: 违禁词删除 编号',
-           font=f_sub, fill=_MUTED)
+    d.rounded_rectangle(
+        (pad, 20 * S, pad + 8 * S, 20 * S + 52 * S), 4 * S, fill=_ACCENT
+    )
+    d.text((pad + 22 * S, 18 * S), "违禁词列表", font=f_title, fill=_TEXT)
+    d.text(
+        (pad + 22 * S, 60 * S),
+        f"共 {n} 个 · 已脱敏, 删除请用编号: 违禁词删除 编号",
+        font=f_sub,
+        fill=_MUTED,
+    )
 
     for i, w in enumerate(words):
         c, r = divmod(i, rows)
         x0 = pad + (col_w + pad) * c
         y0 = header_h + r * row_h
-        d.rounded_rectangle((x0, y0, x0 + col_w, y0 + row_h - 8 * S), 10 * S, fill=_CARD)
+        d.rounded_rectangle(
+            (x0, y0, x0 + col_w, y0 + row_h - 8 * S), 10 * S, fill=_CARD
+        )
         cy = y0 + (row_h - 8 * S) // 2
         num = str(i + 1)
         nw = d.textlength(num, font=f_num)
-        d.ellipse((x0 + 12 * S, cy - 13 * S, x0 + 38 * S, cy + 13 * S), fill=_ACCENT + (36,))
+        d.ellipse(
+            (x0 + 12 * S, cy - 13 * S, x0 + 38 * S, cy + 13 * S), fill=_ACCENT + (36,)
+        )
         d.text((x0 + 25 * S - nw / 2, cy - 11 * S), num, font=f_num, fill=_ACCENT)
         d.text((x0 + 50 * S, cy - 13 * S), mask_word(w), font=f_txt, fill=_TEXT)
 
-    ft = 'ElainaBot · 群管'
+    ft = "ElainaBot · 群管"
     fw = d.textlength(ft, font=f_sub)
     d.text(((W - fw) / 2, H - 30 * S), ft, font=f_sub, fill=_MUTED)
 
     buf = io.BytesIO()
-    img.save(buf, format='PNG', compress_level=6)
+    img.save(buf, format="PNG", compress_level=6)
     img.close()
     return buf.getvalue()
 
@@ -134,4 +154,4 @@ async def render_forbidden_list(words: list):
             png = await asyncio.to_thread(_render_sync, words[:_MAX_RENDERED_WORDS])
     except Exception:
         return None
-    return await _upload_meme(png, 'fw_list')
+    return await _upload_meme(png, "fw_list")

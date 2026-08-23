@@ -1,4 +1,4 @@
-"""Plugin-wide verification display and redaction settings."""
+"""插件全局验证展示与脱敏设置。"""
 
 import re
 from functools import lru_cache
@@ -10,38 +10,38 @@ from .core import get_db
 def _get_global_settings():
     connection = get_db()
     row = connection.execute(
-        'SELECT show_join_verification, apply_global_forbidden_to_groups '
-        'FROM global_settings WHERE id = 1'
+        "SELECT show_join_verification, apply_global_forbidden_to_groups "
+        "FROM global_settings WHERE id = 1"
     ).fetchone()
     connection.close()
     if not row:
         return False, False
     return (
-        bool(row['show_join_verification']),
-        bool(row['apply_global_forbidden_to_groups']),
+        bool(row["show_join_verification"]),
+        bool(row["apply_global_forbidden_to_groups"]),
     )
 
 
 def get_global_settings():
     show_join_verification, apply_global_forbidden_to_groups = _get_global_settings()
     return {
-        'show_join_verification': show_join_verification,
-        'apply_global_forbidden_to_groups': apply_global_forbidden_to_groups,
+        "show_join_verification": show_join_verification,
+        "apply_global_forbidden_to_groups": apply_global_forbidden_to_groups,
     }
 
 
 def save_global_settings(settings):
     connection = get_db()
     connection.execute(
-        'INSERT INTO global_settings '
-        '(id, show_join_verification, apply_global_forbidden_to_groups) '
-        'VALUES (1, ?, ?) '
-        'ON CONFLICT(id) DO UPDATE SET '
-        'show_join_verification=excluded.show_join_verification, '
-        'apply_global_forbidden_to_groups=excluded.apply_global_forbidden_to_groups',
+        "INSERT INTO global_settings "
+        "(id, show_join_verification, apply_global_forbidden_to_groups) "
+        "VALUES (1, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET "
+        "show_join_verification=excluded.show_join_verification, "
+        "apply_global_forbidden_to_groups=excluded.apply_global_forbidden_to_groups",
         (
-            int(bool(settings.get('show_join_verification'))),
-            int(bool(settings.get('apply_global_forbidden_to_groups'))),
+            int(bool(settings.get("show_join_verification"))),
+            int(bool(settings.get("apply_global_forbidden_to_groups"))),
         ),
     )
     connection.commit()
@@ -53,10 +53,10 @@ def save_global_settings(settings):
 def _get_global_forbidden():
     connection = get_db()
     rows = connection.execute(
-        'SELECT word FROM global_forbidden_words ORDER BY rowid'
+        "SELECT word FROM global_forbidden_words ORDER BY rowid"
     ).fetchall()
     connection.close()
-    return tuple(row['word'] for row in rows)
+    return tuple(row["word"] for row in rows)
 
 
 def get_global_forbidden():
@@ -66,7 +66,7 @@ def get_global_forbidden():
 def add_global_forbidden(word):
     connection = get_db()
     connection.execute(
-        'INSERT OR IGNORE INTO global_forbidden_words (word) VALUES (?)',
+        "INSERT OR IGNORE INTO global_forbidden_words (word) VALUES (?)",
         (word,),
     )
     connection.commit()
@@ -77,7 +77,7 @@ def add_global_forbidden(word):
 def delete_global_forbidden(word):
     connection = get_db()
     connection.execute(
-        'DELETE FROM global_forbidden_words WHERE word = ?',
+        "DELETE FROM global_forbidden_words WHERE word = ?",
         (word,),
     )
     connection.commit()
@@ -86,10 +86,10 @@ def delete_global_forbidden(word):
 
 
 def redact_global_forbidden(content):
-    """Replace each globally blocked term with one masking character."""
-    text = str(content or '')
+    """将每个全局屏蔽词替换为一个掩码字符。"""
+    text = str(content or "")
     words = sorted(_get_global_forbidden(), key=len, reverse=True)
     if not text or not words:
         return text
-    pattern = re.compile('|'.join(re.escape(word) for word in words), re.IGNORECASE)
-    return pattern.sub('*', text)
+    pattern = re.compile("|".join(re.escape(word) for word in words), re.IGNORECASE)
+    return pattern.sub("*", text)

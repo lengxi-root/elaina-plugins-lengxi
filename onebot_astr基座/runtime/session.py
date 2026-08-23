@@ -49,11 +49,15 @@ class SessionController:
 
 def session_waiter(timeout: float = 60, record_history: bool = False, *_a, **_k):
     """装饰 waiter(controller, event); 返回可 `await waiter(first_event)` 的协程。"""
+
     def deco(func):
         async def _runner(first_event):
             from .events import AstrMessageEvent
+
             elaina = getattr(first_event, "message_obj", None)
-            elaina = getattr(elaina, "raw_message", None) or getattr(first_event, "_e", first_event)
+            elaina = getattr(elaina, "raw_message", None) or getattr(
+                first_event, "_e", first_event
+            )
             key = _session_key(getattr(first_event, "_e", first_event))
             queue: asyncio.Queue = asyncio.Queue()
             _WAITERS[key] = queue
@@ -61,7 +65,9 @@ def session_waiter(timeout: float = 60, record_history: bool = False, *_a, **_k)
             try:
                 while not controller.stopped:
                     try:
-                        next_event = await asyncio.wait_for(queue.get(), timeout=controller.timeout)
+                        next_event = await asyncio.wait_for(
+                            queue.get(), timeout=controller.timeout
+                        )
                     except TimeoutError:
                         raise TimeoutError("session_waiter timeout") from None
                     try:
@@ -71,12 +77,17 @@ def session_waiter(timeout: float = 60, record_history: bool = False, *_a, **_k)
                     except TimeoutError:
                         raise
                     except Exception as e:
-                        log.error(f"[astrbot基座] session_waiter 处理消息异常: {e}", exc_info=True)
+                        log.error(
+                            f"[astrbot基座] session_waiter 处理消息异常: {e}",
+                            exc_info=True,
+                        )
                         controller.stop()
             finally:
                 if _WAITERS.get(key) is queue:
                     _WAITERS.pop(key, None)
+
         return _runner
+
     return deco
 
 

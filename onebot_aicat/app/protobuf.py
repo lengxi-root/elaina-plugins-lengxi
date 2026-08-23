@@ -32,13 +32,13 @@ class Writer:
         return self.uint32(value)
 
     def int64(self, value):
-        num = int(value) if not isinstance(value, str) else int(value)
+        num = int(value)
         if num < 0:
             num += 1 << 64
         return self.uint32(num)
 
     def string(self, value):
-        data = str(value).encode('utf-8')
+        data = str(value).encode("utf-8")
         self.uint32(len(data))
         self.buf.extend(data)
         return self
@@ -86,7 +86,7 @@ class Reader:
         return value
 
     def fixed32(self):
-        data = self.buf[self.pos:self.pos + 4]
+        data = self.buf[self.pos : self.pos + 4]
         self.pos += 4
         val = data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)
         if val >= 0x80000000:
@@ -100,7 +100,7 @@ class Reader:
 
     def bytes(self):
         length = self.uint32()
-        data = self.buf[self.pos:self.pos + length]
+        data = self.buf[self.pos : self.pos + length]
         self.pos += length
         return bytes(data)
 
@@ -150,29 +150,37 @@ class Protobuf:
                 raw = reader.bytes()
                 try:
                     decoded = self.decode(raw)
-                    value = self._bytes_to_readable_string(raw) if self._should_keep_as_string(decoded, raw) else decoded
+                    value = (
+                        self._bytes_to_readable_string(raw)
+                        if self._should_keep_as_string(decoded, raw)
+                        else decoded
+                    )
                 except Exception:  # noqa: BLE001
                     value = self._bytes_to_readable_string(raw)
             elif wire_type == 5:
                 value = reader.fixed32()
             else:
-                raise ValueError(f'Unsupported wire type: {wire_type}')
+                raise ValueError(f"Unsupported wire type: {wire_type}")
 
             if tag in result:
                 existing = result[tag]
-                result[tag] = [*existing, value] if isinstance(existing, list) else [existing, value]
+                result[tag] = (
+                    [*existing, value]
+                    if isinstance(existing, list)
+                    else [existing, value]
+                )
             else:
                 result[tag] = value
         return result
 
     def _bytes_to_readable_string(self, data: bytes) -> str:
         try:
-            s = data.decode('utf-8')
+            s = data.decode("utf-8")
             if self._is_readable_string(s):
                 return s
         except UnicodeDecodeError:
             pass
-        return 'hex->' + self.bytes_to_hex(data)
+        return "hex->" + self.bytes_to_hex(data)
 
     def _is_readable_string(self, s: str) -> bool:
         if not s:
@@ -180,14 +188,18 @@ class Protobuf:
         bad = 0
         for ch in s:
             code = ord(ch)
-            if (code < 32 and code not in (9, 10, 13)) or (0x7F <= code < 0xA0) or code == 0xFFFD:
+            if (
+                (code < 32 and code not in (9, 10, 13))
+                or (0x7F <= code < 0xA0)
+                or code == 0xFFFD
+            ):
                 bad += 1
         return bad <= 3 and (len(s) == 0 or bad / len(s) <= 0.1)
 
     def _should_keep_as_string(self, decoded: dict, original: bytes) -> bool:
         try:
-            s = original.decode('utf-8', errors='replace')
-            if len(s.encode('utf-8')) != len(original):
+            s = original.decode("utf-8", errors="replace")
+            if len(s.encode("utf-8")) != len(original):
                 return False
             if self._has_too_many_control_chars(s):
                 return False
@@ -228,9 +240,16 @@ class Protobuf:
                     has_nested_dict = True
             elif isinstance(val, dict):
                 has_nested_dict = True
-        return ((has_string and has_list and not has_nested_dict)
-                or (simple_count == key_count and key_count <= 3)
-                or (has_string and simple_count >= key_count - 1 and key_count <= 3 and not has_nested_dict))
+        return (
+            (has_string and has_list and not has_nested_dict)
+            or (simple_count == key_count and key_count <= 3)
+            or (
+                has_string
+                and simple_count >= key_count - 1
+                and key_count <= 3
+                and not has_nested_dict
+            )
+        )
 
     def _long2int(self, value):
         if isinstance(value, str):
@@ -273,9 +292,9 @@ def _process_recursive(obj):
                 num_key = int(key)
             except (TypeError, ValueError):
                 continue
-            if isinstance(value, str) and value.startswith('hex->'):
+            if isinstance(value, str) and value.startswith("hex->"):
                 hex_str = value[5:]
-                if re.fullmatch(r'[0-9a-fA-F]+', hex_str) and len(hex_str) % 2 == 0:
+                if re.fullmatch(r"[0-9a-fA-F]+", hex_str) and len(hex_str) % 2 == 0:
                     result[num_key] = pb.hex_to_bytes(hex_str)
                 else:
                     result[num_key] = value
@@ -289,8 +308,8 @@ def _process_recursive(obj):
 
 def _bytes_default(o):
     if isinstance(o, (bytes, bytearray)):
-        return 'hex->' + bytes(o).hex()
-    raise TypeError(f'Object of type {type(o).__name__} is not JSON serializable')
+        return "hex->" + bytes(o).hex()
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
 
 def json_dumps_with_bytes(obj) -> str:

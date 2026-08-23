@@ -18,13 +18,19 @@ class AstrMessageEvent:
     """把 ElainaBot MessageEvent 包装成 AstrBot 事件接口。"""
 
     def __init__(
-        self, elaina_event, *, role: str = "member", content: str | None = None,
+        self,
+        elaina_event,
+        *,
+        role: str = "member",
+        content: str | None = None,
         context=None,
     ):
         self._e = elaina_event
         self.role = role  # 群内订阅权限判定
         # content 用于去掉插件指令前缀后给插件看 (None=用原始消息)
-        self.message_str = (content if content is not None else elaina_event.content) or ""
+        self.message_str = (
+            content if content is not None else elaina_event.content
+        ) or ""
         self.unified_msg_origin = sending.make_umo(elaina_event)
         self._message_obj = None
         self.session_id = str(elaina_event.group_id or elaina_event.user_id or "")
@@ -120,8 +126,15 @@ class AstrMessageEvent:
         self.call_llm = bool(call_llm)
 
     def request_llm(
-        self, prompt: str, func_tool_manager=None, tool_set=None, session_id: str = "",
-        image_urls=None, audio_urls=None, contexts=None, system_prompt: str = "",
+        self,
+        prompt: str,
+        func_tool_manager=None,
+        tool_set=None,
+        session_id: str = "",
+        image_urls=None,
+        audio_urls=None,
+        contexts=None,
+        system_prompt: str = "",
         conversation=None,
     ) -> ProviderRequest:
         """创建由基座分发器转交给中央 ``ai_llm`` 的模型请求。"""
@@ -186,7 +199,7 @@ def _onebot_to_chain(message) -> list:
     pos = 0
     for m in _CQ_RE.finditer(text):
         if m.start() > pos:
-            chain.append(Plain(text[pos:m.start()]))
+            chain.append(Plain(text[pos : m.start()]))
         kind, params = m.group(1), _cq_params(m.group(2) or "")
         if kind == "image":
             chain.append(Image(file=params.get("url") or params.get("file") or ""))
@@ -207,7 +220,7 @@ class _CompatBotApi:
     set_msg_emoji_like / delete_msg (官机无对应能力, no-op)。
     其余 action 抛 RuntimeError, 由插件自行降级。"""
 
-    def __init__(self, astr_event: "AstrMessageEvent"):
+    def __init__(self, astr_event: AstrMessageEvent):
         self._ev = astr_event
 
     async def call_action(self, action: str, **params):
@@ -216,9 +229,9 @@ class _CompatBotApi:
             chain = _onebot_to_chain(params.get("message"))
             gid = str(params.get("group_id") or "")
             uid = str(params.get("user_id") or "")
-            same_target = (action == "send_group_msg" and gid == str(e.group_id or "")) or (
-                action == "send_private_msg" and uid == str(e.user_id or "")
-            )
+            same_target = (
+                action == "send_group_msg" and gid == str(e.group_id or "")
+            ) or (action == "send_private_msg" and uid == str(e.user_id or ""))
             if same_target:  # 同会话: 走被动回复 (官机需 msg_id)
                 res = await sending.send_chain(e.sender, chain, event=e)
             elif action == "send_group_msg":
@@ -231,8 +244,12 @@ class _CompatBotApi:
             role = "member"
             if uid == str(e.user_id or ""):
                 role = getattr(e, "member_role", "") or "member"
-            return {"user_id": uid, "role": role,
-                    "nickname": getattr(e, "username", "") or "", "card": ""}
+            return {
+                "user_id": uid,
+                "role": role,
+                "nickname": getattr(e, "username", "") or "",
+                "card": "",
+            }
         if action in ("set_msg_emoji_like", "delete_msg"):
             log.debug(f"[astr基座] 官机无 {action} 能力, 已忽略")
             return {}
@@ -242,19 +259,22 @@ class _CompatBotApi:
 class _CompatBot:
     """aiocqhttp Bot 兼容面: bot.api.call_action(...) / bot.send_group_msg(...)。"""
 
-    def __init__(self, astr_event: "AstrMessageEvent"):
+    def __init__(self, astr_event: AstrMessageEvent):
         self.api = _CompatBotApi(astr_event)
 
     def __getattr__(self, name):
         async def _call(**params):
             return await self.api.call_action(name, **params)
+
         return _call
 
 
 class PlatformMetadata:
     """平台元数据 stub。"""
 
-    def __init__(self, name: str = "elaina", description: str = "", id: str = "elaina", **_):
+    def __init__(
+        self, name: str = "elaina", description: str = "", id: str = "elaina", **_
+    ):
         self.name = name
         self.description = description
         self.id = id
@@ -301,7 +321,9 @@ class AstrBotMessage:
 
     def __init__(self, elaina_event=None, **_):
         e = elaina_event
-        self.message_id = str(getattr(e, "msg_id", "") or getattr(e, "message_id", "") or "")
+        self.message_id = str(
+            getattr(e, "msg_id", "") or getattr(e, "message_id", "") or ""
+        )
         self.group_id = str(getattr(e, "group_id", "") or "")
         self.self_id = str(getattr(e, "appid", "") or "")
         self.session_id = self.group_id or str(getattr(e, "user_id", "") or "")
@@ -433,36 +455,69 @@ class Context:
         return provider.meta().id
 
     async def llm_generate(
-        self, *, chat_provider_id="", prompt=None, image_urls=None,
-        audio_urls=None, tools=None, system_prompt=None, contexts=None, **kwargs
+        self,
+        *,
+        chat_provider_id="",
+        prompt=None,
+        image_urls=None,
+        audio_urls=None,
+        tools=None,
+        system_prompt=None,
+        contexts=None,
+        **kwargs,
     ):
-        provider = self.get_provider_by_id(chat_provider_id) if chat_provider_id else (
-            self.get_using_provider()
+        provider = (
+            self.get_provider_by_id(chat_provider_id)
+            if chat_provider_id
+            else (self.get_using_provider())
         )
         if provider is None:
             raise RuntimeError("AI LLM 模块未安装、未启用或没有可用接口")
         return await provider.text_chat(
-            prompt=prompt, image_urls=image_urls, audio_urls=audio_urls,
-            func_tool=tools, contexts=contexts, system_prompt=system_prompt,
-            astr_context=self, **kwargs,
+            prompt=prompt,
+            image_urls=image_urls,
+            audio_urls=audio_urls,
+            func_tool=tools,
+            contexts=contexts,
+            system_prompt=system_prompt,
+            astr_context=self,
+            **kwargs,
         )
 
     async def tool_loop_agent(
-        self, *, event=None, chat_provider_id="", prompt=None, image_urls=None,
-        audio_urls=None, tools=None, system_prompt=None, contexts=None,
-        max_steps=30, **kwargs
+        self,
+        *,
+        event=None,
+        chat_provider_id="",
+        prompt=None,
+        image_urls=None,
+        audio_urls=None,
+        tools=None,
+        system_prompt=None,
+        contexts=None,
+        max_steps=30,
+        **kwargs,
     ):
-        provider = self.get_provider_by_id(chat_provider_id) if chat_provider_id else (
-            self.get_using_provider()
+        provider = (
+            self.get_provider_by_id(chat_provider_id)
+            if chat_provider_id
+            else (self.get_using_provider())
         )
         if provider is None:
             raise RuntimeError("AI LLM 模块未安装、未启用或没有可用接口")
         tools = tools or self.provider_manager.llm_tools
         return await provider.text_chat(
-            prompt=prompt, image_urls=image_urls, audio_urls=audio_urls,
-            func_tool=tools, contexts=contexts, system_prompt=system_prompt,
-            event=event, astr_context=self, max_tool_rounds=max_steps,
-            enable_runtime_tools=True, **kwargs,
+            prompt=prompt,
+            image_urls=image_urls,
+            audio_urls=audio_urls,
+            func_tool=tools,
+            contexts=contexts,
+            system_prompt=system_prompt,
+            event=event,
+            astr_context=self,
+            max_tool_rounds=max_steps,
+            enable_runtime_tools=True,
+            **kwargs,
         )
 
     def get_event_queue(self, *_a, **_k):
@@ -478,7 +533,7 @@ def _current_app_name() -> str:
         pkg = frame.frame.f_globals.get("__package__", "") or ""
         idx = pkg.find(".apps.")
         if idx != -1:
-            return pkg[idx + len(".apps."):].split(".")[0]
+            return pkg[idx + len(".apps.") :].split(".")[0]
     return "shared"
 
 
@@ -526,11 +581,17 @@ class Star:
         path = await _render_html_to_image(html)
         return path or text
 
-    async def html_render(self, tmpl: str, data: dict, return_url: bool = True,
-                          options: dict | None = None):
+    async def html_render(
+        self,
+        tmpl: str,
+        data: dict,
+        return_url: bool = True,
+        options: dict | None = None,
+    ):
         """HTML(jinja2) 渲染为图片, 返回本地图片路径; 失败返回 None。"""
         try:
             import jinja2
+
             html = jinja2.Template(tmpl).render(**(data or {}))
         except Exception as e:
             log.warning(f"[astr基座] jinja2 渲染失败: {e}")
@@ -542,11 +603,14 @@ class Star:
         root = state.apps_data_root() or os.path.join(os.getcwd(), "data")
         path = os.path.join(root, "_kv")
         os.makedirs(path, exist_ok=True)
-        pid = str(getattr(self, "plugin_id", None) or type(self).__name__).replace("/", "_")
+        pid = str(getattr(self, "plugin_id", None) or type(self).__name__).replace(
+            "/", "_"
+        )
         return os.path.join(path, f"{pid}.json")
 
     def _kv_load(self) -> dict:
         import json
+
         try:
             with open(self._kv_path(), encoding="utf-8") as f:
                 data = json.load(f)
@@ -556,6 +620,7 @@ class Star:
 
     def _kv_save(self, data: dict):
         import json
+
         try:
             with open(self._kv_path(), "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False)
@@ -578,6 +643,7 @@ class Star:
 
 def _html_escape(text: str) -> str:
     import html as _h
+
     return _h.escape(str(text))
 
 
@@ -617,7 +683,9 @@ class AstrBotConfig(dict):
         try:
             return self[name]
         except KeyError:
-            raise AttributeError(f"'AstrBotConfig' object has no attribute '{name}'") from None
+            raise AttributeError(
+                f"'AstrBotConfig' object has no attribute '{name}'"
+            ) from None
 
     def __setattr__(self, name, value):
         self[name] = value
@@ -626,7 +694,9 @@ class AstrBotConfig(dict):
         try:
             del self[name]
         except KeyError:
-            raise AttributeError(f"'AstrBotConfig' object has no attribute '{name}'") from None
+            raise AttributeError(
+                f"'AstrBotConfig' object has no attribute '{name}'"
+            ) from None
 
     def save_config(self, *_a, **_k):
         """兼容 AstrBot 的 config.save_config(): 本基座配置由 config.yaml 管理,

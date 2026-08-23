@@ -1,10 +1,10 @@
 """恶臭生成器: 将数字转换为 114514 表达式 (本地计算)"""
 
 __plugin_meta__ = {
-    'name': '恶臭生成器',
-    'author': 'lengxi',
-    'description': '将数字转换为 114514 表达式（本地计算）',
-    'version': '1.0.0',
+    "name": "恶臭生成器",
+    "author": "lengxi",
+    "description": "将数字转换为 114514 表达式（本地计算）",
+    "version": "1.0.0",
 }
 
 
@@ -160,7 +160,7 @@ _NUMS = {
 # fmt: on
 
 _KEYS = sorted(k for k in _NUMS if isinstance(k, int) and k > 0)
-_DOT_RE = re.compile(r'\.(\d+?)0*$')
+_DOT_RE = re.compile(r"\.(\d+?)0*$")
 
 
 def _get_min_div(num):
@@ -174,11 +174,11 @@ def _demolish(num):
     if math.isinf(num) or math.isnan(num):
         return f"这么恶臭的{num}有必要论证吗"
     if num < 0:
-        return re.sub(r'\*\(1\)', '', f"(⑨)*({_demolish(-num)})")
+        return re.sub(r"\*\(1\)", "", f"(⑨)*({_demolish(-num)})")
     if isinstance(num, float) and not num.is_integer():
         m = _DOT_RE.search(f"{num:.16f}")
         n = len(m.group(1)) if m else 0
-        return f"({_demolish(int(round(num * 10**n)))})/({10})^({n})"
+        return f"({_demolish(round(num * 10**n))})/({10})^({n})"
     num = int(num)
     if num in _NUMS:
         return str(num)
@@ -186,48 +186,51 @@ def _demolish(num):
     if div is None:
         return str(num)
     expr = f"{div}*({_demolish(num // div)})+({_demolish(num % div)})"
-    return re.sub(r'\*\(1\)|\+\(0\)$', '', expr)
+    return re.sub(r"\*\(1\)|\+\(0\)$", "", expr)
 
 
 def _replace(m):
     s = m.group(0)
-    return _NUMS.get(s if s == '⑨' else int(s), s)
+    return _NUMS.get(s if s == "⑨" else int(s), s)
 
 
 def _finisher(expr):
-    expr = re.sub(r'\d+|⑨', _replace, expr)
-    expr = expr.replace('^', '**')
-    while re.search(r'[*/]\([^+\-()]+\)', expr):
-        expr = re.sub(r'([*/])\(([^+\-()]+)\)', r'\1\2', expr)
-    while re.search(r'[+-]\([^()]+\)[+\-)]', expr):
-        expr = re.sub(r'([+-])\(([^()]+)\)([+\-)])', r'\1\2\3', expr)
-    while re.search(r'[+-]\([^()]+\)$', expr):
-        expr = re.sub(r'([+-])\(([^()]+)\)$', r'\1\2', expr)
-    if re.match(r'^\([^()]+\)$', expr):
+    expr = re.sub(r"\d+|⑨", _replace, expr)
+    expr = expr.replace("^", "**")
+    while re.search(r"[*/]\([^+\-()]+\)", expr):
+        expr = re.sub(r"([*/])\(([^+\-()]+)\)", r"\1\2", expr)
+    while re.search(r"[+-]\([^()]+\)[+\-)]", expr):
+        expr = re.sub(r"([+-])\(([^()]+)\)([+\-)])", r"\1\2\3", expr)
+    while re.search(r"[+-]\([^()]+\)$", expr):
+        expr = re.sub(r"([+-])\(([^()]+)\)$", r"\1\2", expr)
+    if re.match(r"^\([^()]+\)$", expr):
         expr = expr[1:-1]
-    return expr.replace('+-', '-')
+    return expr.replace("+-", "-")
 
 
 def homo(num):
     return _finisher(_demolish(num))
 
 
-@handler(r'^恶臭(.*)$', name='恶臭生成器', desc='将数字转化为恶臭表达式')
+@handler(r"^恶臭(.*)$", name="恶臭生成器", desc="将数字转化为恶臭表达式")
 async def handle_homo(event, match):
     uid = event.user_id
     num_str = match.group(1).strip()
     if not num_str:
         return await event.reply(
-            f"<@{uid}> 指令用法:<qqbot-cmd-input text='恶臭' show='恶臭+数字' />\n>例如:恶臭520")
+            f"<@{uid}> 指令用法:<qqbot-cmd-input text='恶臭' show='恶臭+数字' />\n>例如:恶臭520"
+        )
 
-    integer_part = num_str.split('.')[0] if '.' in num_str else num_str
-    if len(integer_part.lstrip('-')) > 18:
+    integer_part = num_str.split(".")[0] if "." in num_str else num_str
+    if len(integer_part.lstrip("-")) > 18:
         return await event.reply(f"<@{uid}> 数字位数过大，最大支持18位整数")
 
     try:
         num = float(num_str)
     except ValueError:
-        return await event.reply(f"<@{uid}>\n```python\n请在恶臭后面输入有效的数字\n```")
+        return await event.reply(
+            f"<@{uid}>\n```python\n请在恶臭后面输入有效的数字\n```"
+        )
 
     result = homo(num)
     await event.reply(f"<@{uid}>\n```python\n{num_str} = {result}\n```")

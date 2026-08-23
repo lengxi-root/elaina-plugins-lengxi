@@ -5,7 +5,6 @@ from functools import lru_cache
 
 from .core import get_db
 
-
 _last_cleanup = 0
 
 
@@ -13,17 +12,18 @@ _last_cleanup = 0
 def _get_targets(group_id):
     connection = get_db()
     rows = connection.execute(
-        'SELECT user_id, expire FROM targets WHERE group_id = ?',
+        "SELECT user_id, expire FROM targets WHERE group_id = ?",
         (group_id,),
     ).fetchall()
     connection.close()
-    return {row['user_id']: int(row['expire']) for row in rows}
+    return {row["user_id"]: int(row["expire"]) for row in rows}
 
 
 def get_targets(group_id):
     now = int(time.time())
     return {
-        user_id: expire for user_id, expire in _get_targets(group_id).items()
+        user_id: expire
+        for user_id, expire in _get_targets(group_id).items()
         if expire == 0 or expire > now
     }
 
@@ -42,7 +42,7 @@ def is_target(group_id, user_id, now=None):
 def add_target(group_id, user_id, expire):
     connection = get_db()
     connection.execute(
-        'INSERT OR REPLACE INTO targets (group_id, user_id, expire) VALUES (?, ?, ?)',
+        "INSERT OR REPLACE INTO targets (group_id, user_id, expire) VALUES (?, ?, ?)",
         (group_id, user_id, expire),
     )
     connection.commit()
@@ -56,7 +56,7 @@ def add_targets(group_id, user_ids, expire):
         return 0
     connection = get_db()
     connection.executemany(
-        'INSERT OR REPLACE INTO targets (group_id, user_id, expire) VALUES (?, ?, ?)',
+        "INSERT OR REPLACE INTO targets (group_id, user_id, expire) VALUES (?, ?, ?)",
         rows,
     )
     connection.commit()
@@ -68,7 +68,7 @@ def add_targets(group_id, user_ids, expire):
 def delete_target(group_id, user_id):
     connection = get_db()
     connection.execute(
-        'DELETE FROM targets WHERE group_id = ? AND user_id = ?',
+        "DELETE FROM targets WHERE group_id = ? AND user_id = ?",
         (group_id, user_id),
     )
     connection.commit()
@@ -80,10 +80,10 @@ def delete_targets(group_id, user_ids):
     user_ids = tuple(dict.fromkeys(user_ids))
     if not user_ids:
         return 0
-    placeholders = ','.join('?' for _ in user_ids)
+    placeholders = ",".join("?" for _ in user_ids)
     connection = get_db()
     cursor = connection.execute(
-        f'DELETE FROM targets WHERE group_id = ? AND user_id IN ({placeholders})',
+        f"DELETE FROM targets WHERE group_id = ? AND user_id IN ({placeholders})",  # noqa: S608 - 仅拼接参数占位符
         (group_id, *user_ids),
     )
     connection.commit()
@@ -99,7 +99,7 @@ def purge_expired_targets(force=False):
         return 0
     connection = get_db()
     cursor = connection.execute(
-        'DELETE FROM targets WHERE expire > 0 AND expire <= ?',
+        "DELETE FROM targets WHERE expire > 0 AND expire <= ?",
         (now,),
     )
     connection.commit()
@@ -111,15 +111,15 @@ def purge_expired_targets(force=False):
 
 
 def get_target_entries(group_id, limit=100):
-    """Read punishments and latest display names without N+1 queries."""
+    """无需逐条查询即可读取处罚记录和最新显示名称。"""
     connection = get_db()
     rows = connection.execute(
-        'SELECT t.user_id, t.expire, ('
-        'SELECT m.username FROM message_log m '
+        "SELECT t.user_id, t.expire, ("
+        "SELECT m.username FROM message_log m "
         "WHERE m.group_id = t.group_id AND m.user_id = t.user_id AND m.username != '' "
-        'ORDER BY m.time DESC LIMIT 1) AS username '
-        'FROM targets t WHERE t.group_id = ? AND (t.expire = 0 OR t.expire > ?) '
-        'ORDER BY t.rowid LIMIT ?',
+        "ORDER BY m.time DESC LIMIT 1) AS username "
+        "FROM targets t WHERE t.group_id = ? AND (t.expire = 0 OR t.expire > ?) "
+        "ORDER BY t.rowid LIMIT ?",
         (group_id, int(time.time()), max(1, min(500, int(limit)))),
     ).fetchall()
     connection.close()

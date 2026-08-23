@@ -35,131 +35,176 @@ class OpenAIError(Exception):
 
 def _extract_reasoning(msg: dict) -> str:
     """从响应 message 中提取推理/思考过程 (兼容多种字段名)。"""
-    for k in ('reasoning_content', 'reasoning', 'thinking'):
+    for k in ("reasoning_content", "reasoning", "thinking"):
         v = msg.get(k)
         if isinstance(v, str) and v.strip():
             return v
         if isinstance(v, list):  # 部分端点返回分段数组
-            parts = [p.get('text', '') if isinstance(p, dict) else str(p) for p in v]
-            joined = '\n'.join(p for p in parts if p)
+            parts = [p.get("text", "") if isinstance(p, dict) else str(p) for p in v]
+            joined = "\n".join(p for p in parts if p)
             if joined.strip():
                 return joined
-    return ''
+    return ""
 
 
-async def _chat_completion(session: aiohttp.ClientSession, messages: list, model: str,
-                          endpoint: dict = None, use_tools: bool = True) -> dict:
+async def _chat_completion(
+    session: aiohttp.ClientSession,
+    messages: list,
+    model: str,
+    endpoint: dict = None,
+    use_tools: bool = True,
+) -> dict:
     ep = endpoint or {}
-    base = (ep.get('base_url') or aiconfig.base_url()).rstrip('/')
-    key = ep.get('api_key') or aiconfig.api_key()
-    url = base + '/chat/completions'
+    base = (ep.get("base_url") or aiconfig.base_url()).rstrip("/")
+    key = ep.get("api_key") or aiconfig.api_key()
+    url = base + "/chat/completions"
     payload = {
-        'model': model,
-        'messages': messages,
-        'temperature': aiconfig.temperature(),
+        "model": model,
+        "messages": messages,
+        "temperature": aiconfig.temperature(),
     }
     if use_tools:
-        payload['tools'] = toolmod.TOOLS_SCHEMA
-        payload['tool_choice'] = 'auto'
+        payload["tools"] = toolmod.TOOLS_SCHEMA
+        payload["tool_choice"] = "auto"
     effort = aiconfig.reasoning_effort()
     if effort:
-        payload['reasoning_effort'] = effort
+        payload["reasoning_effort"] = effort
     headers = {
-        'Authorization': f'Bearer {key}',
-        'Content-Type': 'application/json',
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
     }
     timeout = aiohttp.ClientTimeout(total=aiconfig.request_timeout())
     # 部分推理模型拒绝自定义 temperature/不支持某参数: 命中时去掉该参数重试一次。
     for attempt in range(2):
-        async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+        async with session.post(
+            url, json=payload, headers=headers, timeout=timeout
+        ) as resp:
             text = await resp.text()
             if resp.status == 200:
                 try:
                     return json.loads(text)
                 except json.JSONDecodeError as e:
-                    raise OpenAIError(f'返回非 JSON: {text[:500]}') from e
+                    raise OpenAIError(f"返回非 JSON: {text[:500]}") from e
             low = text.lower()
-            if attempt == 0 and resp.status == 400 and (
-                    'temperature' in low or 'reasoning_effort' in low or 'unsupported' in low):
-                payload.pop('temperature', None)
-                payload.pop('reasoning_effort', None)
+            if (
+                attempt == 0
+                and resp.status == 400
+                and (
+                    "temperature" in low
+                    or "reasoning_effort" in low
+                    or "unsupported" in low
+                )
+            ):
+                payload.pop("temperature", None)
+                payload.pop("reasoning_effort", None)
                 continue
-            raise OpenAIError(f'HTTP {resp.status}: {text[:500]}')
-    raise OpenAIError('模型调用失败')
+            raise OpenAIError(f"HTTP {resp.status}: {text[:500]}")
+    raise OpenAIError("模型调用失败")
 
 
-async def probe_endpoint(base_url: str, api_key: str, model: str, timeout_s: int = 15) -> dict:
+async def probe_endpoint(
+    base_url: str, api_key: str, model: str, timeout_s: int = 15
+) -> dict:
     """用一条「你好」探测某端点+模型是否可用。返回 {ok, status, error}。
 
     注意: 部分中转站可能禁止/限制此类可用性轮询 (会消耗额度或触发风控), 仅在用户开启时调用。
     """
-    url = (base_url or '').rstrip('/') + '/chat/completions'
-    headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
-    payload = {'model': model, 'messages': [{'role': 'user', 'content': '你好'}], 'max_tokens': 1}
+    url = (base_url or "").rstrip("/") + "/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "你好"}],
+        "max_tokens": 1,
+    }
     timeout = aiohttp.ClientTimeout(total=timeout_s)
     try:
         async with aiohttp.ClientSession() as s:
             for attempt in range(2):
-                async with s.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+                async with s.post(
+                    url, json=payload, headers=headers, timeout=timeout
+                ) as resp:
                     text = await resp.text()
                     if resp.status == 200:
-                        return {'ok': True, 'status': 200, 'error': ''}
+                        return {"ok": True, "status": 200, "error": ""}
                     # 个别模型不支持 max_tokens=1, 去掉后重试一次
-                    if attempt == 0 and resp.status == 400 and 'max_tokens' in text.lower():
-                        payload.pop('max_tokens', None)
+                    if (
+                        attempt == 0
+                        and resp.status == 400
+                        and "max_tokens" in text.lower()
+                    ):
+                        payload.pop("max_tokens", None)
                         continue
-                    return {'ok': False, 'status': resp.status, 'error': f'HTTP {resp.status}: {text[:200]}'}
+                    return {
+                        "ok": False,
+                        "status": resp.status,
+                        "error": f"HTTP {resp.status}: {text[:200]}",
+                    }
     except asyncio.TimeoutError:
-        return {'ok': False, 'status': 0, 'error': '超时'}
+        return {"ok": False, "status": 0, "error": "超时"}
     except Exception as e:  # noqa: BLE001
-        return {'ok': False, 'status': 0, 'error': str(e)}
-    return {'ok': False, 'status': 0, 'error': '探测失败'}
+        return {"ok": False, "status": 0, "error": str(e)}
+    return {"ok": False, "status": 0, "error": "探测失败"}
 
 
 def _build_user_content(user_text: str, images: list):
     """无图片时返回纯文本; 有图片时返回 OpenAI 多模态 content 数组 (文本 + image_url)。"""
     if not images:
         return user_text
-    content = []
-    if user_text:
-        content.append({'type': 'text', 'text': user_text})
-    for url in images:
-        content.append({'type': 'image_url', 'image_url': {'url': url}})
+    content = [{"type": "text", "text": user_text}] if user_text else []
+    content.extend({"type": "image_url", "image_url": {"url": url}} for url in images)
     return content
 
 
 def _build_messages(history: list, user_content, model_prompt: str) -> list:
     messages = []
     sys_prompt = model_prompt or SYSTEM_PROMPT
-    if not history or history[0].get('role') != 'system':
-        messages.append({'role': 'system', 'content': sys_prompt})
+    if not history or history[0].get("role") != "system":
+        messages.append({"role": "system", "content": sys_prompt})
     messages.extend(history)
-    messages.append({'role': 'user', 'content': user_content})
+    messages.append({"role": "user", "content": user_content})
     return messages
 
 
-async def run_agent(store, session_id: str, user_text: str, model: str = '', images: list = None,
-                    mode: str = 'dev') -> dict:
+async def run_agent(
+    store,
+    session_id: str,
+    user_text: str,
+    model: str = "",
+    images: list = None,
+    mode: str = "dev",
+) -> dict:
     """执行一轮多步 Agent 对话。返回 {ok, message, iterations}。
 
     mode: 'dev' = 开发助手 (带工具); 'chat' = 普通对话 (无工具, 通用助手提示)。
     过程中向 store 写入事件: user / assistant / tool_call / tool_result / error / info
     """
     if not aiconfig.is_configured():
-        store.add_event('error', {'message': '未配置 AI api_key (settings.yaml 的 ai.api_key 或环境变量 AI_DEV_API_KEY)'}, session_id)
-        return {'ok': False, 'message': '未配置 api_key', 'iterations': 0}
+        store.add_event(
+            "error",
+            {
+                "message": "未配置 AI api_key (settings.yaml 的 ai.api_key 或环境变量 AI_DEV_API_KEY)"
+            },
+            session_id,
+        )
+        return {"ok": False, "message": "未配置 api_key", "iterations": 0}
 
     images = images or []
     model = model or aiconfig.model()
-    chat_mode = (mode == 'chat')
+    chat_mode = mode == "chat"
     use_tools = not chat_mode
-    final_reasoning = ''
+    final_reasoning = ""
     history = store.get_messages(session_id)
-    sys_prompt = aiconfig.chat_system_prompt() if chat_mode else aiconfig.system_prompt()
+    sys_prompt = (
+        aiconfig.chat_system_prompt() if chat_mode else aiconfig.system_prompt()
+    )
     user_content = _build_user_content(user_text, images)
-    messages = _build_messages([m for m in history if m.get('role') != 'system'], user_content, sys_prompt)
+    messages = _build_messages(
+        [m for m in history if m.get("role") != "system"], user_content, sys_prompt
+    )
 
-    store.add_event('user', {'content': user_text, 'images': images, 'model': model}, session_id)
+    store.add_event(
+        "user", {"content": user_text, "images": images, "model": model}, session_id
+    )
 
     # 故障转移链: 第一个为当前模型; 开启「自动切换」后追加其它已启用模型 (按优先级)。
     chain = aiconfig.failover_chain(model)
@@ -167,16 +212,22 @@ async def run_agent(store, session_id: str, user_text: str, model: str = '', ima
         # 「可用性轮询」: 发送前用「你好」探测, 跳过不可用的端点 (全部不可用则保留原链照常尝试)。
         healthy = []
         for ep in chain:
-            r = await probe_endpoint(ep['base_url'], ep['api_key'], ep['model'])
-            if r.get('ok'):
+            r = await probe_endpoint(ep["base_url"], ep["api_key"], ep["model"])
+            if r.get("ok"):
                 healthy.append(ep)
             else:
-                store.add_event('info', {'message': f"可用性轮询: {ep['label']}/{ep['model']} 不可用 ({r.get('error', '')})，已跳过"}, session_id)
+                store.add_event(
+                    "info",
+                    {
+                        "message": f"可用性轮询: {ep['label']}/{ep['model']} 不可用 ({r.get('error', '')})，已跳过"
+                    },
+                    session_id,
+                )
         if healthy:
             chain = healthy
 
     max_iter = aiconfig.max_iterations()
-    final_text = ''
+    final_text = ""
     cur = 0
     async with aiohttp.ClientSession() as session:
         for iteration in range(1, max_iter + 1):
@@ -184,91 +235,136 @@ async def run_agent(store, session_id: str, user_text: str, model: str = '', ima
             while True:
                 ep = chain[cur]
                 try:
-                    resp = await _chat_completion(session, messages, ep['model'], ep, use_tools)
+                    resp = await _chat_completion(
+                        session, messages, ep["model"], ep, use_tools
+                    )
                     break
                 except (OpenAIError, asyncio.TimeoutError, aiohttp.ClientError) as e:
                     if cur + 1 < len(chain):
                         nxt = chain[cur + 1]
-                        store.add_event('info', {'message': f"模型 {ep['label']}/{ep['model']} 调用失败 ({e})，自动切换到 {nxt['label']}/{nxt['model']}"}, session_id)
+                        store.add_event(
+                            "info",
+                            {
+                                "message": f"模型 {ep['label']}/{ep['model']} 调用失败 ({e})，自动切换到 {nxt['label']}/{nxt['model']}"
+                            },
+                            session_id,
+                        )
                         cur += 1
                         continue
-                    store.add_event('error', {'message': f'模型调用失败: {e}'}, session_id)
-                    store.set_messages(session_id, [m for m in messages if m.get('role') != 'system'])
-                    return {'ok': False, 'message': str(e), 'iterations': iteration}
+                    store.add_event(
+                        "error", {"message": f"模型调用失败: {e}"}, session_id
+                    )
+                    store.set_messages(
+                        session_id, [m for m in messages if m.get("role") != "system"]
+                    )
+                    return {"ok": False, "message": str(e), "iterations": iteration}
 
-            choice = (resp.get('choices') or [{}])[0]
-            msg = choice.get('message') or {}
-            tool_calls = msg.get('tool_calls') or []
-            usage = resp.get('usage') or {}
+            choice = (resp.get("choices") or [{}])[0]
+            msg = choice.get("message") or {}
+            tool_calls = msg.get("tool_calls") or []
+            usage = resp.get("usage") or {}
             reasoning = _extract_reasoning(msg)
             if reasoning:
-                store.add_event('reasoning', {
-                    'content': reasoning,
-                    'iteration': iteration,
-                }, session_id)
+                store.add_event(
+                    "reasoning",
+                    {
+                        "content": reasoning,
+                        "iteration": iteration,
+                    },
+                    session_id,
+                )
 
             # 把助手这一步的消息加入上下文
-            assistant_msg = {'role': 'assistant', 'content': msg.get('content') or ''}
+            assistant_msg = {"role": "assistant", "content": msg.get("content") or ""}
             if tool_calls:
-                assistant_msg['tool_calls'] = tool_calls
+                assistant_msg["tool_calls"] = tool_calls
             messages.append(assistant_msg)
 
             if not tool_calls:
-                final_text = msg.get('content') or ''
+                final_text = msg.get("content") or ""
                 final_reasoning = reasoning
-                store.add_event('assistant', {
-                    'content': final_text,
-                    'reasoning': reasoning,
-                    'iteration': iteration,
-                    'usage': usage,
-                    'model': resp.get('model') or chain[cur]['model'],
-                }, session_id)
+                store.add_event(
+                    "assistant",
+                    {
+                        "content": final_text,
+                        "reasoning": reasoning,
+                        "iteration": iteration,
+                        "usage": usage,
+                        "model": resp.get("model") or chain[cur]["model"],
+                    },
+                    session_id,
+                )
                 break
 
             # 执行所有工具调用
             for tc in tool_calls:
-                fn = tc.get('function') or {}
-                name = fn.get('name', '')
-                raw_args = fn.get('arguments') or '{}'
+                fn = tc.get("function") or {}
+                name = fn.get("name", "")
+                raw_args = fn.get("arguments") or "{}"
                 try:
-                    args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                    args = (
+                        json.loads(raw_args)
+                        if isinstance(raw_args, str)
+                        else (raw_args or {})
+                    )
                 except json.JSONDecodeError:
                     args = {}
-                store.add_event('tool_call', {
-                    'id': tc.get('id'),
-                    'name': name,
-                    'arguments': args,
-                    'iteration': iteration,
-                }, session_id)
+                store.add_event(
+                    "tool_call",
+                    {
+                        "id": tc.get("id"),
+                        "name": name,
+                        "arguments": args,
+                        "iteration": iteration,
+                    },
+                    session_id,
+                )
 
                 start = time.time()
                 try:
                     result = await toolmod.run_tool(name, args)
                     ok = True
                 except Exception as e:  # noqa: BLE001 — 工具错误需回灌给模型
-                    result = {'error': f'{type(e).__name__}: {e}'}
+                    result = {"error": f"{type(e).__name__}: {e}"}
                     ok = False
                 duration_ms = int((time.time() - start) * 1000)
 
-                store.add_event('tool_result', {
-                    'id': tc.get('id'),
-                    'name': name,
-                    'ok': ok,
-                    'duration_ms': duration_ms,
-                    'result': result,
-                }, session_id)
+                store.add_event(
+                    "tool_result",
+                    {
+                        "id": tc.get("id"),
+                        "name": name,
+                        "ok": ok,
+                        "duration_ms": duration_ms,
+                        "result": result,
+                    },
+                    session_id,
+                )
 
-                messages.append({
-                    'role': 'tool',
-                    'tool_call_id': tc.get('id'),
-                    'name': name,
-                    'content': json.dumps(result, ensure_ascii=False, default=str)[:12000],
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.get("id"),
+                        "name": name,
+                        "content": json.dumps(result, ensure_ascii=False, default=str)[
+                            :12000
+                        ],
+                    }
+                )
         else:
-            final_text = final_text or '(已达到最大迭代步数, 任务可能未完成)'
-            store.add_event('assistant', {'content': final_text, 'iteration': max_iter, 'truncated': True}, session_id)
+            final_text = final_text or "(已达到最大迭代步数, 任务可能未完成)"
+            store.add_event(
+                "assistant",
+                {"content": final_text, "iteration": max_iter, "truncated": True},
+                session_id,
+            )
 
     # 持久化对话历史 (剔除 system, 由下次重建)
-    new_history = [m for m in messages if m.get('role') != 'system']
+    new_history = [m for m in messages if m.get("role") != "system"]
     store.set_messages(session_id, new_history)
-    return {'ok': True, 'message': final_text, 'reasoning': final_reasoning, 'iterations': iteration}
+    return {
+        "ok": True,
+        "message": final_text,
+        "reasoning": final_reasoning,
+        "iterations": iteration,
+    }

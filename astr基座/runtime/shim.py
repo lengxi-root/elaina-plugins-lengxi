@@ -43,6 +43,7 @@ def _export(mod: types.ModuleType, **attrs):
 
 # ---------- obscure astrbot.* 子模块兜底 (返回宽松 stub) ----------
 
+
 class _DummyMeta(type):
     """类级属性访问也返回 _Dummy, 并支持 X | None 等运算。"""
 
@@ -118,7 +119,9 @@ class _StubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def create_module(self, spec):
         mod = _StubModule(spec.name)
         mod.__path__ = []  # 当作包, 允许继续 import 子模块
-        get_logger(PLUGIN, "astr基座").debug(f"[astr基座] 使用兜底 stub 模块: {spec.name}")
+        get_logger(PLUGIN, "astr基座").debug(
+            f"[astr基座] 使用兜底 stub 模块: {spec.name}"
+        )
         return mod
 
     def exec_module(self, module):
@@ -191,10 +194,17 @@ def install():
     astrbot.logger = logger
 
     api = _new_module("astrbot.api")
-    _export(api, logger=logger, AstrBotConfig=bridge.AstrBotConfig,
-            MessageChain=bridge.MessageChain, Provider=_llm.Provider,
-            ProviderRequest=_llm.ProviderRequest, LLMResponse=_llm.LLMResponse,
-            FunctionTool=_llm.FunctionTool, ToolSet=_llm.ToolSet)
+    _export(
+        api,
+        logger=logger,
+        AstrBotConfig=bridge.AstrBotConfig,
+        MessageChain=bridge.MessageChain,
+        Provider=_llm.Provider,
+        ProviderRequest=_llm.ProviderRequest,
+        LLMResponse=_llm.LLMResponse,
+        FunctionTool=_llm.FunctionTool,
+        ToolSet=_llm.ToolSet,
+    )
     api.__path__ = []
 
     api_event = _new_module("astrbot.api.event")
@@ -230,27 +240,40 @@ def install():
     import json as _json
     import os as _os
     import uuid as _uuid
-    _export(api_all, **{**comp_attrs, **star_attrs, **event_attrs, **provider_attrs,
-                        # 真实 astrbot.api.all 经 message_components 星号导入
-                        # 泄漏了这些标准库名, 部分插件依赖 (如直接用 json)
-                        "asyncio": _asyncio, "base64": _base64,
-                        "json": _json, "os": _os, "uuid": _uuid,
-                        "filter": filter_mod, "logger": logger,
-                        "AstrBotConfig": bridge.AstrBotConfig,
-                        # 真实 astrbot.api.all 从 filter 重导出装饰器函数
-                        "command": filter_mod.command,
-                        "regex": filter_mod.regex,
-                        "command_group": filter_mod.command_group,
-                        "event_message_type": filter_mod.event_message_type,
-                        "permission_type": filter_mod.permission_type,
-                        "platform_adapter_type": filter_mod.platform_adapter_type,
-                        "llm_tool": _cmd._passthrough_decorator,
-                        "GreedyStr": _cmd.GreedyStr,
-                        "FunctionTool": _llm.FunctionTool,
-                        "ToolSet": _llm.ToolSet,
-                        "PermissionType": _cmd.PermissionType,
-                        "PlatformAdapterType": _cmd.PlatformAdapterType,
-                        "CommandResult": bridge.MessageEventResult})
+
+    _export(
+        api_all,
+        **{
+            **comp_attrs,
+            **star_attrs,
+            **event_attrs,
+            **provider_attrs,
+            # 真实 astrbot.api.all 经 message_components 星号导入
+            # 泄漏了这些标准库名, 部分插件依赖 (如直接用 json)
+            "asyncio": _asyncio,
+            "base64": _base64,
+            "json": _json,
+            "os": _os,
+            "uuid": _uuid,
+            "filter": filter_mod,
+            "logger": logger,
+            "AstrBotConfig": bridge.AstrBotConfig,
+            # 真实 astrbot.api.all 从 filter 重导出装饰器函数
+            "command": filter_mod.command,
+            "regex": filter_mod.regex,
+            "command_group": filter_mod.command_group,
+            "event_message_type": filter_mod.event_message_type,
+            "permission_type": filter_mod.permission_type,
+            "platform_adapter_type": filter_mod.platform_adapter_type,
+            "llm_tool": _cmd._passthrough_decorator,
+            "GreedyStr": _cmd.GreedyStr,
+            "FunctionTool": _llm.FunctionTool,
+            "ToolSet": _llm.ToolSet,
+            "PermissionType": _cmd.PermissionType,
+            "PlatformAdapterType": _cmd.PlatformAdapterType,
+            "CommandResult": bridge.MessageEventResult,
+        },
+    )
 
     api.message_components = api_msgcomp
     api.event = api_event
@@ -259,7 +282,7 @@ def install():
     api.provider = api_provider
     api.platform = api_platform
 
-    # ---- core ----
+    # ---- 核心模块 ----
     core = _new_module("astrbot.core")
     core.logger = logger
     core.AstrBotConfig = bridge.AstrBotConfig
@@ -275,8 +298,12 @@ def install():
     core_provider_provider = _new_module("astrbot.core.provider.provider")
     _export(core_provider_provider, Provider=_llm.Provider)
     core_provider_tools = _new_module("astrbot.core.provider.func_tool_manager")
-    _export(core_provider_tools, FunctionTool=_llm.FunctionTool,
-            FunctionToolManager=_llm.FunctionToolManager, ToolSet=_llm.ToolSet)
+    _export(
+        core_provider_tools,
+        FunctionTool=_llm.FunctionTool,
+        FunctionToolManager=_llm.FunctionToolManager,
+        ToolSet=_llm.ToolSet,
+    )
 
     core_agent = _new_module("astrbot.core.agent")
     core_agent.__path__ = []
@@ -288,9 +315,13 @@ def install():
     core_components = _new_module("astrbot.core.message.components")
     _export(core_components, **comp_attrs)
     core_mer = _new_module("astrbot.core.message.message_event_result")
-    _export(core_mer, MessageChain=bridge.MessageChain,
-            MessageEventResult=bridge.MessageEventResult,
-            ResultContentType=_Dummy, EventMessageType=_cmd.EventMessageType)
+    _export(
+        core_mer,
+        MessageChain=bridge.MessageChain,
+        MessageEventResult=bridge.MessageEventResult,
+        ResultContentType=_Dummy,
+        EventMessageType=_cmd.EventMessageType,
+    )
     core_message.components = core_components
     core_message.message_event_result = core_mer
 
@@ -314,20 +345,25 @@ def install():
     core_utils = _new_module("astrbot.core.utils")
     core_utils.__path__ = []
     core_utils_waiter = _new_module("astrbot.core.utils.session_waiter")
-    _export(core_utils_waiter, session_waiter=bridge.session_waiter,
-            SessionController=bridge.SessionController,
-            SessionFilter=_Dummy)
+    _export(
+        core_utils_waiter,
+        session_waiter=bridge.session_waiter,
+        SessionController=bridge.SessionController,
+        SessionFilter=_Dummy,
+    )
     core_utils_path = _new_module("astrbot.core.utils.astrbot_path")
-    _export(core_utils_path,
-            get_astrbot_root=_paths.get_astrbot_root,
-            get_astrbot_path=_paths.get_astrbot_path,
-            get_astrbot_data_path=_paths.get_astrbot_data_path,
-            get_astrbot_config_path=_paths.get_astrbot_config_path,
-            get_astrbot_plugin_path=_paths.get_astrbot_plugin_path,
-            get_astrbot_plugin_data_path=_paths.get_astrbot_plugin_data_path,
-            get_astrbot_t2i_templates_path=_paths.get_astrbot_t2i_templates_path,
-            get_astrbot_temp_path=_paths.get_astrbot_temp_path,
-            get_astrbot_system_tmp_path=_paths.get_astrbot_system_tmp_path)
+    _export(
+        core_utils_path,
+        get_astrbot_root=_paths.get_astrbot_root,
+        get_astrbot_path=_paths.get_astrbot_path,
+        get_astrbot_data_path=_paths.get_astrbot_data_path,
+        get_astrbot_config_path=_paths.get_astrbot_config_path,
+        get_astrbot_plugin_path=_paths.get_astrbot_plugin_path,
+        get_astrbot_plugin_data_path=_paths.get_astrbot_plugin_data_path,
+        get_astrbot_t2i_templates_path=_paths.get_astrbot_t2i_templates_path,
+        get_astrbot_temp_path=_paths.get_astrbot_temp_path,
+        get_astrbot_system_tmp_path=_paths.get_astrbot_system_tmp_path,
+    )
     core_utils.session_waiter = core_utils_waiter
     core_utils.astrbot_path = core_utils_path
 
@@ -338,15 +374,20 @@ def install():
     _export(core_config_ac, AstrBotConfig=bridge.AstrBotConfig)
     core_config.astrbot_config = core_config_ac
 
-    # ---- platform ----
+    # ---- 平台模块 ----
     plat = _new_module("astrbot.core.platform")
     _export(plat, **platform_attrs)
     plat.__path__ = []
     plat_ame = _new_module("astrbot.core.platform.astr_message_event")
     _export(plat_ame, AstrMessageEvent=bridge.AstrMessageEvent, MessageSesion=_Dummy)
     plat_abm = _new_module("astrbot.core.platform.astrbot_message")
-    _export(plat_abm, AstrBotMessage=_ev.AstrBotMessage, MessageMember=_ev.MessageMember,
-            Group=_ev.Group, MessageType=_cmd.EventMessageType)
+    _export(
+        plat_abm,
+        AstrBotMessage=_ev.AstrBotMessage,
+        MessageMember=_ev.MessageMember,
+        Group=_ev.Group,
+        MessageType=_cmd.EventMessageType,
+    )
     plat_meta = _new_module("astrbot.core.platform.platform_metadata")
     _export(plat_meta, PlatformMetadata=_ev.PlatformMetadata)
     plat_mtype = _new_module("astrbot.core.platform.message_type")
@@ -360,7 +401,7 @@ def install():
         "astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event"
     )
 
-    # aiocqhttp stub (官方接口不支持, 仅供 import / 类型标注)
+    # aiocqhttp 桩模块（官方接口不支持，仅用于导入和类型标注）
     class AiocqhttpMessageEvent(bridge.AstrMessageEvent):  # noqa: N801
         """占位: QQ 官方接口下不可用。仅用于 import / isinstance / 类型标注。"""
 
@@ -397,9 +438,14 @@ def install():
 
     # ---- data.plugins.<app> 别名: 部分插件按 AstrBot 目录结构做绝对 import ----
     import os as _os
-    _apps_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "apps")
-    if _os.path.isdir(_apps_dir) and "data" not in sys.modules and not _os.path.isfile(
-        _os.path.join(_os.getcwd(), "data", "__init__.py")
+
+    _apps_dir = _os.path.join(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "apps"
+    )
+    if (
+        _os.path.isdir(_apps_dir)
+        and "data" not in sys.modules
+        and not _os.path.isfile(_os.path.join(_os.getcwd(), "data", "__init__.py"))
     ):
         data_pkg = _new_module("data")
         data_pkg.__path__ = []
@@ -420,9 +466,7 @@ def uninstall():
     global _installed
     for name in list(sys.modules):
         top = name.split(".", 1)[0]
-        if top in _STUB_TOPLEVEL and (
-            name in _STUB_TOPLEVEL or "." in name
-        ):
+        if top in _STUB_TOPLEVEL and (name in _STUB_TOPLEVEL or "." in name):
             mod = sys.modules.get(name)
             # 只清理我们注入的模块 (真实 aiocqhttp 包不动)
             if isinstance(mod, (_StubModule,)) or top == "astrbot":

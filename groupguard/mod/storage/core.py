@@ -5,16 +5,21 @@ import os
 import sqlite3
 import threading
 
-
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_DIR = os.path.join(ROOT_DIR, 'data')
-DB_PATH = os.path.join(DATA_DIR, 'group_manager.db')
-LEGACY_JSON = os.path.join(DATA_DIR, 'group_manager.json')
+DATA_DIR = os.path.join(ROOT_DIR, "data")
+DB_PATH = os.path.join(DATA_DIR, "group_manager.db")
+LEGACY_JSON = os.path.join(DATA_DIR, "group_manager.json")
 
-FEATURE_KEYS = ('forbidden_words', 'join_verify', 'block_links', 'block_cards', 'block_forward')
-POLICY_KEYS = ('forbidden_words', 'block_links', 'block_cards', 'block_forward')
-JOIN_POLICY_MODES = ('manual', 'auto_approve', 'auto_decline', 'auto_blacklist')
-ACTION_KEYS = ('recall', 'mute', 'recall_mute')
+FEATURE_KEYS = (
+    "forbidden_words",
+    "join_verify",
+    "block_links",
+    "block_cards",
+    "block_forward",
+)
+POLICY_KEYS = ("forbidden_words", "block_links", "block_cards", "block_forward")
+JOIN_POLICY_MODES = ("manual", "auto_approve", "auto_decline", "auto_blacklist")
+ACTION_KEYS = ("recall", "mute", "recall_mute")
 MESSAGE_LOG_TTL = 7200
 RECALL_WINDOW = 1800
 SPAM_DEFAULT_WINDOW = 60
@@ -44,7 +49,7 @@ def get_db():
 
 
 def init_tables(connection):
-    connection.execute('PRAGMA journal_mode = WAL')
+    connection.execute("PRAGMA journal_mode = WAL")
     connection.executescript("""
         CREATE TABLE IF NOT EXISTS group_config (
             group_id TEXT PRIMARY KEY,
@@ -154,18 +159,23 @@ def init_tables(connection):
         CREATE INDEX IF NOT EXISTS idx_remote_user_groups_user
             ON remote_user_groups(app_id, user_id);
     """)
-    _ensure_column(connection, 'group_config', 'policies', "TEXT DEFAULT '{}'")
-    _ensure_column(connection, 'group_config', 'join_policy', "TEXT DEFAULT '{}'")
-    _ensure_column(connection, 'group_config', 'verify_mute', 'INTEGER DEFAULT 0')
+    _ensure_column(connection, "group_config", "policies", "TEXT DEFAULT '{}'")
+    _ensure_column(connection, "group_config", "join_policy", "TEXT DEFAULT '{}'")
+    _ensure_column(connection, "group_config", "verify_mute", "INTEGER DEFAULT 0")
     _ensure_column(
-        connection, 'global_settings', 'apply_global_forbidden_to_groups',
-        'INTEGER DEFAULT 0',
+        connection,
+        "global_settings",
+        "apply_global_forbidden_to_groups",
+        "INTEGER DEFAULT 0",
     )
     action_added = _ensure_column(
-        connection, 'spam_config', 'action', "TEXT DEFAULT 'recall'",
+        connection,
+        "spam_config",
+        "action",
+        "TEXT DEFAULT 'recall'",
     )
-    _ensure_column(connection, 'spam_config', 'window_seconds', 'INTEGER DEFAULT 60')
-    _ensure_column(connection, 'spam_config', 'mute_minutes', 'INTEGER DEFAULT 10')
+    _ensure_column(connection, "spam_config", "window_seconds", "INTEGER DEFAULT 60")
+    _ensure_column(connection, "spam_config", "mute_minutes", "INTEGER DEFAULT 10")
     if action_added:
         connection.execute(
             "UPDATE spam_config SET action = CASE "
@@ -178,12 +188,10 @@ def init_tables(connection):
 
 
 def _ensure_column(connection, table, column, definition):
-    columns = {
-        row['name'] for row in connection.execute(f'PRAGMA table_info({table})')
-    }
+    columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
     if column in columns:
         return False
-    connection.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+    connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
     return True
 
 
@@ -192,47 +200,43 @@ def migrate_legacy_json(connection):
     if not os.path.isfile(LEGACY_JSON):
         return
     try:
-        with open(LEGACY_JSON, 'r', encoding='utf-8') as file:
+        with open(LEGACY_JSON, encoding="utf-8") as file:
             data = json.load(file)
-        groups = data.get('groups') if isinstance(data, dict) else None
+        groups = data.get("groups") if isinstance(data, dict) else None
         if not isinstance(groups, dict):
             return
         for group_id, config in groups.items():
-            group_id = str(group_id or '').strip()
+            group_id = str(group_id or "").strip()
             if not group_id or len(group_id) > 128 or not isinstance(config, dict):
                 continue
-            raw_features = config.get('features')
+            raw_features = config.get("features")
             raw_features = raw_features if isinstance(raw_features, dict) else {}
-            features = {
-                key: bool(raw_features.get(key, False))
-                for key in FEATURE_KEYS
-            }
+            features = {key: bool(raw_features.get(key, False)) for key in FEATURE_KEYS}
             policies = {
-                key: {'action': 'recall', 'mute_minutes': 10}
-                for key in POLICY_KEYS
+                key: {"action": "recall", "mute_minutes": 10} for key in POLICY_KEYS
             }
             connection.execute(
-                'INSERT OR IGNORE INTO group_config '
-                '(group_id, enabled, notify, features, policies) '
-                'VALUES (?, ?, ?, ?, ?)',
+                "INSERT OR IGNORE INTO group_config "
+                "(group_id, enabled, notify, features, policies) "
+                "VALUES (?, ?, ?, ?, ?)",
                 (
                     group_id,
-                    int(bool(config.get('enabled'))),
-                    int(bool(config.get('notify'))),
+                    int(bool(config.get("enabled"))),
+                    int(bool(config.get("notify"))),
                     json.dumps(features),
                     json.dumps(policies),
                 ),
             )
-            words = config.get('forbidden_words') or []
+            words = config.get("forbidden_words") or []
             words = words if isinstance(words, list) else []
             for word in words:
                 if not isinstance(word, str) or not 2 <= len(word.strip()) <= 64:
                     continue
                 connection.execute(
-                    'INSERT OR IGNORE INTO forbidden_words (group_id, word) VALUES (?, ?)',
+                    "INSERT OR IGNORE INTO forbidden_words (group_id, word) VALUES (?, ?)",
                     (group_id, word.strip()),
                 )
         connection.commit()
-        os.replace(LEGACY_JSON, LEGACY_JSON + '.migrated')
+        os.replace(LEGACY_JSON, LEGACY_JSON + ".migrated")
     except (OSError, json.JSONDecodeError, sqlite3.Error):
         pass

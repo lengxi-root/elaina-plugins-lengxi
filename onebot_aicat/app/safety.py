@@ -9,16 +9,18 @@ import ipaddress
 import re
 
 # 富媒体类危险 CQ 码 (普通用户不应能诱导机器人主动发送)
-_DANGEROUS_CQ_TYPES = {'image', 'record', 'video', 'flash'}
-_TYPE_LABELS = {'image': '图片', 'record': '语音', 'video': '视频', 'flash': '闪照'}
+_DANGEROUS_CQ_TYPES = {"image", "record", "video", "flash"}
+_TYPE_LABELS = {"image": "图片", "record": "语音", "video": "视频", "flash": "闪照"}
 
-_CQ_CODE_RE = re.compile(r'\[CQ:(\w+)(?:,[^\]]*)?\]')
+_CQ_CODE_RE = re.compile(r"\[CQ:(\w+)(?:,[^\]]*)?\]")
 
-_IPV4_RE = re.compile(r'(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])')
+_IPV4_RE = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
 # 粗略匹配 IPv6 (含 :: 压缩), 命中后再用 ipaddress 校验是否公网, 避免误伤时间戳/MAC 等
-_IPV6_RE = re.compile(r'(?<![:.\w])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![:.\w])')
+_IPV6_RE = re.compile(
+    r"(?<![:.\w])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![:.\w])"
+)
 
-_IP_PLACEHOLDER = '[已隐藏IP]'
+_IP_PLACEHOLDER = "[已隐藏IP]"
 
 
 def sanitize_reply_text(text: str) -> str:
@@ -26,10 +28,10 @@ def sanitize_reply_text(text: str) -> str:
     if not text:
         return text
 
-    def _repl(m: 're.Match') -> str:
+    def _repl(m: "re.Match") -> str:
         t = m.group(1).lower()
         if t in _DANGEROUS_CQ_TYPES:
-            return f'[{_TYPE_LABELS.get(t, t)}已过滤]'
+            return f"[{_TYPE_LABELS.get(t, t)}已过滤]"
         return m.group(0)
 
     return _CQ_CODE_RE.sub(_repl, text)
@@ -48,7 +50,7 @@ def redact_ips(text: str) -> str:
     if not text:
         return text
 
-    def _repl(m: 're.Match') -> str:
+    def _repl(m: "re.Match") -> str:
         s = m.group(0)
         return _IP_PLACEHOLDER if _is_public_ip(s) else s
 

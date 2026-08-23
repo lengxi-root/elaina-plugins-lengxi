@@ -1,4 +1,4 @@
-"""Local cache of application users and their derived manageable groups."""
+"""应用用户及其可管理群组的本地缓存。"""
 
 import time
 
@@ -9,26 +9,27 @@ def remote_users(app_id):
     connection = get_db()
     try:
         rows = connection.execute(
-            'SELECT user_id, scoped_user_id FROM remote_users WHERE app_id = ?',
+            "SELECT user_id, scoped_user_id FROM remote_users WHERE app_id = ?",
             (str(app_id),),
         ).fetchall()
         return {
-            str(row['user_id']): str(row['scoped_user_id'] or '')
-            for row in rows if row['user_id']
+            str(row["user_id"]): str(row["scoped_user_id"] or "")
+            for row in rows
+            if row["user_id"]
         }
     finally:
         connection.close()
 
 
-def save_remote_user(app_id, user_id, scoped_user_id=''):
+def save_remote_user(app_id, user_id, scoped_user_id=""):
     connection = get_db()
     try:
         connection.execute(
-            'INSERT INTO remote_users '
-            '(app_id, user_id, scoped_user_id, updated_at) VALUES (?, ?, ?, ?) '
-            'ON CONFLICT(app_id, user_id) DO UPDATE SET '
-            'scoped_user_id=excluded.scoped_user_id, updated_at=excluded.updated_at',
-            (str(app_id), str(user_id), str(scoped_user_id or ''), int(time.time())),
+            "INSERT INTO remote_users "
+            "(app_id, user_id, scoped_user_id, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(app_id, user_id) DO UPDATE SET "
+            "scoped_user_id=excluded.scoped_user_id, updated_at=excluded.updated_at",
+            (str(app_id), str(user_id), str(scoped_user_id or ""), int(time.time())),
         )
         connection.commit()
     finally:
@@ -38,37 +39,40 @@ def save_remote_user(app_id, user_id, scoped_user_id=''):
 def replace_remote_users(app_id, users):
     app_id = str(app_id)
     normalized = {
-        str(item.get('external_user_id') or ''):
-        str(item.get('user_id') or '')
-        for item in users if isinstance(item, dict) and item.get('external_user_id')
+        str(item.get("external_user_id") or ""): str(item.get("user_id") or "")
+        for item in users
+        if isinstance(item, dict) and item.get("external_user_id")
     }
     connection = get_db()
     try:
         now = int(time.time())
         connection.executemany(
-            'INSERT INTO remote_users '
-            '(app_id, user_id, scoped_user_id, updated_at) VALUES (?, ?, ?, ?) '
-            'ON CONFLICT(app_id, user_id) DO UPDATE SET '
-            'scoped_user_id=excluded.scoped_user_id, updated_at=excluded.updated_at',
-            [(app_id, user_id, scoped_id, now)
-             for user_id, scoped_id in normalized.items()],
+            "INSERT INTO remote_users "
+            "(app_id, user_id, scoped_user_id, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(app_id, user_id) DO UPDATE SET "
+            "scoped_user_id=excluded.scoped_user_id, updated_at=excluded.updated_at",
+            [
+                (app_id, user_id, scoped_id, now)
+                for user_id, scoped_id in normalized.items()
+            ],
         )
         if normalized:
-            placeholders = ','.join('?' for _ in normalized)
+            placeholders = ",".join("?" for _ in normalized)
             connection.execute(
-                f'DELETE FROM remote_users WHERE app_id = ? '
-                f'AND user_id NOT IN ({placeholders})',
+                f"DELETE FROM remote_users WHERE app_id = ? "  # noqa: S608 - 仅拼接参数占位符
+                f"AND user_id NOT IN ({placeholders})",
                 (app_id, *normalized),
             )
             connection.execute(
-                f'DELETE FROM remote_user_groups WHERE app_id = ? '
-                f'AND user_id NOT IN ({placeholders})',
+                f"DELETE FROM remote_user_groups WHERE app_id = ? "  # noqa: S608 - 仅拼接参数占位符
+                f"AND user_id NOT IN ({placeholders})",
                 (app_id, *normalized),
             )
         else:
-            connection.execute('DELETE FROM remote_users WHERE app_id = ?', (app_id,))
+            connection.execute("DELETE FROM remote_users WHERE app_id = ?", (app_id,))
             connection.execute(
-                'DELETE FROM remote_user_groups WHERE app_id = ?', (app_id,),
+                "DELETE FROM remote_user_groups WHERE app_id = ?",
+                (app_id,),
             )
         connection.commit()
     finally:
@@ -81,23 +85,28 @@ def replace_remote_user_groups(app_id, user_id, groups):
     rows = []
     now = int(time.time())
     for item in groups:
-        if not isinstance(item, dict) or not item.get('group_id'):
+        if not isinstance(item, dict) or not item.get("group_id"):
             continue
-        rows.append((
-            app_id, user_id, str(item['group_id']),
-            str(item.get('bot_appid') or ''),
-            str(item.get('group_name') or '')[:128], now,
-        ))
+        rows.append(
+            (
+                app_id,
+                user_id,
+                str(item["group_id"]),
+                str(item.get("bot_appid") or ""),
+                str(item.get("group_name") or "")[:128],
+                now,
+            )
+        )
     connection = get_db()
     try:
         connection.execute(
-            'DELETE FROM remote_user_groups WHERE app_id = ? AND user_id = ?',
+            "DELETE FROM remote_user_groups WHERE app_id = ? AND user_id = ?",
             (app_id, user_id),
         )
         connection.executemany(
-            'INSERT INTO remote_user_groups '
-            '(app_id, user_id, group_id, bot_appid, group_name, updated_at) '
-            'VALUES (?, ?, ?, ?, ?, ?)',
+            "INSERT INTO remote_user_groups "
+            "(app_id, user_id, group_id, bot_appid, group_name, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             rows,
         )
         connection.commit()
@@ -109,9 +118,9 @@ def remote_user_groups(app_id, user_id):
     connection = get_db()
     try:
         rows = connection.execute(
-            'SELECT group_id, bot_appid, group_name, updated_at '
-            'FROM remote_user_groups WHERE app_id = ? AND user_id = ? '
-            'ORDER BY group_name, group_id',
+            "SELECT group_id, bot_appid, group_name, updated_at "
+            "FROM remote_user_groups WHERE app_id = ? AND user_id = ? "
+            "ORDER BY group_name, group_id",
             (str(app_id), str(user_id)),
         ).fetchall()
         return [dict(row) for row in rows]

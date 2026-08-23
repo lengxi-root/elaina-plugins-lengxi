@@ -33,6 +33,7 @@ def _export(mod: types.ModuleType, **attrs):
 
 # ---------- obscure astrbot.* 子模块兜底 (返回宽松 stub) ----------
 
+
 class _Dummy:
     """既能当类继承, 又能当对象/函数调用的宽松占位。"""
 
@@ -72,7 +73,9 @@ class _StubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def create_module(self, spec):
         mod = _StubModule(spec.name)
         mod.__path__ = []  # 当作包, 允许继续 import 子模块
-        get_logger(PLUGIN, "astrbot基座").debug(f"[astrbot基座] 使用兜底 stub 模块: {spec.name}")
+        get_logger(PLUGIN, "astrbot基座").debug(
+            f"[astrbot基座] 使用兜底 stub 模块: {spec.name}"
+        )
         return mod
 
     def exec_module(self, module):
@@ -165,10 +168,18 @@ def install():
     _export(api_platform, **platform_attrs)
 
     api_all = _new_module("astrbot.api.all")
-    _export(api_all, **{**comp_attrs, **star_attrs, **event_attrs,
-                        "logger": logger, "AstrBotConfig": _ev.AstrBotConfig})
+    _export(
+        api_all,
+        **{
+            **comp_attrs,
+            **star_attrs,
+            **event_attrs,
+            "logger": logger,
+            "AstrBotConfig": _ev.AstrBotConfig,
+        },
+    )
 
-    # ---- core ----
+    # ---- 核心模块 ----
     core = _new_module("astrbot.core")
     core.logger = logger
     core.__path__ = []
@@ -178,9 +189,13 @@ def install():
     core_components = _new_module("astrbot.core.message.components")
     _export(core_components, **comp_attrs)
     core_mer = _new_module("astrbot.core.message.message_event_result")
-    _export(core_mer, MessageChain=_comp.MessageChain,
-            MessageEventResult=_comp.MessageEventResult,
-            ResultContentType=_Dummy, EventMessageType=_cmd.EventMessageType)
+    _export(
+        core_mer,
+        MessageChain=_comp.MessageChain,
+        MessageEventResult=_comp.MessageEventResult,
+        ResultContentType=_Dummy,
+        EventMessageType=_cmd.EventMessageType,
+    )
 
     core_star = _new_module("astrbot.core.star")
     _export(core_star, **star_attrs)
@@ -198,20 +213,25 @@ def install():
     core_utils = _new_module("astrbot.core.utils")
     core_utils.__path__ = []
     core_utils_waiter = _new_module("astrbot.core.utils.session_waiter")
-    _export(core_utils_waiter, session_waiter=_sess.session_waiter,
-            SessionController=_sess.SessionController,
-            SessionFilter=_Dummy)
+    _export(
+        core_utils_waiter,
+        session_waiter=_sess.session_waiter,
+        SessionController=_sess.SessionController,
+        SessionFilter=_Dummy,
+    )
     core_utils_path = _new_module("astrbot.core.utils.astrbot_path")
-    _export(core_utils_path,
-            get_astrbot_root=_paths.get_astrbot_root,
-            get_astrbot_path=_paths.get_astrbot_path,
-            get_astrbot_data_path=_paths.get_astrbot_data_path,
-            get_astrbot_config_path=_paths.get_astrbot_config_path,
-            get_astrbot_plugin_path=_paths.get_astrbot_plugin_path,
-            get_astrbot_plugin_data_path=_paths.get_astrbot_plugin_data_path,
-            get_astrbot_t2i_templates_path=_paths.get_astrbot_t2i_templates_path,
-            get_astrbot_temp_path=_paths.get_astrbot_temp_path,
-            get_astrbot_system_tmp_path=_paths.get_astrbot_system_tmp_path)
+    _export(
+        core_utils_path,
+        get_astrbot_root=_paths.get_astrbot_root,
+        get_astrbot_path=_paths.get_astrbot_path,
+        get_astrbot_data_path=_paths.get_astrbot_data_path,
+        get_astrbot_config_path=_paths.get_astrbot_config_path,
+        get_astrbot_plugin_path=_paths.get_astrbot_plugin_path,
+        get_astrbot_plugin_data_path=_paths.get_astrbot_plugin_data_path,
+        get_astrbot_t2i_templates_path=_paths.get_astrbot_t2i_templates_path,
+        get_astrbot_temp_path=_paths.get_astrbot_temp_path,
+        get_astrbot_system_tmp_path=_paths.get_astrbot_system_tmp_path,
+    )
 
     core_config = _new_module("astrbot.core.config")
     core_config.__path__ = []
@@ -219,15 +239,20 @@ def install():
     core_config_ac = _new_module("astrbot.core.config.astrbot_config")
     _export(core_config_ac, AstrBotConfig=_ev.AstrBotConfig)
 
-    # ---- platform ----
+    # ---- 平台模块 ----
     plat = _new_module("astrbot.core.platform")
     _export(plat, **platform_attrs)
     plat.__path__ = []
     plat_ame = _new_module("astrbot.core.platform.astr_message_event")
     _export(plat_ame, AstrMessageEvent=_ev.AstrMessageEvent, MessageSesion=_Dummy)
     plat_abm = _new_module("astrbot.core.platform.astrbot_message")
-    _export(plat_abm, AstrBotMessage=_ev.AstrBotMessage, MessageMember=_ev.MessageMember,
-            Group=_ev.Group, MessageType=_cmd.EventMessageType)
+    _export(
+        plat_abm,
+        AstrBotMessage=_ev.AstrBotMessage,
+        MessageMember=_ev.MessageMember,
+        Group=_ev.Group,
+        MessageType=_cmd.EventMessageType,
+    )
     plat_meta = _new_module("astrbot.core.platform.platform_metadata")
     _export(plat_meta, PlatformMetadata=_ev.PlatformMetadata)
     plat_mtype = _new_module("astrbot.core.platform.message_type")
@@ -237,7 +262,9 @@ def install():
     plat_sources.__path__ = []
     plat_aiocq = _new_module("astrbot.core.platform.sources.aiocqhttp")
     plat_aiocq.__path__ = []
-    plat_aiocq_evt = _new_module("astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event")
+    plat_aiocq_evt = _new_module(
+        "astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event"
+    )
     _export(plat_aiocq_evt, AiocqhttpMessageEvent=_ev.AstrMessageEvent)
 
     # ---- 兜底 finder (最后再装, 不影响上面已显式定义的模块) ----

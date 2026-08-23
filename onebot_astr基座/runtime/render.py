@@ -33,8 +33,12 @@ white-space:pre-wrap;word-break:break-word;width:720px;}
 </style></head><body>{{ text }}</body></html>"""
 
 _CHROME_NAMES = (
-    "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
-    "chrome", "microsoft-edge",
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium",
+    "chromium-browser",
+    "chrome",
+    "microsoft-edge",
 )
 
 
@@ -47,6 +51,7 @@ def _render_dir() -> str:
 def _render_jinja(tmpl: str, data: dict) -> str:
     try:
         import jinja2
+
         return jinja2.Template(tmpl, autoescape=False).render(**(data or {}))
     except Exception as e:
         log.warning(f"[astrbot基座] jinja2 渲染失败, 用原始模板: {e}")
@@ -75,10 +80,15 @@ def _shot_with_chrome_cli(html: str) -> str | None:
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html)
         cmd = [
-            chrome, "--headless=new", "--no-sandbox", "--disable-gpu",
-            "--hide-scrollbars", "--force-device-scale-factor=2",
+            chrome,
+            "--headless=new",
+            "--no-sandbox",
+            "--disable-gpu",
+            "--hide-scrollbars",
+            "--force-device-scale-factor=2",
             "--default-background-color=FFFFFFFF",
-            f"--screenshot={png_path}", "--window-size=760,1200",
+            f"--screenshot={png_path}",
+            "--window-size=760,1200",
             f"file://{html_path}",
         ]
         subprocess.run(cmd, capture_output=True, timeout=40, check=False)
@@ -104,8 +114,9 @@ def _shot_with_playwright_cdp(html: str) -> str | None:
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(endpoint)
-            ctx = browser.new_context(viewport={"width": 760, "height": 1200},
-                                      device_scale_factor=2)
+            ctx = browser.new_context(
+                viewport={"width": 760, "height": 1200}, device_scale_factor=2
+            )
             page = ctx.new_page()
             page.set_content(html, wait_until="networkidle")
             page.screenshot(path=png_path, full_page=True)

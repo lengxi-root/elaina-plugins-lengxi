@@ -8,6 +8,7 @@ apps/, 安装后热重载基座即生效。配置写入 data/config.json:
 from __future__ import annotations
 
 import ast
+import contextlib
 import io
 import json
 import logging
@@ -50,12 +51,14 @@ class _PanelLogStore:
 
     def add(self, level: str, msg: str):
         self.seq += 1
-        self.entries.append({
-            "seq": self.seq,
-            "time": time.strftime("%m-%d %H:%M:%S"),
-            "level": level,
-            "msg": msg,
-        })
+        self.entries.append(
+            {
+                "seq": self.seq,
+                "time": time.strftime("%m-%d %H:%M:%S"),
+                "level": level,
+                "msg": msg,
+            }
+        )
 
     def clear(self):
         self.entries.clear()
@@ -69,10 +72,8 @@ class _PanelLogHandler(logging.Handler):
         self.store = store
 
     def emit(self, record):
-        try:
+        with contextlib.suppress(Exception):
             self.store.add(record.levelname, record.getMessage())
-        except Exception:
-            pass
 
 
 def _log_store() -> _PanelLogStore:
@@ -101,9 +102,11 @@ def _detach_log_handler():
 #  框架对象
 # ==================================================================== #
 
+
 def _plugin_manager():
     try:
         from web.tools._common import get_app
+
         app = get_app()
     except Exception:
         app = None
@@ -127,6 +130,7 @@ async def _reload_base() -> tuple[bool, str]:
 #  工具: 安全名 / 目录清理
 # ==================================================================== #
 
+
 def _safe(name: str) -> str:
     """清洗插件目录名, 阻断路径穿越 (只留字母数字下划线连字符与点, 去掉分隔符)。"""
     name = os.path.basename(str(name or "").strip())
@@ -136,6 +140,7 @@ def _safe(name: str) -> str:
 
 def _on_rm_error(func, path, _exc):
     import stat
+
     try:
         os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IRWXU)
         func(path)
@@ -156,6 +161,7 @@ def _force_rmtree(path: str):
 # ==================================================================== #
 #  配置 (data/config.json)
 # ==================================================================== #
+
 
 def _read_config() -> dict:
     if not os.path.isfile(_CONFIG_PATH):
@@ -179,6 +185,7 @@ def _write_config(cfg: dict):
 #  本地 apps/ 信息
 # ==================================================================== #
 
+
 def _read_app_meta(app_dir: str) -> dict:
     """读 AstrBot 插件元信息 (优先 metadata.yaml, 退化到 @register 静态解析)。"""
     meta = {"version": "", "display_name": "", "desc": "", "repo": ""}
@@ -186,11 +193,16 @@ def _read_app_meta(app_dir: str) -> dict:
     if os.path.isfile(yml):
         try:
             import yaml
+
             with open(yml, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             meta["version"] = str(data.get("version", "") or "")
-            meta["display_name"] = str(data.get("name", "") or data.get("display_name", "") or "")
-            meta["desc"] = str(data.get("desc", "") or data.get("description", "") or "")
+            meta["display_name"] = str(
+                data.get("name", "") or data.get("display_name", "") or ""
+            )
+            meta["desc"] = str(
+                data.get("desc", "") or data.get("description", "") or ""
+            )
             meta["repo"] = str(data.get("repo", "") or "")
             return meta
         except Exception:
@@ -240,7 +252,9 @@ def _app_command_count(app_name: str) -> int:
     if not pm or _PLUGIN_NAME not in getattr(pm, "plugins", {}):
         return 0
     info = pm.plugins[_PLUGIN_NAME]
-    return sum(1 for h in info.handlers if str(h.get("name", "")).split(":", 1)[0] == app_name)
+    return sum(
+        1 for h in info.handlers if str(h.get("name", "")).split(":", 1)[0] == app_name
+    )
 
 
 def _installed_apps() -> list[dict]:
@@ -255,17 +269,21 @@ def _installed_apps() -> list[dict]:
         if not os.path.isfile(os.path.join(entry.path, "main.py")):
             continue
         meta = _read_app_meta(entry.path)
-        out.append({
-            "name": entry.name,
-            "version": meta["version"],
-            "display_name": meta["display_name"] or entry.name,
-            "desc": meta["desc"],
-            "repo": meta["repo"],
-            "has_schema": os.path.isfile(os.path.join(entry.path, "_conf_schema.json")),
-            "command_count": _app_command_count(entry.name),
-            "enabled": entry.name not in disabled,
-            "prefix": prefixes.get(entry.name, ""),
-        })
+        out.append(
+            {
+                "name": entry.name,
+                "version": meta["version"],
+                "display_name": meta["display_name"] or entry.name,
+                "desc": meta["desc"],
+                "repo": meta["repo"],
+                "has_schema": os.path.isfile(
+                    os.path.join(entry.path, "_conf_schema.json")
+                ),
+                "command_count": _app_command_count(entry.name),
+                "enabled": entry.name not in disabled,
+                "prefix": prefixes.get(entry.name, ""),
+            }
+        )
     return out
 
 
@@ -279,12 +297,14 @@ def _registered_commands() -> list[dict]:
     for h in info.handlers:
         full = str(h.get("name", ""))
         app, _, cmd = full.partition(":")
-        out.append({
-            "app": app or _PLUGIN_NAME,
-            "command": cmd or full,
-            "pattern": h.get("pattern", ""),
-            "desc": h.get("desc", ""),
-        })
+        out.append(
+            {
+                "app": app or _PLUGIN_NAME,
+                "command": cmd or full,
+                "pattern": h.get("pattern", ""),
+                "desc": h.get("desc", ""),
+            }
+        )
     return out
 
 
@@ -300,20 +320,23 @@ def _app_config_schema(app_name: str) -> list[dict]:
         if not isinstance(meta, dict):
             continue
         cur = overrides.get(key, meta.get("default"))
-        fields.append({
-            "key": key,
-            "type": meta.get("type", "string"),
-            "description": meta.get("description", key),
-            "hint": meta.get("hint", ""),
-            "default": meta.get("default"),
-            "value": cur,
-        })
+        fields.append(
+            {
+                "key": key,
+                "type": meta.get("type", "string"),
+                "description": meta.get("description", key),
+                "hint": meta.get("hint", ""),
+                "default": meta.get("default"),
+                "value": cur,
+            }
+        )
     return fields
 
 
 # ==================================================================== #
 #  下载 / 解压 (复用框架镜像池: web.tools._market / _updater 的 ghproxy 镜像)
 # ==================================================================== #
+
 
 def _github_archive_url(url: str) -> str | None:
     """把 GitHub 仓库/树 URL 归一化成 github archive zip 直链; 已是 .zip 直接返回。
@@ -325,7 +348,9 @@ def _github_archive_url(url: str) -> str | None:
         return None
     if url.endswith(".zip"):
         return url
-    m = re.match(r"https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/tree/([^/]+))?/?$", url)
+    m = re.match(
+        r"https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/tree/([^/]+))?/?$", url
+    )
     if not m:
         return None
     owner, repo, branch = m.group(1), m.group(2), m.group(3)
@@ -349,6 +374,7 @@ _MIRROR_CHOICES = [
 def _load_mirror_pref() -> str:
     try:
         from web.tools._market.shared import _load_market_mirror
+
         return _load_market_mirror() or ""
     except Exception:
         return ""
@@ -357,6 +383,7 @@ def _load_mirror_pref() -> str:
 def _save_mirror_pref(mirror: str):
     try:
         from web.tools._market.shared import _save_market_mirror
+
         _save_market_mirror(mirror)
     except Exception:
         pass
@@ -364,11 +391,17 @@ def _save_mirror_pref(mirror: str):
 
 async def _download_direct(url: str, timeout: int) -> bytes:
     import aiohttp
-    async with aiohttp.ClientSession() as s, s.get(
-        url, timeout=aiohttp.ClientTimeout(total=timeout),
-        ssl=False, allow_redirects=True,
-        headers={"User-Agent": "ElainaBot/1.0"},
-    ) as r:
+
+    async with (
+        aiohttp.ClientSession() as s,
+        s.get(
+            url,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+            ssl=False,
+            allow_redirects=True,
+            headers={"User-Agent": "ElainaBot/1.0"},
+        ) as r,
+    ):
         if r.status != 200:
             raise RuntimeError(f"下载失败 HTTP {r.status}: {url}")
         return await r.read()
@@ -399,13 +432,13 @@ def _extract_repo_zip(content: bytes, dest_dir: str) -> int:
             raise ValueError("空压缩包")
         roots = {f.split("/")[0] for f in flist if "/" in f and f.split("/")[0]}
         strip = len(roots) == 1
-        prefix = (list(roots)[0] + "/") if strip else ""
+        prefix = (next(iter(roots)) + "/") if strip else ""
         os.makedirs(dest_dir, exist_ok=True)
         count = 0
         for fp in flist:
             if fp.endswith("/") or "__pycache__" in fp or "/.git/" in fp:
                 continue
-            rel = fp[len(prefix):] if strip and fp.startswith(prefix) else fp
+            rel = fp[len(prefix) :] if strip and fp.startswith(prefix) else fp
             if not rel or rel.startswith("..") or os.path.isabs(rel):
                 continue
             dest = os.path.join(dest_dir, rel)
@@ -428,10 +461,8 @@ def _preserve_user_data(old_dir: str, new_dir: str):
             if os.path.exists(dst):
                 continue
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            try:
+            with contextlib.suppress(OSError):
                 shutil.copy2(src, dst)
-            except OSError:
-                pass
 
 
 def _install_to_apps(content: bytes, name: str) -> tuple[str, int]:
@@ -447,8 +478,11 @@ def _install_to_apps(content: bytes, name: str) -> tuple[str, int]:
         count = _extract_repo_zip(content, staging)
         # 若 zip 内是 <plugin>/main.py 单层包裹, 下探一层
         if not os.path.isfile(os.path.join(staging, "main.py")):
-            subs = [d for d in os.scandir(staging)
-                    if d.is_dir() and os.path.isfile(os.path.join(d.path, "main.py"))]
+            subs = [
+                d
+                for d in os.scandir(staging)
+                if d.is_dir() and os.path.isfile(os.path.join(d.path, "main.py"))
+            ]
             if len(subs) == 1:
                 staging = subs[0].path
         if not os.path.isfile(os.path.join(staging, "main.py")):
@@ -467,6 +501,7 @@ async def _install_deps(name: str, app_dir: str):
         import asyncio
 
         from ..runtime import deps
+
         return await asyncio.to_thread(deps.ensure_requirements, name, app_dir)
     except Exception as e:
         log.warning(f"[astrbot基座] 安装 [{name}] 依赖异常 (可稍后手动装): {e}")
@@ -477,8 +512,10 @@ async def _install_deps(name: str, app_dir: str):
 #  HTTP 辅助
 # ==================================================================== #
 
+
 async def _json(data, status: int = 200):
     from aiohttp import web
+
     return web.json_response(data, status=status)
 
 
@@ -493,15 +530,18 @@ async def _body(request) -> dict:
 #  路由处理器
 # ==================================================================== #
 
+
 async def handle_list(request):
     cfg = _read_config()
-    return await _json({
-        "success": True,
-        "plugin_name": _PLUGIN_NAME,
-        "apps": _installed_apps(),
-        "disabled_apps": cfg.get("disabled_apps") or [],
-        "command_prefixes": cfg.get("command_prefixes") or {},
-    })
+    return await _json(
+        {
+            "success": True,
+            "plugin_name": _PLUGIN_NAME,
+            "apps": _installed_apps(),
+            "disabled_apps": cfg.get("disabled_apps") or [],
+            "command_prefixes": cfg.get("command_prefixes") or {},
+        }
+    )
 
 
 async def handle_commands(request):
@@ -528,7 +568,9 @@ async def handle_save_config(request):
     except Exception as e:
         return await _json({"success": False, "message": f"保存失败: {e}"})
     ok, msg = await _reload_base()
-    return await _json({"success": True, "message": f"配置已保存; {msg}", "reloaded": ok})
+    return await _json(
+        {"success": True, "message": f"配置已保存; {msg}", "reloaded": ok}
+    )
 
 
 async def handle_logs(request):
@@ -547,18 +589,22 @@ async def handle_clear_logs(request):
 
 
 async def handle_get_mirror(request):
-    return await _json({
-        "success": True,
-        "mirror": _load_mirror_pref(),
-        "choices": _MIRROR_CHOICES,
-    })
+    return await _json(
+        {
+            "success": True,
+            "mirror": _load_mirror_pref(),
+            "choices": _MIRROR_CHOICES,
+        }
+    )
 
 
 async def handle_save_mirror(request):
     body = await _body(request)
     mirror = (body.get("mirror") or "").strip()
     _save_mirror_pref(mirror)
-    label = next((c["label"] for c in _MIRROR_CHOICES if c["value"] == mirror), mirror or "自动")
+    label = next(
+        (c["label"] for c in _MIRROR_CHOICES if c["value"] == mirror), mirror or "自动"
+    )
     return await _json({"success": True, "message": f"默认镜像已设为: {label}"})
 
 
@@ -572,7 +618,7 @@ async def handle_install(request):
             reader = await request.multipart()
             async for part in reader:
                 if part.name == "name":
-                    name = _safe((await part.text()))
+                    name = _safe(await part.text())
                 elif part.name in ("file", "zip"):
                     name = name or _safe(os.path.splitext(part.filename or "")[0])
                     content = await part.read(decode=False)
@@ -587,9 +633,16 @@ async def handle_install(request):
                 return await _json({"success": False, "message": "缺少 url"})
             zip_url = _github_archive_url(url)
             if not zip_url:
-                return await _json({"success": False, "message": "无法识别的 URL (需 GitHub 仓库或 .zip 直链)"})
+                return await _json(
+                    {
+                        "success": False,
+                        "message": "无法识别的 URL (需 GitHub 仓库或 .zip 直链)",
+                    }
+                )
             if not name:
-                m = re.search(r"github\.com/[^/]+/([^/.]+)", url) or re.search(r"/([^/]+?)\.zip", url)
+                m = re.search(r"github\.com/[^/]+/([^/.]+)", url) or re.search(
+                    r"/([^/]+?)\.zip", url
+                )
                 name = _safe(m.group(1)) if m else ""
             if not mirror:
                 mirror = _load_mirror_pref()
@@ -601,19 +654,25 @@ async def handle_install(request):
     try:
         final_name, count = _install_to_apps(content, name or "astrbot_plugin")
     except PermissionError:
-        return await _json({"success": False, "message": "apps 目录写权限不足, 请检查属主/权限"})
+        return await _json(
+            {"success": False, "message": "apps 目录写权限不足, 请检查属主/权限"}
+        )
     except Exception as e:
         return await _json({"success": False, "message": f"安装失败: {e}"})
 
     log.info(f"[astrbot基座] 已安装 [{final_name}] ({count} 文件), 安装依赖中…")
-    dep_ok, dep_msg = await _install_deps(final_name, os.path.join(_APPS_DIR, final_name))
+    _dep_ok, dep_msg = await _install_deps(
+        final_name, os.path.join(_APPS_DIR, final_name)
+    )
     ok, msg = await _reload_base()
-    return await _json({
-        "success": True,
-        "name": final_name,
-        "message": f"已安装 [{final_name}] ({count} 文件); 依赖: {dep_msg}; {msg}",
-        "reloaded": ok,
-    })
+    return await _json(
+        {
+            "success": True,
+            "name": final_name,
+            "message": f"已安装 [{final_name}] ({count} 文件); 依赖: {dep_msg}; {msg}",
+            "reloaded": ok,
+        }
+    )
 
 
 async def handle_uninstall(request):
@@ -632,12 +691,12 @@ async def handle_uninstall(request):
     cfg.get("command_prefixes", {}).pop(name, None)
     if name in (cfg.get("disabled_apps") or []):
         cfg["disabled_apps"] = [x for x in cfg["disabled_apps"] if x != name]
-    try:
+    with contextlib.suppress(Exception):
         _write_config(cfg)
-    except Exception:
-        pass
     ok, msg = await _reload_base()
-    return await _json({"success": True, "message": f"已卸载 [{name}]; {msg}", "reloaded": ok})
+    return await _json(
+        {"success": True, "message": f"已卸载 [{name}]; {msg}", "reloaded": ok}
+    )
 
 
 async def handle_toggle(request):
@@ -658,7 +717,13 @@ async def handle_toggle(request):
     except Exception as e:
         return await _json({"success": False, "message": f"保存失败: {e}"})
     ok, msg = await _reload_base()
-    return await _json({"success": True, "message": f"[{name}] 已{'启用' if enabled else '停用'}; {msg}", "reloaded": ok})
+    return await _json(
+        {
+            "success": True,
+            "message": f"[{name}] 已{'启用' if enabled else '停用'}; {msg}",
+            "reloaded": ok,
+        }
+    )
 
 
 async def handle_set_prefix(request):
@@ -678,7 +743,9 @@ async def handle_set_prefix(request):
     except Exception as e:
         return await _json({"success": False, "message": f"保存失败: {e}"})
     ok, msg = await _reload_base()
-    return await _json({"success": True, "message": f"[{name}] 前缀已更新; {msg}", "reloaded": ok})
+    return await _json(
+        {"success": True, "message": f"[{name}] 前缀已更新; {msg}", "reloaded": ok}
+    )
 
 
 async def handle_reload(request):

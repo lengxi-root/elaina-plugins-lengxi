@@ -8,31 +8,46 @@ import uuid
 from core.base.config import cfg
 
 DEFAULTS = {
-    'enabled': True,
-    'base_url': 'https://api.ytea.top/v1',
-    'model': 'gpt-4.1-nano',
-    'temperature': 0.3,
-    'max_iterations': 50,
-    'request_timeout': 120,
-    'system_prompt': '',
-    'reasoning_effort': '',
-    'history_limit': 50,
+    "enabled": True,
+    "base_url": "https://api.ytea.top/v1",
+    "model": "gpt-4.1-nano",
+    "temperature": 0.3,
+    "max_iterations": 50,
+    "request_timeout": 120,
+    "system_prompt": "",
+    "reasoning_effort": "",
+    "history_limit": 50,
     # 调用失败时按优先级自动切换到下一个可用模型 (故障转移)
-    'auto_switch': False,
+    "auto_switch": False,
     # 发送/检测时用一条「你好」探测模型可用性 (部分中转站可能禁止, 默认关)
-    'health_check': False,
+    "health_check": False,
     # 普通对话模式 (无开发工具) 的系统提示词, 为空则用内置通用助手提示
-    'chat_system_prompt': '',
+    "chat_system_prompt": "",
 }
 
 # 允许面板写入并持久化的字段
-_WRITABLE = ('base_url', 'api_key', 'model', 'temperature', 'max_iterations',
-             'request_timeout', 'system_prompt', 'enabled', 'reasoning_effort', 'history_limit',
-             'auto_switch', 'health_check', 'chat_system_prompt')
+_WRITABLE = (
+    "base_url",
+    "api_key",
+    "model",
+    "temperature",
+    "max_iterations",
+    "request_timeout",
+    "system_prompt",
+    "enabled",
+    "reasoning_effort",
+    "history_limit",
+    "auto_switch",
+    "health_check",
+    "chat_system_prompt",
+)
 
 # 子模块位于 ai_dev/app/, data 目录在插件根 ai_dev/data/
 _OVERRIDE_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'runtime_config.json')
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "runtime_config.json",
+)
 _lock = threading.Lock()
 _override_cache = None
 
@@ -44,7 +59,7 @@ def _load_override() -> dict:
     data = {}
     try:
         if os.path.exists(_OVERRIDE_FILE):
-            with open(_OVERRIDE_FILE, encoding='utf-8') as f:
+            with open(_OVERRIDE_FILE, encoding="utf-8") as f:
                 loaded = json.load(f)
             if isinstance(loaded, dict):
                 data = {k: v for k, v in loaded.items() if k in _WRITABLE}
@@ -67,15 +82,15 @@ def set_runtime(updates: dict) -> dict:
             elif isinstance(v, str):
                 sv = v.strip()
                 # 空字符串表示清除该覆盖, 回退到 settings.yaml / 环境变量 / 默认
-                if sv == '':
+                if sv == "":
                     cur.pop(k, None)
                 else:
                     cur[k] = sv
             else:
                 cur[k] = v
         os.makedirs(os.path.dirname(_OVERRIDE_FILE), exist_ok=True)
-        tmp = _OVERRIDE_FILE + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
+        tmp = _OVERRIDE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(cur, f, ensure_ascii=False, indent=2)
         os.replace(tmp, _OVERRIDE_FILE)
         _override_cache = cur
@@ -85,8 +100,11 @@ def set_runtime(updates: dict) -> dict:
 # ---- 多站点预设: 每个站点保存一套 base_url/api_key/model/reasoning_effort, 可随时一键切换 ----
 # 此外每个站点可保存一组 models: [{name, enabled, priority}], 用于「自动切换模型」的故障转移链。
 _PRESETS_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'ai_presets.json')
-_PRESET_FIELDS = ('base_url', 'model', 'reasoning_effort')
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "ai_presets.json",
+)
+_PRESET_FIELDS = ("base_url", "model", "reasoning_effort")
 
 
 def _norm_models(models) -> list:
@@ -99,45 +117,55 @@ def _norm_models(models) -> list:
         return out
     for i, m in enumerate(models):
         if isinstance(m, str):
-            m = {'name': m}
+            m = {"name": m}
         if not isinstance(m, dict):
             continue
-        name = str(m.get('name') or '').strip()
+        name = str(m.get("name") or "").strip()
         if not name or name in seen:
             continue
         seen.add(name)
         try:
-            pr = int(m.get('priority', i + 1))
+            pr = int(m.get("priority", i + 1))
         except (TypeError, ValueError):
             pr = i + 1
-        st = str(m.get('status') or '').strip()
-        if st not in ('ok', 'err'):
-            st = ''
+        st = str(m.get("status") or "").strip()
+        if st not in ("ok", "err"):
+            st = ""
         try:
-            ca = int(m.get('checked_at') or 0)
+            ca = int(m.get("checked_at") or 0)
         except (TypeError, ValueError):
             ca = 0
-        out.append({'name': name, 'enabled': bool(m.get('enabled', True)),
-                    'priority': pr, 'status': st, 'checked_at': ca})
+        out.append(
+            {
+                "name": name,
+                "enabled": bool(m.get("enabled", True)),
+                "priority": pr,
+                "status": st,
+                "checked_at": ca,
+            }
+        )
     return out
 
 
 def _load_presets_raw() -> dict:
     try:
         if os.path.exists(_PRESETS_FILE):
-            with open(_PRESETS_FILE, encoding='utf-8') as f:
+            with open(_PRESETS_FILE, encoding="utf-8") as f:
                 d = json.load(f)
-            if isinstance(d, dict) and isinstance(d.get('presets'), list):
-                return {'active_id': str(d.get('active_id') or ''), 'presets': d['presets']}
+            if isinstance(d, dict) and isinstance(d.get("presets"), list):
+                return {
+                    "active_id": str(d.get("active_id") or ""),
+                    "presets": d["presets"],
+                }
     except Exception:  # noqa: BLE001
         pass
-    return {'active_id': '', 'presets': []}
+    return {"active_id": "", "presets": []}
 
 
 def _save_presets_raw(data: dict):
     os.makedirs(os.path.dirname(_PRESETS_FILE), exist_ok=True)
-    tmp = _PRESETS_FILE + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
+    tmp = _PRESETS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, _PRESETS_FILE)
 
@@ -145,40 +173,50 @@ def _save_presets_raw(data: dict):
 def list_presets() -> dict:
     """返回站点列表 (不含 api_key 明文, 仅标记是否已设) 与当前激活站点 id。"""
     raw = _load_presets_raw()
-    presets = [{
-        'id': p.get('id', ''),
-        'name': p.get('name', '') or '未命名站点',
-        'base_url': p.get('base_url', ''),
-        'model': p.get('model', ''),
-        'reasoning_effort': p.get('reasoning_effort', ''),
-        'api_key_set': bool(p.get('api_key')),
-        'models': _norm_models(p.get('models')),
-    } for p in raw['presets'] if p.get('id')]
-    return {'active_id': raw.get('active_id', ''), 'presets': presets}
+    presets = [
+        {
+            "id": p.get("id", ""),
+            "name": p.get("name", "") or "未命名站点",
+            "base_url": p.get("base_url", ""),
+            "model": p.get("model", ""),
+            "reasoning_effort": p.get("reasoning_effort", ""),
+            "api_key_set": bool(p.get("api_key")),
+            "models": _norm_models(p.get("models")),
+        }
+        for p in raw["presets"]
+        if p.get("id")
+    ]
+    return {"active_id": raw.get("active_id", ""), "presets": presets}
 
 
 def save_preset(p: dict) -> dict:
     """新增或更新一个站点预设 (按 id 匹配, 无 id 则新建)。api_key 留空不改、null 清除。"""
     with _lock:
         raw = _load_presets_raw()
-        pid = str((p or {}).get('id') or '').strip()
-        item = next((x for x in raw['presets'] if x.get('id') == pid), None) if pid else None
+        pid = str((p or {}).get("id") or "").strip()
+        item = (
+            next((x for x in raw["presets"] if x.get("id") == pid), None)
+            if pid
+            else None
+        )
         if item is None:
             pid = pid or uuid.uuid4().hex[:8]
-            item = {'id': pid}
-            raw['presets'].append(item)
-        item['name'] = str(p.get('name') or '').strip() or item.get('name') or '未命名站点'
+            item = {"id": pid}
+            raw["presets"].append(item)
+        item["name"] = (
+            str(p.get("name") or "").strip() or item.get("name") or "未命名站点"
+        )
         for k in _PRESET_FIELDS:
             if k in p:
-                item[k] = str(p.get(k) or '').strip()
-        if 'models' in p:
-            item['models'] = _norm_models(p.get('models'))
-        if 'api_key' in p:
-            ak = p['api_key']
+                item[k] = str(p.get(k) or "").strip()
+        if "models" in p:
+            item["models"] = _norm_models(p.get("models"))
+        if "api_key" in p:
+            ak = p["api_key"]
             if ak is None:
-                item.pop('api_key', None)
+                item.pop("api_key", None)
             elif isinstance(ak, str) and ak.strip():
-                item['api_key'] = ak.strip()
+                item["api_key"] = ak.strip()
         _save_presets_raw(raw)
         return list_presets()
 
@@ -186,19 +224,21 @@ def save_preset(p: dict) -> dict:
 def preset_endpoint(pid: str) -> dict:
     """按站点 id 解析其 base_url/api_key (供面板探活用), 缺失则回退当前生效配置。"""
     raw = _load_presets_raw()
-    item = next((x for x in raw['presets'] if x.get('id') == pid), None) if pid else None
+    item = (
+        next((x for x in raw["presets"] if x.get("id") == pid), None) if pid else None
+    )
     return {
-        'base_url': str((item or {}).get('base_url') or '').rstrip('/') or base_url(),
-        'api_key': (item or {}).get('api_key') or api_key(),
+        "base_url": str((item or {}).get("base_url") or "").rstrip("/") or base_url(),
+        "api_key": (item or {}).get("api_key") or api_key(),
     }
 
 
 def delete_preset(pid: str) -> dict:
     with _lock:
         raw = _load_presets_raw()
-        raw['presets'] = [x for x in raw['presets'] if x.get('id') != pid]
-        if raw.get('active_id') == pid:
-            raw['active_id'] = ''
+        raw["presets"] = [x for x in raw["presets"] if x.get("id") != pid]
+        if raw.get("active_id") == pid:
+            raw["active_id"] = ""
         _save_presets_raw(raw)
         return list_presets()
 
@@ -207,109 +247,111 @@ def apply_preset(pid: str):
     """切换到某站点: 把其配置写入当前生效覆盖 (base_url/model/reasoning_effort/api_key)。返回最新列表, 不存在返回 None。"""
     with _lock:
         raw = _load_presets_raw()
-        item = next((x for x in raw['presets'] if x.get('id') == pid), None)
+        item = next((x for x in raw["presets"] if x.get("id") == pid), None)
         if not item:
             return None
-        raw['active_id'] = pid
+        raw["active_id"] = pid
         _save_presets_raw(raw)
-    updates = {'reasoning_effort': item.get('reasoning_effort', '')}
-    if item.get('base_url'):
-        updates['base_url'] = item['base_url']
-    if item.get('model'):
-        updates['model'] = item['model']
-    if item.get('api_key'):
-        updates['api_key'] = item['api_key']
+    updates = {"reasoning_effort": item.get("reasoning_effort", "")}
+    if item.get("base_url"):
+        updates["base_url"] = item["base_url"]
+    if item.get("model"):
+        updates["model"] = item["model"]
+    if item.get("api_key"):
+        updates["api_key"] = item["api_key"]
     set_runtime(updates)
     return list_presets()
 
 
 def _ai(key: str, default=None):
-    return cfg.get('settings', f'ai.{key}', default)
+    return cfg.get("settings", f"ai.{key}", default)
 
 
 def get(key: str):
     ov = _load_override().get(key)
-    if ov is not None and ov != '':
+    if ov is not None and ov != "":
         return ov
     val = _ai(key, None)
-    if val is None or val == '':
+    if val is None or val == "":
         return DEFAULTS.get(key)
     return val
 
 
 def base_url() -> str:
-    url = str(get('base_url') or DEFAULTS['base_url']).rstrip('/')
+    url = str(get("base_url") or DEFAULTS["base_url"]).rstrip("/")
     return url
 
 
 def api_key() -> str:
-    key = _load_override().get('api_key') or ''
+    key = _load_override().get("api_key") or ""
     if not key:
-        key = _ai('api_key', '') or ''
+        key = _ai("api_key", "") or ""
     if not key:
-        key = os.environ.get('AI_DEV_API_KEY') or os.environ.get('OPENAI_API_KEY') or ''
+        key = os.environ.get("AI_DEV_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
     return str(key)
 
 
 def model() -> str:
-    return str(get('model') or DEFAULTS['model'])
+    return str(get("model") or DEFAULTS["model"])
 
 
 def temperature() -> float:
     try:
-        return float(get('temperature'))
+        return float(get("temperature"))
     except (TypeError, ValueError):
-        return DEFAULTS['temperature']
+        return DEFAULTS["temperature"]
 
 
 def max_iterations() -> int:
     try:
-        return int(get('max_iterations'))
+        return int(get("max_iterations"))
     except (TypeError, ValueError):
-        return DEFAULTS['max_iterations']
+        return DEFAULTS["max_iterations"]
 
 
 def history_limit() -> int:
     """单会话保留的最大对话轮数 (1 轮 = 用户提问 + AI 回复); <=0 表示不限制。"""
     try:
-        return int(get('history_limit'))
+        return int(get("history_limit"))
     except (TypeError, ValueError):
-        return DEFAULTS['history_limit']
+        return DEFAULTS["history_limit"]
 
 
 def request_timeout() -> int:
     try:
-        return int(get('request_timeout'))
+        return int(get("request_timeout"))
     except (TypeError, ValueError):
-        return DEFAULTS['request_timeout']
+        return DEFAULTS["request_timeout"]
 
 
 def system_prompt() -> str:
-    return str(get('system_prompt') or '')
+    return str(get("system_prompt") or "")
 
 
 def reasoning_effort() -> str:
     """思考强度: '' 表示不指定 (跟随模型默认), 否则 minimal/low/medium/high。"""
-    v = str(get('reasoning_effort') or '').strip().lower()
-    return v if v in ('minimal', 'low', 'medium', 'high') else ''
+    v = str(get("reasoning_effort") or "").strip().lower()
+    return v if v in ("minimal", "low", "medium", "high") else ""
 
 
 def auto_switch() -> bool:
     """调用失败时是否按优先级自动切换到下一个模型。"""
-    return bool(get('auto_switch'))
+    return bool(get("auto_switch"))
 
 
 def health_check() -> bool:
     """发送/检测时是否用「你好」探测模型可用性。"""
-    return bool(get('health_check'))
+    return bool(get("health_check"))
 
 
-CHAT_SYSTEM_PROMPT = '你是一个有用、友好的 AI 助手。请用简洁、准确的中文回答用户的问题。'
+CHAT_SYSTEM_PROMPT = (
+    "你是一个有用、友好的 AI 助手。请用简洁、准确的中文回答用户的问题。"
+)
 
 
 def chat_system_prompt() -> str:
     """普通对话模式的系统提示词, 为空回退内置通用助手提示。"""
-    return str(get('chat_system_prompt') or '').strip() or CHAT_SYSTEM_PROMPT
+    return str(get("chat_system_prompt") or "").strip() or CHAT_SYSTEM_PROMPT
 
 
 def is_configured() -> bool:
@@ -319,23 +361,23 @@ def is_configured() -> bool:
 def public_config() -> dict:
     """返回可暴露给前端的配置 (不含 api_key 明文)"""
     return {
-        'enabled': bool(get('enabled')),
-        'base_url': base_url(),
-        'model': model(),
-        'temperature': temperature(),
-        'max_iterations': max_iterations(),
-        'history_limit': history_limit(),
-        'request_timeout': request_timeout(),
-        'system_prompt': system_prompt(),
-        'reasoning_effort': reasoning_effort(),
-        'auto_switch': auto_switch(),
-        'health_check': health_check(),
-        'chat_system_prompt': str(get('chat_system_prompt') or ''),
-        'api_key_set': is_configured(),
+        "enabled": bool(get("enabled")),
+        "base_url": base_url(),
+        "model": model(),
+        "temperature": temperature(),
+        "max_iterations": max_iterations(),
+        "history_limit": history_limit(),
+        "request_timeout": request_timeout(),
+        "system_prompt": system_prompt(),
+        "reasoning_effort": reasoning_effort(),
+        "auto_switch": auto_switch(),
+        "health_check": health_check(),
+        "chat_system_prompt": str(get("chat_system_prompt") or ""),
+        "api_key_set": is_configured(),
     }
 
 
-def failover_chain(current_model: str = '', force: bool = False) -> list:
+def failover_chain(current_model: str = "", force: bool = False) -> list:
     """构造故障转移端点链: [{base_url, api_key, model, label, preset_id}]。
 
     第一个永远是当前手动选择的端点+模型 (行为不变)。开启 auto_switch (或 force=True,
@@ -344,34 +386,37 @@ def failover_chain(current_model: str = '', force: bool = False) -> list:
     """
     cur_base = base_url()
     cur = {
-        'base_url': cur_base,
-        'api_key': api_key(),
-        'model': str(current_model or model()),
-        'label': '当前',
-        'preset_id': _load_presets_raw().get('active_id', ''),
+        "base_url": cur_base,
+        "api_key": api_key(),
+        "model": str(current_model or model()),
+        "label": "当前",
+        "preset_id": _load_presets_raw().get("active_id", ""),
     }
     if not (auto_switch() or force):
         return [cur]
     chain = [cur]
-    seen = {(cur['base_url'], cur['model'])}
+    seen = {(cur["base_url"], cur["model"])}
     raw = _load_presets_raw()
-    entries = []
-    for p in raw['presets']:
-        for m in _norm_models(p.get('models')):
-            if m.get('enabled'):
-                entries.append((m['priority'], p, m['name']))
+    entries = [
+        (model["priority"], preset, model["name"])
+        for preset in raw["presets"]
+        for model in _norm_models(preset.get("models"))
+        if model.get("enabled")
+    ]
     entries.sort(key=lambda x: x[0])
     for _pr, p, name in entries:
-        ep_base = str(p.get('base_url') or '').rstrip('/') or cur_base
+        ep_base = str(p.get("base_url") or "").rstrip("/") or cur_base
         key = (ep_base, name)
         if key in seen:
             continue
         seen.add(key)
-        chain.append({
-            'base_url': ep_base,
-            'api_key': p.get('api_key') or cur['api_key'],
-            'model': name,
-            'label': p.get('name') or '未命名站点',
-            'preset_id': p.get('id', ''),
-        })
+        chain.append(
+            {
+                "base_url": ep_base,
+                "api_key": p.get("api_key") or cur["api_key"],
+                "model": name,
+                "label": p.get("name") or "未命名站点",
+                "preset_id": p.get("id", ""),
+            }
+        )
     return chain

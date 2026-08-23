@@ -70,12 +70,14 @@ def _hook_renderer(renderer_cls):
 
     orig_close = getattr(renderer_cls, "close", None)
     if orig_close and inspect.iscoroutinefunction(orig_close):
+
         async def _close_hooked(self, *a, **k):
             if getattr(self, "_using_framework_browser", False):
                 self._browser = None  # 不关共享浏览器
                 self._playwright = None
                 self._using_framework_browser = False
             return await orig_close(self, *a, **k)
+
         renderer_cls.close = _close_hooked
 
 

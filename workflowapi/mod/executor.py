@@ -20,7 +20,7 @@ from datetime import datetime
 import aiohttp
 from core.base.logger import PLUGIN, get_logger
 
-log = get_logger(PLUGIN, '工作流API')
+log = get_logger(PLUGIN, "工作流API")
 
 # 共享 HTTP 会话
 _session: aiohttp.ClientSession | None = None
@@ -29,9 +29,23 @@ _session_lock = asyncio.Lock()
 # 变量占位符 {token}: token 内不含大括号与双引号,
 # 以免把请求体里字面量 JSON ({"a":1}) 误当成变量而被清空 (真实变量名不含引号)。
 _TOKEN_RE = re.compile(r'\{([^{}"]+)\}')
-_WEEKDAYS = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
-_DAYMAP = {'周一': 1, '周二': 2, '周三': 3, '周四': 4, '周五': 5, '周六': 6, '周日': 0,
-           '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4, '星期五': 5, '星期六': 6, '星期日': 0}
+_WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+_DAYMAP = {
+    "周一": 1,
+    "周二": 2,
+    "周三": 3,
+    "周四": 4,
+    "周五": 5,
+    "周六": 6,
+    "周日": 0,
+    "星期一": 1,
+    "星期二": 2,
+    "星期三": 3,
+    "星期四": 4,
+    "星期五": 5,
+    "星期六": 6,
+    "星期日": 0,
+}
 _MAX_NODES = 100  # 单次执行最多访问节点数, 防环
 
 
@@ -41,7 +55,9 @@ async def http_session() -> aiohttp.ClientSession:
         return _session
     async with _session_lock:
         if _session is None or _session.closed:
-            _session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=30, ttl_dns_cache=300))
+            _session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(limit=30, ttl_dns_cache=300)
+            )
         return _session
 
 
@@ -58,29 +74,29 @@ async def close_http_session():
 def build_context(event, match):
     """组装基础变量字典 (事件字段 + 正则分组)。返回 (base_vars, store)。"""
     base = {
-        'content': getattr(event, 'content', '') or '',
-        'raw_content': getattr(event, 'raw_content', '') or '',
-        'user_id': getattr(event, 'user_id', '') or '',
-        'group_id': getattr(event, 'group_id', '') or '',
-        'channel_id': getattr(event, 'channel_id', '') or '',
-        'guild_id': getattr(event, 'guild_id', '') or '',
-        'username': getattr(event, 'username', '') or '',
-        'message_id': getattr(event, 'message_id', '') or '',
-        'message_type': getattr(event, 'message_type', '') or '',
-        'event_type': getattr(event, 'event_type', '') or '',
-        'appid': getattr(event, 'appid', '') or '',
-        'image_url': getattr(event, 'image_url', '') or '',
+        "content": getattr(event, "content", "") or "",
+        "raw_content": getattr(event, "raw_content", "") or "",
+        "user_id": getattr(event, "user_id", "") or "",
+        "group_id": getattr(event, "group_id", "") or "",
+        "channel_id": getattr(event, "channel_id", "") or "",
+        "guild_id": getattr(event, "guild_id", "") or "",
+        "username": getattr(event, "username", "") or "",
+        "message_id": getattr(event, "message_id", "") or "",
+        "message_type": getattr(event, "message_type", "") or "",
+        "event_type": getattr(event, "event_type", "") or "",
+        "appid": getattr(event, "appid", "") or "",
+        "image_url": getattr(event, "image_url", "") or "",
     }
     if match is not None:
         try:
-            base['0'] = match.group(0) or ''
-            base['$0'] = base['0']
+            base["0"] = match.group(0) or ""
+            base["$0"] = base["0"]
             for i, g in enumerate(match.groups(), 1):
-                v = g if g is not None else ''
+                v = g if g is not None else ""
                 base[str(i)] = v
-                base[f'${i}'] = v
+                base[f"${i}"] = v
             for k, v in (match.groupdict() or {}).items():
-                base[k] = v if v is not None else ''
+                base[k] = v if v is not None else ""
         except Exception:
             pass
     return base, {}
@@ -90,23 +106,23 @@ def _dynamic(token):
     """时间/随机类动态变量; 命中返回字符串, 否则返回 None。"""
     now = datetime.now()
     table = {
-        'date': now.strftime('%Y-%m-%d'),
-        'today': now.strftime('%Y-%m-%d'),
-        'time': now.strftime('%H:%M:%S'),
-        'datetime': now.strftime('%Y-%m-%d %H:%M:%S'),
-        'timestamp': str(int(time.time())),
-        'year': now.strftime('%Y'),
-        'month': now.strftime('%m'),
-        'day': now.strftime('%d'),
-        'hour': now.strftime('%H'),
-        'minute': now.strftime('%M'),
-        'second': now.strftime('%S'),
-        'weekday': _WEEKDAYS[now.weekday()],
-        'random': str(random.randint(0, 999999)),
+        "date": now.strftime("%Y-%m-%d"),
+        "today": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M:%S"),
+        "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": str(int(time.time())),
+        "year": now.strftime("%Y"),
+        "month": now.strftime("%m"),
+        "day": now.strftime("%d"),
+        "hour": now.strftime("%H"),
+        "minute": now.strftime("%M"),
+        "second": now.strftime("%S"),
+        "weekday": _WEEKDAYS[now.weekday()],
+        "random": str(random.randint(0, 999999)),
     }
     if token in table:
         return table[token]
-    m = re.fullmatch(r'random(-?\d+)-(-?\d+)', token)
+    m = re.fullmatch(r"random(-?\d+)-(-?\d+)", token)
     if m:
         lo, hi = int(m.group(1)), int(m.group(2))
         if lo > hi:
@@ -128,36 +144,35 @@ def extract_path(obj, path):
             if isinstance(cur, list | tuple) and -len(cur) <= part < len(cur):
                 cur = cur[part]
             else:
-                return ''
+                return ""
         else:
             if isinstance(cur, dict) and part in cur:
                 cur = cur[part]
             else:
-                return ''
+                return ""
     return _stringify(cur)
 
 
 def _split_path(path):
     """把 'a.b[0].c' 拆成 ['a','b',0,'c']。"""
     out = []
-    for seg in path.split('.'):
-        m = re.match(r'^([^\[\]]*)((?:\[\d+\])*)$', seg)
+    for seg in path.split("."):
+        m = re.match(r"^([^\[\]]*)((?:\[\d+\])*)$", seg)
         if not m:
             out.append(seg)
             continue
         key, idxs = m.group(1), m.group(2)
         if key:
             out.append(key)
-        for im in re.finditer(r'\[(\d+)\]', idxs):
-            out.append(int(im.group(1)))
+        out.extend(int(match.group(1)) for match in re.finditer(r"\[(\d+)\]", idxs))
     return out
 
 
 def _stringify(v):
     if v is None:
-        return ''
+        return ""
     if isinstance(v, bool):
-        return 'true' if v else 'false'
+        return "true" if v else "false"
     if isinstance(v, str):
         return v
     if isinstance(v, int | float):
@@ -174,19 +189,19 @@ def _stringify(v):
 def _resolve_token_opt(token, base, store):
     """解析单个 token; 命中返回字符串, 未命中(非已知变量)返回 None。"""
     token = token.strip()
-    head, _, rest = token.partition('.')
+    head, _, rest = token.partition(".")
     if head in store:
         entry = store[head]
         if not rest:
-            return entry.get('text', '')
-        if rest == '__status__':
-            return str(entry.get('status', ''))
-        if rest == '__text__':
-            return entry.get('text', '')
-        if rest in ('__output__', 'out'):
-            return entry.get('output', entry.get('text', ''))
-        data = entry.get('json')
-        return '' if data is None else extract_path(data, rest)
+            return entry.get("text", "")
+        if rest == "__status__":
+            return str(entry.get("status", ""))
+        if rest == "__text__":
+            return entry.get("text", "")
+        if rest in ("__output__", "out"):
+            return entry.get("output", entry.get("text", ""))
+        data = entry.get("json")
+        return "" if data is None else extract_path(data, rest)
     if token in base:
         return _stringify(base[token])
     if head in base and not rest:
@@ -197,7 +212,7 @@ def _resolve_token_opt(token, base, store):
 def resolve_token(token, base, store):
     """解析单个 {token}; 顺序: 保存的响应 > 基础/自定义变量 > 动态变量。未命中返回 ''。"""
     v = _resolve_token_opt(token, base, store)
-    return '' if v is None else v
+    return "" if v is None else v
 
 
 def render(value, base, store, keep_unknown=False):
@@ -207,14 +222,19 @@ def render(value, base, store, keep_unknown=False):
     手写的 JSON 请求体, 避免把请求体里字面量 JSON 片段 (如 {id:1}) 当成空变量删掉。
     """
     if isinstance(value, str):
+
         def _sub(m):
             if keep_unknown:
                 v = _resolve_token_opt(m.group(1), base, store)
                 return m.group(0) if v is None else v
             return resolve_token(m.group(1), base, store)
+
         return _TOKEN_RE.sub(_sub, value)
     if isinstance(value, dict):
-        return {render(k, base, store, keep_unknown): render(v, base, store, keep_unknown) for k, v in value.items()}
+        return {
+            render(k, base, store, keep_unknown): render(v, base, store, keep_unknown)
+            for k, v in value.items()
+        }
     if isinstance(value, list):
         return [render(v, base, store, keep_unknown) for v in value]
     return value
@@ -225,69 +245,69 @@ def render(value, base, store, keep_unknown=False):
 
 def eval_condition(data, base, store):
     """条件节点求值, 返回 True/False。"""
-    ctype = data.get('condition_type', 'contains')
-    val = render(data.get('condition_value', ''), base, store)
-    content = base.get('content', '')
-    var_name = data.get('var_name', '')
-    var_val = _stringify(base.get(var_name, '')) if var_name else ''
+    ctype = data.get("condition_type", "contains")
+    val = render(data.get("condition_value", ""), base, store)
+    content = base.get("content", "")
+    var_name = data.get("var_name", "")
+    var_val = _stringify(base.get(var_name, "")) if var_name else ""
 
     try:
-        if ctype == 'contains':
+        if ctype == "contains":
             return val in content
-        if ctype == 'not_contains':
+        if ctype == "not_contains":
             return val not in content
-        if ctype == 'equals':
+        if ctype == "equals":
             return content == val
-        if ctype == 'ne':
+        if ctype == "ne":
             return content != val
-        if ctype == 'regex':
+        if ctype == "regex":
             return re.search(val, content) is not None
-        if ctype == 'random':
+        if ctype == "random":
             return random.random() * 100 < float(val or 0)
-        if ctype == 'user_id':
-            return base.get('user_id', '') == val
-        if ctype == 'group_id':
-            return base.get('group_id', '') == val
-        if ctype == 'empty':
-            return var_val == '' if var_name else content == ''
-        if ctype == 'not_empty':
-            return var_val != '' if var_name else content != ''
-        if ctype == 'var_equals':
+        if ctype == "user_id":
+            return base.get("user_id", "") == val
+        if ctype == "group_id":
+            return base.get("group_id", "") == val
+        if ctype == "empty":
+            return var_val == "" if var_name else content == ""
+        if ctype == "not_empty":
+            return var_val != "" if var_name else content != ""
+        if ctype == "var_equals":
             return var_val == val
-        if ctype == 'var_gt':
+        if ctype == "var_gt":
             return float(var_val or 0) > float(val or 0)
-        if ctype == 'var_lt':
+        if ctype == "var_lt":
             return float(var_val or 0) < float(val or 0)
-        if ctype == 'time_range':
-            s, e = (int(x.strip()) for x in val.split('-'))
+        if ctype == "time_range":
+            s, e = (int(x.strip()) for x in val.split("-"))
             h = datetime.now().hour
             return s <= h <= e if s <= e else (h >= s or h <= e)
-        if ctype == 'weekday_in':
+        if ctype == "weekday_in":
             today = datetime.now().weekday()  # 0=周一
             today_sun = (today + 1) % 7  # 0=周日, 兼容数字
-            days = [d.strip() for d in val.split('|') if d.strip()]
+            days = [d.strip() for d in val.split("|") if d.strip()]
             for d in days:
                 if d in _DAYMAP and _DAYMAP[d] == today_sun:
                     return True
                 if d.isdigit() and int(d) == today_sun:
                     return True
             return False
-        if ctype == 'expression':
+        if ctype == "expression":
             return _safe_expr(val)
     except Exception as e:
-        log.debug(f'条件求值失败 [{ctype}]: {e}')
+        log.debug(f"条件求值失败 [{ctype}]: {e}")
     return False
 
 
 def _safe_expr(expr):
     """极简安全比较表达式: 仅支持 a op b (== != > < >= <=) 与 and/or。"""
     expr = expr.strip()
-    for sep, fn in (('&&', all), ('||', any)):
+    for sep, fn in (("&&", all), ("||", any)):
         if sep in expr:
             return fn(_safe_expr(p) for p in expr.split(sep))
-    m = re.match(r'^\s*(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$', expr)
+    m = re.match(r"^\s*(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$", expr)
     if not m:
-        return bool(expr) and expr.lower() not in ('false', '0', '')
+        return bool(expr) and expr.lower() not in ("false", "0", "")
     a, op, b = m.group(1).strip(), m.group(2), m.group(3).strip()
 
     def _n(x):
@@ -295,10 +315,18 @@ def _safe_expr(expr):
             return float(x)
         except ValueError:
             return None
+
     na, nb = _n(a), _n(b)
     if na is not None and nb is not None:
         a, b = na, nb
-    return {'==': a == b, '!=': a != b, '>': a > b, '<': a < b, '>=': a >= b, '<=': a <= b}[op]
+    return {
+        "==": a == b,
+        "!=": a != b,
+        ">": a > b,
+        "<": a < b,
+        ">=": a >= b,
+        "<=": a <= b,
+    }[op]
 
 
 # ==================== API 调用 ====================
@@ -336,55 +364,77 @@ def _render_json_body(body, base, store):
 
 async def run_api(request, base, store):
     """执行一次 HTTP 请求, 返回 {status, text, json, bytes, error}。"""
-    url = render(request.get('url', ''), base, store)
+    url = render(request.get("url", ""), base, store)
     if not url:
-        return {'status': 0, 'text': '', 'json': None, 'bytes': b'', 'error': 'URL 为空'}
-    method = request.get('method', 'GET').upper()
-    headers = render(request.get('headers', {}), base, store)
-    timeout = aiohttp.ClientTimeout(total=request.get('timeout', 15))
-    resp_kind = request.get('response', 'json')
+        return {
+            "status": 0,
+            "text": "",
+            "json": None,
+            "bytes": b"",
+            "error": "URL 为空",
+        }
+    method = request.get("method", "GET").upper()
+    headers = render(request.get("headers", {}), base, store)
+    timeout = aiohttp.ClientTimeout(total=request.get("timeout", 15))
+    resp_kind = request.get("response", "json")
 
-    kwargs = {'headers': headers, 'timeout': timeout}
-    body_type = request.get('body_type', 'json')
-    body = request.get('body', '')
-    if method in ('POST', 'PUT', 'PATCH', 'DELETE') and body not in ('', None):
-        if body_type == 'json':
+    kwargs = {"headers": headers, "timeout": timeout}
+    body_type = request.get("body_type", "json")
+    body = request.get("body", "")
+    if method in ("POST", "PUT", "PATCH", "DELETE") and body not in ("", None):
+        if body_type == "json":
             rendered = _render_json_body(body, base, store)
             if isinstance(rendered, dict | list):
-                kwargs['json'] = rendered
+                kwargs["json"] = rendered
             else:
                 # 模板本身不是合法 JSON (如值里嵌了未转义的 JSON 文本): 按用户原样
                 # 发送文本体并显式声明 application/json, 不再交给 aiohttp 的 json= ——
                 # 否则会把整段字符串再序列化成一个带引号的 JSON 字符串, 服务端收到的
                 # 不是对象而是字符串, 字段全部丢失。
                 text = rendered if isinstance(rendered, str) else _stringify(rendered)
-                kwargs['data'] = text.encode('utf-8')
-                hdrs = kwargs.get('headers') or {}
-                if not any(k.lower() == 'content-type' for k in hdrs):
-                    hdrs = {**hdrs, 'Content-Type': 'application/json'}
-                kwargs['headers'] = hdrs
-        elif body_type == 'form':
+                kwargs["data"] = text.encode("utf-8")
+                hdrs = kwargs.get("headers") or {}
+                if not any(k.lower() == "content-type" for k in hdrs):
+                    hdrs = {**hdrs, "Content-Type": "application/json"}
+                kwargs["headers"] = hdrs
+        elif body_type == "form":
             rendered = render(body, base, store)
-            kwargs['data'] = {str(k): str(v) for k, v in rendered.items()} if isinstance(rendered, dict) else rendered
+            kwargs["data"] = (
+                {str(k): str(v) for k, v in rendered.items()}
+                if isinstance(rendered, dict)
+                else rendered
+            )
         else:
             rendered = render(body, base, store)
-            kwargs['data'] = rendered if isinstance(rendered, str | bytes) else json.dumps(rendered, ensure_ascii=False)
+            kwargs["data"] = (
+                rendered
+                if isinstance(rendered, str | bytes)
+                else json.dumps(rendered, ensure_ascii=False)
+            )
 
     try:
         session = await http_session()
         async with session.request(method, url, **kwargs) as r:
             raw = await r.read()
-            text = raw.decode('utf-8', errors='replace') if resp_kind != 'binary' else ''
+            text = (
+                raw.decode("utf-8", errors="replace") if resp_kind != "binary" else ""
+            )
             parsed = None
-            if resp_kind == 'json':
+            if resp_kind == "json":
                 try:
                     parsed = json.loads(text)
                 except Exception:
                     parsed = None
-            return {'status': r.status, 'text': text, 'json': parsed, 'bytes': raw, 'error': ''}
+            return {
+                "status": r.status,
+                "text": text,
+                "json": parsed,
+                "bytes": raw,
+                "error": "",
+            }
     except Exception as e:
-        log.warning(f'API 请求失败 [{url}]: {e}')
-        return {'status': 0, 'text': '', 'json': None, 'bytes': b'', 'error': str(e)}
+        log.warning(f"API 请求失败 [{url}]: {e}")
+        return {"status": 0, "text": "", "json": None, "bytes": b"", "error": str(e)}
 
 
 # ==================== 回复发送 ====================
@@ -392,41 +442,44 @@ async def run_api(request, base, store):
 
 async def send_reply(event, data, base, store):
     """根据 reply 节点配置发送一条消息, 接入框架全部消息接口。"""
-    rtype = data.get('reply_type', 'text')
-    content = render(data.get('content', ''), base, store)
-    buttons = render(data.get('buttons'), base, store) or None
+    rtype = data.get("reply_type", "text")
+    content = render(data.get("content", ""), base, store)
+    buttons = render(data.get("buttons"), base, store) or None
 
-    if rtype in ('text', 'markdown'):
+    if rtype in ("text", "markdown"):
         if content or buttons:
             await event.reply(content, buttons=buttons)
         return
-    if rtype == 'image':
-        if data.get('image_source') == 'response':
-            src = data.get('from_step', '') or _last_step_key(store)
-            blob = store.get(src, {}).get('bytes', b'')
+    if rtype == "image":
+        if data.get("image_source") == "response":
+            src = data.get("from_step", "") or _last_step_key(store)
+            blob = store.get(src, {}).get("bytes", b"")
             if blob:
                 await event.reply_image(blob, content=content)
             return
-        url = render(data.get('image_value', '') or content, base, store)
+        url = render(data.get("image_value", "") or content, base, store)
         if url:
-            await event.reply_image(url, content='' if url == content else content)
+            await event.reply_image(url, content="" if url == content else content)
         return
-    if rtype == 'voice':
+    if rtype == "voice":
         if content:
             await event.reply_voice(content)
         return
-    if rtype == 'video':
+    if rtype == "video":
         if content:
             await event.reply_video(content)
         return
-    if rtype == 'file':
+    if rtype == "file":
         if content:
-            await event.reply_file(content, file_name=render(data.get('file_name', ''), base, store) or None)
+            await event.reply_file(
+                content,
+                file_name=render(data.get("file_name", ""), base, store) or None,
+            )
         return
-    if rtype == 'ark':
-        kv = _build_ark_kv(data.get('ark_kv'), base, store)
+    if rtype == "ark":
+        kv = _build_ark_kv(data.get("ark_kv"), base, store)
         if kv:
-            await event.reply_ark(data.get('ark_template_id', 23), kv, content=content)
+            await event.reply_ark(data.get("ark_template_id", 23), kv, content=content)
         return
 
 
@@ -436,55 +489,67 @@ def _build_ark_kv(ark_kv, base, store):
     if not isinstance(ark_kv, list) or not ark_kv:
         return None
     if all(isinstance(x, dict) for x in ark_kv):
-        return [{'key': render(x.get('key', ''), base, store), 'value': render(x.get('value', ''), base, store)} for x in ark_kv]
+        return [
+            {
+                "key": render(x.get("key", ""), base, store),
+                "value": render(x.get("value", ""), base, store),
+            }
+            for x in ark_kv
+        ]
     return [render(x if isinstance(x, str) else str(x), base, store) for x in ark_kv]
 
 
 def _last_step_key(store):
     keys = list(store.keys())
-    return keys[-1] if keys else ''
+    return keys[-1] if keys else ""
 
 
 # ==================== 图遍历 ====================
 
 
 def _next_nodes(conns, node_id, output):
-    return [c['to_node'] for c in conns if c['from_node'] == node_id and c.get('from_output', 'output_1') == output]
+    return [
+        c["to_node"]
+        for c in conns
+        if c["from_node"] == node_id and c.get("from_output", "output_1") == output
+    ]
 
 
-async def _run_node(node_id, nodes, conns, event, base, store, default_timeout, visited):
+async def _run_node(
+    node_id, nodes, conns, event, base, store, default_timeout, visited
+):
     """从 node_id 开始深度执行; 节点产出决定走哪个 output 分支。"""
     if node_id not in nodes or len(visited) >= _MAX_NODES:
         return
     visited.append(node_id)
     node = nodes[node_id]
-    ntype, data = node['type'], node.get('data', {})
-    output = 'output_1'
+    ntype, data = node["type"], node.get("data", {})
+    output = "output_1"
 
     try:
-        if ntype == 'api':
+        if ntype == "api":
             req = dict(data)
-            req.setdefault('timeout', default_timeout)
-            key = data.get('save_as') or 'r1'
+            req.setdefault("timeout", default_timeout)
+            key = data.get("save_as") or "r1"
             store[key] = await run_api(req, base, store)
-            tpl = (data.get('output_template') or '').strip()
+            tpl = (data.get("output_template") or "").strip()
             if tpl:
-                store[key]['output'] = render(tpl, base, store)
-        elif ntype == 'condition':
-            output = 'output_1' if eval_condition(data, base, store) else 'output_2'
-        elif ntype == 'reply':
+                store[key]["output"] = render(tpl, base, store)
+        elif ntype == "condition":
+            output = "output_1" if eval_condition(data, base, store) else "output_2"
+        elif ntype == "reply":
             d = dict(data)
-            d.setdefault('from_step', _last_step_key(store))
+            d.setdefault("from_step", _last_step_key(store))
             await send_reply(event, d, base, store)
-        elif ntype == 'set_var':
-            name = data.get('var_name', '')
+        elif ntype == "set_var":
+            name = data.get("var_name", "")
             if name:
-                base[name] = render(data.get('var_value', ''), base, store)
-        elif ntype == 'delay':
-            await asyncio.sleep(min(float(data.get('seconds', 1) or 0), 30))
+                base[name] = render(data.get("var_value", ""), base, store)
+        elif ntype == "delay":
+            await asyncio.sleep(min(float(data.get("seconds", 1) or 0), 30))
         # trigger 节点本身不产出, 直接往下走 output_1
     except Exception as e:
-        log.warning(f'节点执行异常 [{node_id}/{ntype}]: {e}')
+        log.warning(f"节点执行异常 [{node_id}/{ntype}]: {e}")
 
     for nxt in _next_nodes(conns, node_id, output):
         await _run_node(nxt, nodes, conns, event, base, store, default_timeout, visited)
@@ -492,13 +557,17 @@ async def _run_node(node_id, nodes, conns, event, base, store, default_timeout, 
 
 async def execute_workflow(workflow, event, match, default_timeout=15):
     """触发命中后执行整张图: 从 trigger 节点出发。"""
-    nodes = {n['id']: n for n in workflow.get('nodes', [])}
-    conns = workflow.get('connections', [])
-    trigger = next((n for n in workflow.get('nodes', []) if n['type'] == 'trigger'), None)
+    nodes = {n["id"]: n for n in workflow.get("nodes", [])}
+    conns = workflow.get("connections", [])
+    trigger = next(
+        (n for n in workflow.get("nodes", []) if n["type"] == "trigger"), None
+    )
     if not trigger:
         return
     base, store = build_context(event, match)
     try:
-        await _run_node(trigger['id'], nodes, conns, event, base, store, default_timeout, [])
+        await _run_node(
+            trigger["id"], nodes, conns, event, base, store, default_timeout, []
+        )
     except Exception as e:
         log.warning(f"工作流执行异常 [{workflow.get('name')}]: {e}")

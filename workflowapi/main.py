@@ -15,22 +15,27 @@ import os
 
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
-from core.plugin.web_pages import register_page, register_route, unregister_page, unregister_route
+from core.plugin.web_pages import (
+    register_page,
+    register_route,
+    unregister_page,
+    unregister_route,
+)
 
 from .mod import store, watcher, webapi
 from .mod.executor import close_http_session, execute_workflow
 
 __plugin_meta__ = {
-    'name': '工作流API',
-    'author': 'ElainaBot',
-    'description': 'JSON 驱动的可视化工作流/API 插件: 正则存 JSON、自动热更新、可视化自定义任意 API 回复',
-    'version': '1.0.3',
+    "name": "工作流API",
+    "author": "ElainaBot",
+    "description": "JSON 驱动的可视化工作流/API 插件: 正则存 JSON、自动热更新、可视化自定义任意 API 回复",
+    "version": "1.0.3",
 }
 
-log = get_logger(PLUGIN, '工作流API')
+log = get_logger(PLUGIN, "工作流API")
 
-_PAGE_KEY = 'workflow-api'
-_HTML_PATH = os.path.join(store.ROOT_DIR, 'panel.html')
+_PAGE_KEY = "workflow-api"
+_HTML_PATH = os.path.join(store.ROOT_DIR, "panel.html")
 
 _ICON = (
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
@@ -46,7 +51,9 @@ def _make_handler(workflow, default_timeout):
     async def _run(event, match):
         await execute_workflow(workflow, event, match, default_timeout=default_timeout)
 
-    _run.__name__ = 'wf_' + ''.join(ch if ch.isalnum() else '_' for ch in workflow.get('id', 'wf'))
+    _run.__name__ = "wf_" + "".join(
+        ch if ch.isalnum() else "_" for ch in workflow.get("id", "wf")
+    )
     return _run
 
 
@@ -54,39 +61,39 @@ def _register_commands():
     """从 JSON 读取工作流, 用各自触发节点注册独立 handler (导入期执行, 由加载器收集)。"""
     store.ensure_file()
     data = store.read_data()
-    if not data.get('settings', {}).get('enabled', True):
-        log.info('工作流API 全局开关关闭, 跳过指令注册')
+    if not data.get("settings", {}).get("enabled", True):
+        log.info("工作流API 全局开关关闭, 跳过指令注册")
         return 0
-    default_timeout = data.get('settings', {}).get('default_timeout', 15)
+    default_timeout = data.get("settings", {}).get("default_timeout", 15)
     count = 0
-    for wf in data.get('workflows', []):
-        if not wf.get('enabled', True):
+    for wf in data.get("workflows", []):
+        if not wf.get("enabled", True):
             continue
         trigger = store.find_trigger(wf)
         if not trigger:
             continue
-        t = trigger.get('data', {})
+        t = trigger.get("data", {})
         pattern = store.build_pattern(t)
         if not pattern:
             continue
         try:
             handler(
                 pattern,
-                name=wf.get('name', '') or wf.get('id', ''),
-                desc=wf.get('name', ''),
-                priority=t.get('priority', 0),
-                owner_only=t.get('owner_only', False),
-                group_only=t.get('group_only', False),
-                direct_only=t.get('direct_only', False),
-                channel_only=t.get('channel_only', False),
-                event_types=t.get('event_types') or None,
-                cooldown=t.get('cooldown', 0),
-                ignore_at_check=t.get('ignore_at_check', False),
+                name=wf.get("name", "") or wf.get("id", ""),
+                desc=wf.get("name", ""),
+                priority=t.get("priority", 0),
+                owner_only=t.get("owner_only", False),
+                group_only=t.get("group_only", False),
+                direct_only=t.get("direct_only", False),
+                channel_only=t.get("channel_only", False),
+                event_types=t.get("event_types") or None,
+                cooldown=t.get("cooldown", 0),
+                ignore_at_check=t.get("ignore_at_check", False),
             )(_make_handler(wf, default_timeout))
             count += 1
         except Exception as e:
             log.warning(f"注册工作流失败 [{wf.get('name')}]: {e}")
-    log.info(f'已从 JSON 注册 {count} 条工作流')
+    log.info(f"已从 JSON 注册 {count} 条工作流")
     return count
 
 
@@ -100,7 +107,7 @@ def _setup_routes():
         for method, path, fn in webapi.ROUTES:
             register_route(method, webapi.API_PREFIX + path, fn, auth=True)
     except Exception as e:
-        log.warning(f'接口注册异常: {e}')
+        log.warning(f"接口注册异常: {e}")
 
 
 def _teardown_routes():
@@ -113,14 +120,14 @@ async def _on_load():
     _setup_routes()
     register_page(
         key=_PAGE_KEY,
-        label='工作流API',
-        source='plugin',
-        source_name='workflow_api',
+        label="工作流API",
+        source="plugin",
+        source_name="workflow_api",
         icon=_ICON,
         html_file=_HTML_PATH,
     )
     watcher.start()
-    log.info('工作流API 插件已加载')
+    log.info("工作流API 插件已加载")
 
 
 @on_unload

@@ -11,11 +11,12 @@ from core.base.logger import PLUGIN, get_logger
 
 from . import store
 
-log = get_logger(PLUGIN, '工作流API')
+log = get_logger(PLUGIN, "工作流API")
 
 PLUGIN_NAME = os.path.basename(store.ROOT_DIR)
 
 _task: asyncio.Task | None = None
+_reload_task: asyncio.Task | None = None
 _running = False
 _last_mtime = 0.0
 
@@ -31,7 +32,7 @@ def _plugin_manager():
 
 
 async def _loop():
-    global _last_mtime
+    global _last_mtime, _reload_task
     _last_mtime = store.mtime()
     while _running:
         try:
@@ -41,21 +42,21 @@ async def _loop():
                 _last_mtime = mt  # 先记录, 避免重复触发
                 pm = _plugin_manager()
                 if pm:
-                    log.info('检测到 commands.json 变更, 触发热重载')
-                    # 分离任务执行 reload: reload 会 unload 本插件并取消本 watcher,
-                    # 分离后即使本 task 被取消也不影响 reload 完成。
-                    asyncio.ensure_future(_safe_reload(pm))
+                    log.info("检测到 commands.json 变更, 触发热重载")
+                    # 独立执行重载；插件卸载会取消监听任务，但不应中断已开始的重载。
+                    if _reload_task is None or _reload_task.done():
+                        _reload_task = asyncio.create_task(_safe_reload(pm))
         except asyncio.CancelledError:
             break
         except Exception as e:
-            log.warning(f'watcher 异常: {e}')
+            log.warning(f"watcher 异常: {e}")
 
 
 async def _safe_reload(pm):
     try:
         await pm.reload(PLUGIN_NAME)
     except Exception as e:
-        log.warning(f'热重载失败: {e}')
+        log.warning(f"热重载失败: {e}")
 
 
 def start():
@@ -64,7 +65,7 @@ def start():
         return
     _running = True
     _task = asyncio.ensure_future(_loop())
-    log.info(f'commands.json 监听已启动 ({PLUGIN_NAME})')
+    log.info(f"commands.json 监听已启动 ({PLUGIN_NAME})")
 
 
 def stop():

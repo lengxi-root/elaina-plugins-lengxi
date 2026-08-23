@@ -7,6 +7,9 @@
 
 from __future__ import annotations
 
+# 这些导入组成兼容层的公共接口，供旧版插件按原路径访问。
+# ruff: noqa: F401
+
 from . import state as _state
 from .commands import (
     CommandSpec,

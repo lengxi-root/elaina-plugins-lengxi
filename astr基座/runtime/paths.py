@@ -40,7 +40,9 @@ def get_astrbot_config_path() -> str:
 
 def get_astrbot_plugin_path() -> str:
     # 真实 AstrBot 把插件放在 data/plugins/<名>; 本基座放在 apps/<名>。
-    apps = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "apps")
+    apps = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "apps"
+    )
     if os.path.isdir(apps):
         return os.path.realpath(apps)
     return _ensure(os.path.join(get_astrbot_data_path(), "plugins"))

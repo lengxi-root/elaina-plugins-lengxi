@@ -42,14 +42,13 @@ class SessionController:
         self._stopped = True
 
     def keep(self, timeout: float = None, reset_timeout: bool = False, *_a, **_k):
-        if reset_timeout and timeout is not None:
-            self._timeout = timeout
-        elif timeout is not None:
+        if reset_timeout and timeout is not None or timeout is not None:
             self._timeout = timeout
 
 
 def session_waiter(timeout: float = 60, record_history: bool = False, *_a, **_k):
     """装饰 waiter(controller, event); 返回可 `await waiter(first_event)` 的协程。"""
+
     def deco(func):
         async def _runner(first_event):
             elaina = getattr(first_event, "message_obj", first_event)
@@ -62,9 +61,11 @@ def session_waiter(timeout: float = 60, record_history: bool = False, *_a, **_k)
             try:
                 while not controller.stopped:
                     try:
-                        next_event = await asyncio.wait_for(queue.get(), timeout=controller.timeout)
+                        next_event = await asyncio.wait_for(
+                            queue.get(), timeout=controller.timeout
+                        )
                     except asyncio.TimeoutError:
-                        raise TimeoutError("session_waiter timeout")
+                        raise TimeoutError("session_waiter timeout") from None
                     try:
                         res = func(controller, AstrMessageEvent(next_event))
                         if inspect.isawaitable(res):
@@ -72,12 +73,17 @@ def session_waiter(timeout: float = 60, record_history: bool = False, *_a, **_k)
                     except TimeoutError:
                         raise
                     except Exception as e:
-                        log.error(f"[astr基座] session_waiter 处理消息异常: {e}", exc_info=True)
+                        log.error(
+                            f"[astr基座] session_waiter 处理消息异常: {e}",
+                            exc_info=True,
+                        )
                         controller.stop()
             finally:
                 if _WAITERS.get(key) is queue:
                     _WAITERS.pop(key, None)
+
         return _runner
+
     return deco
 
 
@@ -97,7 +103,9 @@ def register_interceptor():
     try:
         from core.plugin.decorators import interceptor
     except Exception as e:
-        log.warning(f"[astr基座] 框架无 interceptor, session_waiter 多步等待不可用: {e}")
+        log.warning(
+            f"[astr基座] 框架无 interceptor, session_waiter 多步等待不可用: {e}"
+        )
         return
     interceptor(priority=150)(_session_interceptor)
     log.info("[astr基座] 已注册 session_waiter 拦截器")

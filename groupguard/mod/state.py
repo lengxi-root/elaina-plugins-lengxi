@@ -3,9 +3,9 @@
 import asyncio
 import time
 
-pending_verify = {}   # {group_id: {user_id: {"answer": idx, "verify_id": str, "expire": ts, ...}}}
-unverified = {}       # {group_id: set(user_id)} — 待验证
-verify_cooldown = {}  # {group_id: {user_id: {"retry_count": n, "next_time": ts}}}
+pending_verify = {}  # 群号和用户号对应验证答案、验证编号及到期时间等状态
+unverified = {}  # {group_id: set(user_id)} — 待验证
+verify_cooldown = {}  # 群号和用户号对应重试次数及下次重试时间
 verification_muted = {}  # {group_id: set(user_id)} — 插件施加的验证临时禁言
 
 _cleanup_task = None
@@ -24,25 +24,25 @@ def _discard_member(mapping, group_id, user_id):
 
 
 def clear_member(group_id, user_id):
-    """Release all short-lived verification state for one member."""
+    """释放单个成员的全部短期验证状态。"""
     for mapping in (pending_verify, verify_cooldown, unverified, verification_muted):
         _discard_member(mapping, group_id, user_id)
 
 
 def clear_group(group_id):
-    """Release all verification state for a group."""
+    """释放指定群组的全部验证状态。"""
     for mapping in (pending_verify, verify_cooldown, unverified, verification_muted):
         mapping.pop(group_id, None)
 
 
 def clear_group_verification(group_id):
-    """Clear challenges while retaining failed temporary-unmute retries."""
+    """清除验证挑战，同时保留失败的临时解禁重试。"""
     for mapping in (pending_verify, verify_cooldown, unverified):
         mapping.pop(group_id, None)
 
 
 def clear_verification(group_id, user_id):
-    """Complete verification without losing temporary-mute ownership."""
+    """完成验证，同时保留临时禁言的归属信息。"""
     for mapping in (pending_verify, verify_cooldown, unverified):
         _discard_member(mapping, group_id, user_id)
 
@@ -78,7 +78,7 @@ def expire_pending(group_id, user_id, now=None):
     if not info:
         return False
     now = time.time() if now is None else now
-    if now <= info['expire']:
+    if now <= info["expire"]:
         return False
 
     del pending[user_id]
@@ -86,9 +86,9 @@ def expire_pending(group_id, user_id, now=None):
         pending_verify.pop(group_id, None)
     unverified.setdefault(group_id, set()).add(user_id)
     verify_cooldown.setdefault(group_id, {})[user_id] = {
-        'retry_count': info.get('retry_count', 0) + 1,
+        "retry_count": info.get("retry_count", 0) + 1,
         # 题目超时不是答错；用户下次操作时应能立即重新验证。
-        'next_time': now,
+        "next_time": now,
     }
     return True
 
@@ -99,11 +99,13 @@ async def _cleanup_loop():
         now = time.time()
         for gid in list(pending_verify.keys()):
             pending = pending_verify[gid]
-            for uid in [u for u, info in pending.items() if now > info['expire']]:
+            for uid in [u for u, info in pending.items() if now > info["expire"]]:
                 expire_pending(gid, uid, now)
         for gid in list(verify_cooldown.keys()):
             cd = verify_cooldown[gid]
-            for uid in [u for u, info in cd.items() if now > info.get('next_time', 0) + 86400]:
+            for uid in [
+                u for u, info in cd.items() if now > info.get("next_time", 0) + 86400
+            ]:
                 del cd[uid]
             if not cd:
                 del verify_cooldown[gid]

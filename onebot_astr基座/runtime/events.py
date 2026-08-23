@@ -25,6 +25,7 @@ log = state.log
 
 # ==================== 平台元数据 ====================
 
+
 class PlatformMetadata:
     def __init__(self, name="aiocqhttp", description="", id="aiocqhttp"):
         self.name = name
@@ -33,6 +34,7 @@ class PlatformMetadata:
 
 
 # ==================== 入站消息解析 ====================
+
 
 def _parse_segment(seg: dict):
     if not isinstance(seg, dict):
@@ -77,7 +79,8 @@ def parse_message(raw_message) -> tuple[list, str]:
     return chain, "".join(texts).strip()
 
 
-# ==================== AstrBotMessage (message_obj) ====================
+# ==================== AstrBot 消息对象 ====================
+
 
 class MessageMember:
     def __init__(self, user_id="", nickname=""):
@@ -122,6 +125,7 @@ class AstrBotMessage:
 
 # ==================== bot 代理 (aiocqhttp CQHttp 风格) ====================
 
+
 class _BotProxy:
     """模拟 aiocqhttp 的 CQHttp 客户端: 任意 ``await bot.<action>(**params)``
     或 ``bot.call_action(action, **params)`` 都转发到框架 OneBot API。"""
@@ -150,15 +154,20 @@ class _BotProxy:
         return _action
 
 
-# ==================== AstrMessageEvent ====================
+# ==================== AstrBot 消息事件 ====================
+
 
 class AstrMessageEvent:
     """把 ElainaBot OneBot MessageEvent 包装成 AstrBot 事件接口。"""
 
-    def __init__(self, elaina_event, *, role: str = "member", content: str | None = None):
+    def __init__(
+        self, elaina_event, *, role: str = "member", content: str | None = None
+    ):
         self._e = elaina_event
         self.role = role
-        self.message_str = (content if content is not None else getattr(elaina_event, "content", "")) or ""
+        self.message_str = (
+            content if content is not None else getattr(elaina_event, "content", "")
+        ) or ""
         self.message_obj = AstrBotMessage(elaina_event)
         self.platform_meta = PlatformMetadata()
         self.unified_msg_origin = sending.make_umo(elaina_event)
@@ -282,7 +291,8 @@ class AstrMessageEvent:
         return self.platform_meta
 
 
-# ==================== Context / StarTools / Star ====================
+# ==================== 上下文、星工具与星插件 ====================
+
 
 class _CronJobStub:
     def __init__(self, job_id=""):
@@ -398,7 +408,7 @@ def _current_app_name() -> str:
         pkg = frame.frame.f_globals.get("__package__", "") or ""
         idx = pkg.find(".apps.")
         if idx != -1:
-            return pkg[idx + len(".apps."):].split(".")[0]
+            return pkg[idx + len(".apps.") :].split(".")[0]
     return "shared"
 
 
@@ -439,15 +449,22 @@ class Star:
         import asyncio
 
         from . import render
+
         path = await asyncio.to_thread(render.render_text, text)
         return path or text
 
-    async def html_render(self, tmpl: str, data: dict, return_url: bool = True,
-                          options: dict | None = None):
+    async def html_render(
+        self,
+        tmpl: str,
+        data: dict,
+        return_url: bool = True,
+        options: dict | None = None,
+    ):
         """HTML(jinja2) 转图片: 本地无头浏览器渲染, 返回本地图片路径。"""
         import asyncio
 
         from . import render
+
         return await asyncio.to_thread(render.render_html, tmpl, data or {})
 
     # ---- KV 存储 (PluginKVStoreMixin 兼容, JSON 文件落盘) ----
@@ -455,11 +472,14 @@ class Star:
         root = state.data_root()
         path = os.path.join(root, "plugin_data", "_kv")
         os.makedirs(path, exist_ok=True)
-        pid = str(getattr(self, "plugin_id", None) or type(self).__name__).replace("/", "_")
+        pid = str(getattr(self, "plugin_id", None) or type(self).__name__).replace(
+            "/", "_"
+        )
         return os.path.join(path, f"{pid}.json")
 
     def _kv_load(self) -> dict:
         import json
+
         try:
             with open(self._kv_path(), encoding="utf-8") as f:
                 data = json.load(f)
@@ -469,6 +489,7 @@ class Star:
 
     def _kv_save(self, data: dict):
         import json
+
         try:
             with open(self._kv_path(), "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False)

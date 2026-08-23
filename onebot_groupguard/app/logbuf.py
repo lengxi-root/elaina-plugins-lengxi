@@ -11,11 +11,15 @@ _buffer: deque = deque(maxlen=300)
 class _BufferHandler(logging.Handler):
     def emit(self, record):
         with contextlib.suppress(Exception):
-            _buffer.append({
-                'time': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(record.created)),
-                'level': record.levelname,
-                'message': record.getMessage(),
-            })
+            _buffer.append(
+                {
+                    "time": time.strftime(
+                        "%Y-%m-%d %H:%M:%S", time.localtime(record.created)
+                    ),
+                    "level": record.levelname,
+                    "message": record.getMessage(),
+                }
+            )
 
 
 _installed = False

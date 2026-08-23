@@ -6,12 +6,12 @@ from core.base.logger import PLUGIN, get_logger
 
 log = get_logger(PLUGIN, "astrbot基座")
 
-PLUGIN_SPECS: list = []          # 发现到的 AstrBot 插件 (PluginSpec)
-STAR_SUBCLASSES: list = []       # 所有定义过的 Star 子类 (按 import 顺序)
-_CONFIG: dict = {}               # 基座配置
-_DATA_ROOT = {"path": ""}        # 基座数据根 (= plugins/astrbot/data)
-_APPS_DATA_ROOT = {"path": ""}   # apps 数据根目录 (StarTools.get_data_dir 用)
-_APPS_DIR = {"path": ""}         # apps 源码目录 (= plugins/astrbot/apps, 插件本体所在)
+PLUGIN_SPECS: list = []  # 发现到的 AstrBot 插件 (PluginSpec)
+STAR_SUBCLASSES: list = []  # 所有定义过的 Star 子类 (按 import 顺序)
+_CONFIG: dict = {}  # 基座配置
+_DATA_ROOT = {"path": ""}  # 基座数据根 (= plugins/astrbot/data)
+_APPS_DATA_ROOT = {"path": ""}  # apps 数据根目录 (StarTools.get_data_dir 用)
+_APPS_DIR = {"path": ""}  # apps 源码目录 (= plugins/astrbot/apps, 插件本体所在)
 
 
 def reset():
@@ -46,10 +46,12 @@ def set_data_root(path: str):
 
 def data_root() -> str:
     import os
+
     return _DATA_ROOT["path"] or os.path.join(os.getcwd(), "data")
 
 
 # ---- 框架内部访问 ----
+
 
 def get_api(self_id: str | None = None):
     """取框架的 OneBot API 调用器 (主动发送/调用动作)。"""
@@ -79,10 +81,12 @@ def is_bot_owner(event) -> bool:
 
 # ---- 插件配置 schema ----
 
+
 def read_app_schema(app_dir: str) -> dict:
     """读取 app 的 _conf_schema.json (缺失/出错返回 {})。"""
     import json
     import os
+
     if not app_dir:
         return {}
     path = os.path.join(app_dir, "_conf_schema.json")
@@ -98,6 +102,7 @@ def read_app_schema(app_dir: str) -> dict:
 
 
 # ---- 基座配置项 ----
+
 
 def command_prefix(name: str) -> str:
     """某插件配置的指令前缀 (留空=无前缀)。"""

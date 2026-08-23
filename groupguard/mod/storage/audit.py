@@ -1,5 +1,6 @@
-"""Persistent full-chain audit events and management statistics."""
+"""持久化全链路审计事件与管理统计。"""
 
+import contextlib
 import json
 import time
 import uuid
@@ -14,29 +15,82 @@ _trace_context = {}
 _last_cleanup = 0
 
 _MANAGEMENT_ACTIONS = {
-    'mute', 'unmute', 'recall', 'speak_recall', 'cancel_recall',
-    'approve_join', 'decline_join', 'blacklist_join', 'verify_pass',
-    'verify_failure_mute', 'spam_punish', 'config_change',
-    'forbidden_add', 'forbidden_delete', 'forbidden_clear', 'cache_clear',
-    'template_test',
+    "mute",
+    "unmute",
+    "recall",
+    "speak_recall",
+    "cancel_recall",
+    "approve_join",
+    "decline_join",
+    "blacklist_join",
+    "verify_pass",
+    "verify_failure_mute",
+    "spam_punish",
+    "config_change",
+    "forbidden_add",
+    "forbidden_delete",
+    "forbidden_clear",
+    "cache_clear",
+    "template_test",
 }
 _MANAGEMENT_ACTIONS_SORTED = tuple(sorted(_MANAGEMENT_ACTIONS))
-_MANAGEMENT_PLACEHOLDERS = ','.join('?' for _ in _MANAGEMENT_ACTIONS_SORTED)
+_MANAGEMENT_PLACEHOLDERS = ",".join("?" for _ in _MANAGEMENT_ACTIONS_SORTED)
+_MANAGEMENT_BY_ACTION_SQL = (
+    "SELECT action, COUNT(DISTINCT trace_id) AS operations, "  # noqa: S608 - 仅拼接固定数量的参数占位符
+    "SUM(affected_count) AS affected "
+    "FROM audit_log WHERE group_id = ? AND time >= ? AND phase = 'result' "
+    "AND success = 1 "
+    f"AND action IN ({_MANAGEMENT_PLACEHOLDERS}) GROUP BY action"
+)
+_MANAGEMENT_BY_SOURCE_SQL = (
+    "WITH scoped AS ("  # noqa: S608 - 仅拼接固定数量的参数占位符
+    "SELECT source, trace_id, success FROM audit_log "
+    "WHERE group_id = ? AND time >= ? AND phase = 'result' "
+    f"AND action IN ({_MANAGEMENT_PLACEHOLDERS})"
+    "), totals AS ("
+    "SELECT COUNT(DISTINCT CASE WHEN success = 1 THEN trace_id END) successful, "
+    "COUNT(DISTINCT CASE WHEN success = 0 THEN trace_id END) failed FROM scoped"
+    "), sources AS ("
+    "SELECT source, COUNT(DISTINCT CASE WHEN success = 1 THEN trace_id END) "
+    "successful FROM scoped GROUP BY source"
+    ") SELECT sources.source, COALESCE(sources.successful, 0) successful, "
+    "totals.successful total_successful, totals.failed total_failed "
+    "FROM totals LEFT JOIN sources ON 1"
+)
+_RECENT_AUDIT_SQL = (
+    "SELECT a.time, a.trace_id, a.operator_id, a.target_id, a.action, "  # noqa: S608 - 仅拼接固定数量的参数占位符
+    "a.success, a.source, latest.affected_count, "
+    "COALESCE((SELECT m.username FROM message_log m "
+    "WHERE m.group_id = a.group_id AND m.user_id = a.target_id "
+    "AND m.username != '' ORDER BY m.time DESC LIMIT 1), '') target_name, "
+    "COALESCE((SELECT m.username FROM message_log m "
+    "WHERE m.group_id = a.group_id AND m.user_id = a.operator_id "
+    "AND m.username != '' ORDER BY m.time DESC LIMIT 1), '') operator_name "
+    "FROM audit_log a JOIN ("
+    "SELECT MAX(id) AS id, SUM(affected_count) AS affected_count "
+    "FROM audit_log WHERE group_id = ? AND phase = 'result' "
+    f"AND action IN ({_MANAGEMENT_PLACEHOLDERS}) GROUP BY trace_id, action"
+    ") latest ON latest.id = a.id ORDER BY a.id DESC LIMIT ?"
+)
 
 
 def _event_reference(event, event_key):
     try:
-        return weakref.ref(event, lambda _reference: _trace_context.pop(event_key, None))
+        return weakref.ref(
+            event, lambda _reference: _trace_context.pop(event_key, None)
+        )
     except TypeError:
         return event
 
 
 def _same_event(context, event):
-    reference = context.get('event')
-    return (reference() if isinstance(reference, weakref.ReferenceType) else reference) is event
+    reference = context.get("event")
+    return (
+        reference() if isinstance(reference, weakref.ReferenceType) else reference
+    ) is event
 
 
-def _event_value(event, name, default=''):
+def _event_value(event, name, default=""):
     value = getattr(event, name, default)
     return str(value or default)
 
@@ -44,64 +98,74 @@ def _event_value(event, name, default=''):
 def _encode_details(details):
     try:
         encoded = json.dumps(
-            details, ensure_ascii=False, separators=(',', ':'), allow_nan=False
+            details, ensure_ascii=False, separators=(",", ":"), allow_nan=False
         )
     except (TypeError, ValueError, RecursionError):
         return '{"serialization_error":true}'
     if len(encoded) <= _MAX_DETAILS_JSON:
         return encoded
-    return json.dumps({
-        'truncated': True,
-        'original_chars': len(encoded),
-        'preview': encoded[:4000],
-    }, ensure_ascii=False, separators=(',', ':'))
+    return json.dumps(
+        {
+            "truncated": True,
+            "original_chars": len(encoded),
+            "preview": encoded[:4000],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
-def ensure_trace(event, source='command'):
-    """Attach one trace to an incoming event and reuse it across every phase."""
+def ensure_trace(event, source="command"):
+    """为传入事件绑定一条链路，并在各阶段复用。"""
     event_key = id(event)
-    trace_id = getattr(event, '_groupguard_trace_id', '')
+    trace_id = getattr(event, "_groupguard_trace_id", "")
     if not trace_id:
         context = _trace_context.get(event_key)
-        if (context and _same_event(context, event)
-                and time.monotonic() - context['created'] < 3600):
-            trace_id = context['trace_id']
+        if (
+            context
+            and _same_event(context, event)
+            and time.monotonic() - context["created"] < 3600
+        ):
+            trace_id = context["trace_id"]
     if trace_id:
         return trace_id
     trace_id = uuid.uuid4().hex[:16]
-    try:
+    with contextlib.suppress(AttributeError, TypeError):
         event._groupguard_trace_id = trace_id
         event._groupguard_trace_started = time.monotonic()
         event._groupguard_trace_source = source
-    except Exception:
-        pass
     _trace_context[event_key] = {
-        'trace_id': trace_id, 'created': time.monotonic(), 'source': source,
-        'action': '', 'event': _event_reference(event, event_key),
+        "trace_id": trace_id,
+        "created": time.monotonic(),
+        "source": source,
+        "action": "",
+        "event": _event_reference(event, event_key),
     }
     if len(_trace_context) > 10000:
         cutoff = time.monotonic() - 3600
-        for key in [key for key, value in _trace_context.items() if value['created'] < cutoff]:
+        for key in [
+            key for key, value in _trace_context.items() if value["created"] < cutoff
+        ]:
             _trace_context.pop(key, None)
         if len(_trace_context) > 10000:
             oldest = sorted(
-                _trace_context, key=lambda key: _trace_context[key]['created']
-            )[:len(_trace_context) - 8000]
+                _trace_context, key=lambda key: _trace_context[key]["created"]
+            )[: len(_trace_context) - 8000]
             for key in oldest:
                 _trace_context.pop(key, None)
     return trace_id
 
 
-def current_action(event, default=''):
+def current_action(event, default=""):
     context = _trace_context.get(id(event), {})
-    fallback = context.get('action', '') if _same_event(context, event) else ''
-    return getattr(event, '_groupguard_action', '') or fallback or default
+    fallback = context.get("action", "") if _same_event(context, event) else ""
+    return getattr(event, "_groupguard_action", "") or fallback or default
 
 
-def current_source(event, default='command'):
+def current_source(event, default="command"):
     context = _trace_context.get(id(event), {})
-    fallback = context.get('source', '') if _same_event(context, event) else ''
-    return getattr(event, '_groupguard_trace_source', '') or fallback or default
+    fallback = context.get("source", "") if _same_event(context, event) else ""
+    return getattr(event, "_groupguard_trace_source", "") or fallback or default
 
 
 def record_audit(
@@ -111,76 +175,95 @@ def record_audit(
     *,
     success=None,
     affected_count=0,
-    target_id='',
+    target_id="",
     details=None,
     source=None,
 ):
-    """Persist one structured audit phase to SQLite."""
+    """将一个结构化审计阶段持久化到 SQLite。"""
     global _last_cleanup
     trace_id = ensure_trace(event, source or current_source(event))
-    started = getattr(event, '_groupguard_trace_started', None)
+    started = getattr(event, "_groupguard_trace_started", None)
     duration_ms = int((time.monotonic() - started) * 1000) if started else 0
     payload = {
-        'trace_id': trace_id,
-        'time': int(time.time()),
-        'appid': _event_value(event, 'appid'),
-        'group_id': _event_value(event, 'group_id'),
-        'operator_id': _event_value(event, 'user_id'),
-        'target_id': str(target_id or ''),
-        'message_id': _event_value(event, 'message_id'),
-        'source': str(source or current_source(event)),
-        'action': str(action),
-        'phase': str(phase),
-        'success': None if success is None else int(bool(success)),
-        'affected_count': max(0, int(affected_count or 0)),
-        'duration_ms': duration_ms,
-        'details': details if isinstance(details, dict) else {},
+        "trace_id": trace_id,
+        "time": int(time.time()),
+        "appid": _event_value(event, "appid"),
+        "group_id": _event_value(event, "group_id"),
+        "operator_id": _event_value(event, "user_id"),
+        "target_id": str(target_id or ""),
+        "message_id": _event_value(event, "message_id"),
+        "source": str(source or current_source(event)),
+        "action": str(action),
+        "phase": str(phase),
+        "success": None if success is None else int(bool(success)),
+        "affected_count": max(0, int(affected_count or 0)),
+        "duration_ms": duration_ms,
+        "details": details if isinstance(details, dict) else {},
     }
-    details_json = _encode_details(payload['details'])
+    details_json = _encode_details(payload["details"])
     connection = get_db()
     connection.execute(
-        'INSERT INTO audit_log '
-        '(trace_id, time, appid, group_id, operator_id, target_id, message_id, '
-        'source, action, phase, success, affected_count, duration_ms, details) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        "INSERT INTO audit_log "
+        "(trace_id, time, appid, group_id, operator_id, target_id, message_id, "
+        "source, action, phase, success, affected_count, duration_ms, details) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            payload['trace_id'], payload['time'], payload['appid'], payload['group_id'],
-            payload['operator_id'], payload['target_id'], payload['message_id'],
-            payload['source'], payload['action'], payload['phase'], payload['success'],
-            payload['affected_count'], payload['duration_ms'], details_json,
+            payload["trace_id"],
+            payload["time"],
+            payload["appid"],
+            payload["group_id"],
+            payload["operator_id"],
+            payload["target_id"],
+            payload["message_id"],
+            payload["source"],
+            payload["action"],
+            payload["phase"],
+            payload["success"],
+            payload["affected_count"],
+            payload["duration_ms"],
+            details_json,
         ),
     )
-    if payload['time'] - _last_cleanup >= 3600:
-        connection.execute('DELETE FROM audit_log WHERE time < ?',
-                           (payload['time'] - AUDIT_LOG_TTL,))
-        _last_cleanup = payload['time']
+    if payload["time"] - _last_cleanup >= 3600:
+        connection.execute(
+            "DELETE FROM audit_log WHERE time < ?", (payload["time"] - AUDIT_LOG_TTL,)
+        )
+        _last_cleanup = payload["time"]
     connection.commit()
     connection.close()
     return trace_id
 
 
-def record_received(event, action, *, source='command', details=None):
-    try:
+def record_received(event, action, *, source="command", details=None):
+    with contextlib.suppress(AttributeError, TypeError):
         event._groupguard_action = action
         event._groupguard_trace_source = source
-    except Exception:
-        pass
     context = _trace_context.setdefault(
         id(event),
-        {'trace_id': ensure_trace(event, source), 'created': time.monotonic(),
-         'source': source, 'action': action,
-         'event': _event_reference(event, id(event))},
+        {
+            "trace_id": ensure_trace(event, source),
+            "created": time.monotonic(),
+            "source": source,
+            "action": action,
+            "event": _event_reference(event, id(event)),
+        },
     )
-    context.update({'source': source, 'action': action})
-    return record_audit(event, action, 'received', source=source, details=details)
+    context.update({"source": source, "action": action})
+    return record_audit(event, action, "received", source=source, details=details)
 
 
 def record_result(
-    event, action, success, *, affected_count=0, target_id='', details=None, source=None
+    event, action, success, *, affected_count=0, target_id="", details=None, source=None
 ):
     return record_audit(
-        event, action, 'result', success=success, affected_count=affected_count,
-        target_id=target_id, details=details, source=source,
+        event,
+        action,
+        "result",
+        success=success,
+        affected_count=affected_count,
+        target_id=target_id,
+        details=details,
+        source=source,
     )
 
 
@@ -191,25 +274,25 @@ def record_web_action(
     *,
     affected_count=0,
     details=None,
-    operator_id='web',
-    appid='',
+    operator_id="web",
+    appid="",
 ):
-    """Record a Web panel operation using the same trace phases as message actions."""
+    """使用与消息操作相同的链路阶段记录网页面板操作。"""
     event = SimpleNamespace(
-        appid=str(appid or ''),
-        group_id=str(group_id or ''),
-        user_id=str(operator_id or 'web'),
-        message_id='',
+        appid=str(appid or ""),
+        group_id=str(group_id or ""),
+        user_id=str(operator_id or "web"),
+        message_id="",
     )
     try:
-        record_received(event, action, source='web', details=details)
+        record_received(event, action, source="web", details=details)
         return record_result(
             event,
             action,
             success,
             affected_count=affected_count,
             details=details,
-            source='web',
+            source="web",
         )
     finally:
         _trace_context.pop(id(event), None)
@@ -220,62 +303,47 @@ def get_management_stats(group_id, days=30):
     since = int(time.time()) - days * 86400
     connection = get_db()
     rows = connection.execute(
-        "SELECT action, COUNT(DISTINCT trace_id) AS operations, "
-        "SUM(affected_count) AS affected "
-        "FROM audit_log WHERE group_id = ? AND time >= ? AND phase = 'result' "
-        "AND success = 1 "
-        f"AND action IN ({_MANAGEMENT_PLACEHOLDERS}) GROUP BY action",
+        _MANAGEMENT_BY_ACTION_SQL,
         (group_id, since, *_MANAGEMENT_ACTIONS_SORTED),
     ).fetchall()
     source_rows = connection.execute(
-        "WITH scoped AS ("
-        "SELECT source, trace_id, success FROM audit_log "
-        "WHERE group_id = ? AND time >= ? AND phase = 'result' "
-        f"AND action IN ({_MANAGEMENT_PLACEHOLDERS})"
-        "), totals AS ("
-        "SELECT COUNT(DISTINCT CASE WHEN success = 1 THEN trace_id END) successful, "
-        "COUNT(DISTINCT CASE WHEN success = 0 THEN trace_id END) failed FROM scoped"
-        "), sources AS ("
-        "SELECT source, COUNT(DISTINCT CASE WHEN success = 1 THEN trace_id END) "
-        "successful FROM scoped GROUP BY source"
-        ") SELECT sources.source, COALESCE(sources.successful, 0) successful, "
-        "totals.successful total_successful, totals.failed total_failed "
-        "FROM totals LEFT JOIN sources ON 1",
+        _MANAGEMENT_BY_SOURCE_SQL,
         (group_id, since, *_MANAGEMENT_ACTIONS_SORTED),
     ).fetchall()
     connection.close()
     by_action = {
-        row['action']: {
-            'operations': int(row['operations'] or 0),
-            'affected': int(row['affected'] or 0),
+        row["action"]: {
+            "operations": int(row["operations"] or 0),
+            "affected": int(row["affected"] or 0),
         }
         for row in rows
     }
     by_source = {
-        row['source']: int(row['successful'] or 0)
-        for row in source_rows if row['source'] is not None
+        row["source"]: int(row["successful"] or 0)
+        for row in source_rows
+        if row["source"] is not None
     }
-    management_count = int(source_rows[0]['total_successful'] or 0)
-    failed_count = int(source_rows[0]['total_failed'] or 0)
-    manual_count = by_source.get('command', 0) + by_source.get('web', 0)
+    management_count = int(source_rows[0]["total_successful"] or 0)
+    failed_count = int(source_rows[0]["total_failed"] or 0)
+    manual_count = by_source.get("command", 0) + by_source.get("web", 0)
     return {
-        'days': days,
-        'management_count': management_count,
-        'manual_count': manual_count,
-        'automatic_count': max(0, management_count - manual_count),
-        'failed_count': failed_count,
-        'mute_count': by_action.get('mute', {}).get('affected', 0)
-        + by_action.get('verify_failure_mute', {}).get('affected', 0),
-        'unmute_count': by_action.get('unmute', {}).get('affected', 0),
-        'recall_count': by_action.get('recall', {}).get('affected', 0),
-        'approve_count': by_action.get('approve_join', {}).get('affected', 0),
-        'decline_count': by_action.get('decline_join', {}).get('affected', 0)
-        + by_action.get('blacklist_join', {}).get('affected', 0),
-        'punish_count': by_action.get('speak_recall', {}).get('affected', 0)
-        + by_action.get('spam_punish', {}).get('affected', 0),
-        'config_count': by_action.get('config_change', {}).get('operations', 0),
-        'by_action': by_action,
-        'by_source': by_source,
+        "days": days,
+        "management_count": management_count,
+        "manual_count": manual_count,
+        "automatic_count": max(0, management_count - manual_count),
+        "failed_count": failed_count,
+        "mute_count": by_action.get("mute", {}).get("affected", 0)
+        + by_action.get("verify_failure_mute", {}).get("affected", 0),
+        "unmute_count": by_action.get("unmute", {}).get("affected", 0),
+        "recall_count": by_action.get("recall", {}).get("affected", 0),
+        "approve_count": by_action.get("approve_join", {}).get("affected", 0),
+        "decline_count": by_action.get("decline_join", {}).get("affected", 0)
+        + by_action.get("blacklist_join", {}).get("affected", 0),
+        "punish_count": by_action.get("speak_recall", {}).get("affected", 0)
+        + by_action.get("spam_punish", {}).get("affected", 0),
+        "config_count": by_action.get("config_change", {}).get("operations", 0),
+        "by_action": by_action,
+        "by_source": by_source,
     }
 
 
@@ -283,19 +351,7 @@ def get_recent_audit(group_id, limit=10):
     limit = max(1, min(50, int(limit)))
     connection = get_db()
     rows = connection.execute(
-        "SELECT a.time, a.trace_id, a.operator_id, a.target_id, a.action, "
-        "a.success, a.source, latest.affected_count, "
-        "COALESCE((SELECT m.username FROM message_log m "
-        "WHERE m.group_id = a.group_id AND m.user_id = a.target_id "
-        "AND m.username != '' ORDER BY m.time DESC LIMIT 1), '') target_name, "
-        "COALESCE((SELECT m.username FROM message_log m "
-        "WHERE m.group_id = a.group_id AND m.user_id = a.operator_id "
-        "AND m.username != '' ORDER BY m.time DESC LIMIT 1), '') operator_name "
-        "FROM audit_log a JOIN ("
-        "SELECT MAX(id) AS id, SUM(affected_count) AS affected_count "
-        "FROM audit_log WHERE group_id = ? AND phase = 'result' "
-        f"AND action IN ({_MANAGEMENT_PLACEHOLDERS}) GROUP BY trace_id, action"
-        ") latest ON latest.id = a.id ORDER BY a.id DESC LIMIT ?",
+        _RECENT_AUDIT_SQL,
         (group_id, *_MANAGEMENT_ACTIONS_SORTED, limit),
     ).fetchall()
     connection.close()

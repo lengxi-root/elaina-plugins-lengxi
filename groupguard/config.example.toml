@@ -1,8 +1,8 @@
-[backend]
+[backend.robots."102061770"]
 enabled = false
 # 群管后端地址。仅本机调试时允许使用 http。
 url = "https://i.elaina.vin/etools"
-# 建议在群管 Web 面板的“开发者工具”中配置以下内容。
+# 每个机器人一节，建议通过群管 Web 面板的“开发者工具”配置。
 app_id = ""
 secret = ""
 sync_interval_seconds = 10

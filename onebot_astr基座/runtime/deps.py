@@ -56,6 +56,7 @@ def missing_packages(req_path: str) -> list[str]:
 def _framework_mirror() -> str:
     try:
         from core.base.config import cfg
+
         return (cfg.get("settings", "pip.mirror", "") or "").strip()
     except Exception:
         return ""
@@ -64,6 +65,7 @@ def _framework_mirror() -> str:
 def _auto_install_enabled() -> bool:
     try:
         from core.base.config import cfg
+
         return bool(cfg.get("settings", "pip.auto_install", True))
     except Exception:
         return True
@@ -91,7 +93,15 @@ def _trusted_host(index_url: str) -> str:
 
 
 def _pip_install(req_path: str, mirror: str) -> tuple[bool, str]:
-    cmd = [sys.executable, "-m", "pip", "install", "-r", req_path, "--disable-pip-version-check"]
+    cmd = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        req_path,
+        "--disable-pip-version-check",
+    ]
     if mirror:
         host = _trusted_host(mirror)
         if host:
@@ -121,7 +131,9 @@ def ensure_requirements(name: str, app_dir: str) -> tuple[bool, str]:
     for m in _mirror_chain():
         ok, err = _pip_install(req, m)
         if ok and not missing_packages(req):
-            log.info(f"[astrbot基座] [{name}] 依赖安装完成" + (f" (源: {m})" if m else ""))
+            log.info(
+                f"[astrbot基座] [{name}] 依赖安装完成" + (f" (源: {m})" if m else "")
+            )
             return True, "已安装依赖: " + ", ".join(missing)
         last_err = err or last_err
         if m:
@@ -129,5 +141,7 @@ def ensure_requirements(name: str, app_dir: str) -> tuple[bool, str]:
 
     still = missing_packages(req)
     manual = f"{sys.executable} -m pip install -r {req}"
-    log.error(f"[astrbot基座] [{name}] 依赖安装失败, 仍缺: {', '.join(still)}. 请手动: {manual}")
+    log.error(
+        f"[astrbot基座] [{name}] 依赖安装失败, 仍缺: {', '.join(still)}. 请手动: {manual}"
+    )
     return False, f"依赖安装失败, 仍缺 {', '.join(still)}"

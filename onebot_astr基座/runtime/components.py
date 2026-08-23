@@ -6,8 +6,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
+
+
+def _read_bytes(path: str) -> bytes:
+    """读取本地媒体文件。"""
+    with open(path, "rb") as file:
+        return file.read()
 
 
 class ComponentType:
@@ -71,8 +78,12 @@ class Image(BaseMessageComponent):
 
     def __init__(self, file: str = "", url: str = "", path: str = "", **kwargs):
         self.file = file or url or path or ""
-        self.url = url or (file if str(file).startswith(("http://", "https://")) else "")
-        self.path = path or ("" if self.url else (file if isinstance(file, str) else ""))
+        self.url = url or (
+            file if str(file).startswith(("http://", "https://")) else ""
+        )
+        self.path = path or (
+            "" if self.url else (file if isinstance(file, str) else "")
+        )
         self.bytes_: bytes | None = kwargs.get("bytes_")
 
     @classmethod
@@ -103,16 +114,15 @@ class Image(BaseMessageComponent):
             return _to_b64(f)
         if isinstance(f, str):
             if f.startswith("base64://"):
-                return f[len("base64://"):]
+                return f[len("base64://") :]
             if f.startswith(("http://", "https://")):
                 import aiohttp
 
                 async with aiohttp.ClientSession() as s, s.get(f) as r:
                     return _to_b64(await r.read())
-            path = f[len("file://"):] if f.startswith("file://") else f
+            path = f[len("file://") :] if f.startswith("file://") else f
             if os.path.isfile(path):
-                with open(path, "rb") as fp:
-                    return _to_b64(fp.read())
+                return _to_b64(await asyncio.to_thread(_read_bytes, path))
         raise ValueError("无法转换图片为 base64")
 
     def _file_value(self) -> str:
@@ -176,11 +186,12 @@ class Record(BaseMessageComponent):
             return _to_b64(self.bytes_)
         f = self.file
         if isinstance(f, str) and f.startswith("base64://"):
-            return f[len("base64://"):]
-        path = f[len("file://"):] if isinstance(f, str) and f.startswith("file://") else f
+            return f[len("base64://") :]
+        path = (
+            f[len("file://") :] if isinstance(f, str) and f.startswith("file://") else f
+        )
         if isinstance(path, str) and os.path.isfile(path):
-            with open(path, "rb") as fp:
-                return _to_b64(fp.read())
+            return _to_b64(await asyncio.to_thread(_read_bytes, path))
         raise ValueError("无法转换语音为 base64")
 
     def _file_value(self) -> str:
@@ -230,7 +241,9 @@ class Video(BaseMessageComponent):
 class File(BaseMessageComponent):
     type = "File"
 
-    def __init__(self, name: str = "", file: str = "", url: str = "", path: str = "", **_):
+    def __init__(
+        self, name: str = "", file: str = "", url: str = "", path: str = "", **_
+    ):
         self.name = name or ""
         self.file = file or path or url or ""
         self.url = url or ""
@@ -285,7 +298,9 @@ class Node(BaseMessageComponent):
 
     type = "Node"
 
-    def __init__(self, content=None, uin=None, name: str = "", seq=None, time=None, **kwargs):
+    def __init__(
+        self, content=None, uin=None, name: str = "", seq=None, time=None, **kwargs
+    ):
         self.content = content if content is not None else []
         self.uin = uin if uin is not None else kwargs.get("user_id")
         self.name = name or kwargs.get("nickname", "") or ""

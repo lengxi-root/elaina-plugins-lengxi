@@ -40,7 +40,7 @@ def _parse_requirements(req_path: str) -> list[str]:
 
 def _dist_name(spec: str) -> str:
     """从一行 requirement 取出可用于 metadata 查询的包名。"""
-    return re.split(r"[<>=!~;\[ @]", spec, 1)[0].strip()
+    return re.split(r"[<>=!~;\[ @]", spec, maxsplit=1)[0].strip()
 
 
 def missing_packages(req_path: str) -> list[str]:
@@ -83,7 +83,7 @@ def _mirror_chain(pref: str) -> list[str]:
     if pref.startswith("http"):
         # 选定镜像优先, 原站兜底
         return [pref, "https://pypi.org/simple"]
-    # auto: 框架源 + 常用国内源 + 原站
+    # 自动模式：框架源、常用国内源和原站
     mirrors: list[str] = []
     fw = _framework_mirror()
     if fw:
@@ -139,7 +139,9 @@ def ensure_requirements(name: str, app_dir: str) -> tuple[bool, str]:
 
     pref = _pip_index_pref()
     src_desc = {"auto": "自动(多镜像兜底)", "official": "原站 pypi.org"}.get(pref, pref)
-    log.info(f"[astr基座] [{name}] 缺少依赖 {', '.join(missing)}, 开始自动安装... (源: {src_desc})")
+    log.info(
+        f"[astr基座] [{name}] 缺少依赖 {', '.join(missing)}, 开始自动安装... (源: {src_desc})"
+    )
     mirrors = _mirror_chain(pref)
 
     last_err = ""
@@ -162,4 +164,6 @@ def ensure_requirements(name: str, app_dir: str) -> tuple[bool, str]:
 
 
 async def ensure_requirements_async(name: str, app_dir: str) -> tuple[bool, str]:
-    return await asyncio.get_running_loop().run_in_executor(None, ensure_requirements, name, app_dir)
+    return await asyncio.get_running_loop().run_in_executor(
+        None, ensure_requirements, name, app_dir
+    )

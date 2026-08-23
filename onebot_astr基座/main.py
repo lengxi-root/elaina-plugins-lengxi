@@ -32,9 +32,9 @@ _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 _APPS_DIR = os.path.join(_PLUGIN_DIR, "apps")
 
 _DEFAULT_CONFIG = {
-    "command_prefixes": {},   # {插件名: 指令前缀}
-    "disabled_apps": [],      # 停用的插件名 (不加载)
-    "apps": {},               # {插件名: 配置覆盖 dict}
+    "command_prefixes": {},  # {插件名: 指令前缀}
+    "disabled_apps": [],  # 停用的插件名 (不加载)
+    "apps": {},  # {插件名: 配置覆盖 dict}
 }
 
 
@@ -126,6 +126,7 @@ async def _on_load():
     await _cmd.instantiate_all()
     try:
         from .webpanel import panel as _panel
+
         _panel.setup()
     except Exception as e:
         log.warning(f"[astrbot基座] Web 面板注册失败 (不影响插件运行): {e}")
@@ -136,6 +137,7 @@ async def _on_load():
 async def _on_unload():
     try:
         from .webpanel import panel as _panel
+
         _panel.teardown()
     except Exception as e:
         log.warning(f"[astrbot基座] Web 面板注销异常: {e}")

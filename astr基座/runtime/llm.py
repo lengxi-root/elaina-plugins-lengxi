@@ -1,4 +1,4 @@
-"""AstrBot LLM compatibility backed by ElainaBot's ``ai_llm`` module."""
+"""由 ElainaBot 的 ``ai_llm`` 模块提供支持的 AstrBot 大语言模型兼容层。"""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ class ProviderRequest:
 
 
 class LLMResponse:
-    """Small, source-compatible representation of AstrBot's LLM response."""
+    """与 AstrBot 源码兼容的精简大语言模型响应对象。"""
 
     def __init__(
         self,
@@ -136,7 +136,9 @@ class LLMResponse:
 @dataclass
 class FunctionTool:
     name: str
-    parameters: dict = field(default_factory=lambda: {"type": "object", "properties": {}})
+    parameters: dict = field(
+        default_factory=lambda: {"type": "object", "properties": {}}
+    )
     description: str = ""
     handler: Any = None
     handler_module_path: str | None = None
@@ -171,12 +173,14 @@ class ToolSet:
                 "type": item.get("type", "string"),
                 "description": item.get("description", ""),
             }
-        self.add_tool(FunctionTool(
-            name=name,
-            parameters={"type": "object", "properties": properties},
-            description=desc,
-            handler=handler,
-        ))
+        self.add_tool(
+            FunctionTool(
+                name=name,
+                parameters={"type": "object", "properties": properties},
+                description=desc,
+                handler=handler,
+            )
+        )
 
     def remove_tool(self, name: str) -> None:
         self.tools = [tool for tool in self.tools if getattr(tool, "name", "") != name]
@@ -184,7 +188,9 @@ class ToolSet:
     remove_func = remove_tool
 
     def get_tool(self, name: str):
-        return next((tool for tool in self.tools if getattr(tool, "name", "") == name), None)
+        return next(
+            (tool for tool in self.tools if getattr(tool, "name", "") == name), None
+        )
 
     get_func = get_tool
 
@@ -200,7 +206,8 @@ class ToolSet:
             parameters = getattr(tool, "parameters", None)
             if parameters or not omit_empty_parameter_field:
                 function["parameters"] = parameters or {
-                    "type": "object", "properties": {}
+                    "type": "object",
+                    "properties": {},
                 }
             schemas.append({"type": "function", "function": function})
         return schemas
@@ -303,11 +310,13 @@ def _user_content(prompt, image_urls, audio_urls, extra_parts):
     content.extend(part for part in map(_as_content_part, extra_parts or []) if part)
     content.extend(
         {"type": "image_url", "image_url": {"url": str(url)}}
-        for url in image_urls or [] if url
+        for url in image_urls or []
+        if url
     )
     content.extend(
         {"type": "audio_url", "audio_url": {"url": str(url)}}
-        for url in audio_urls or [] if url
+        for url in audio_urls or []
+        if url
     )
     return content
 
@@ -332,17 +341,21 @@ async def _messages(
     messages = [message for message in map(_as_message, contexts or []) if message]
     messages.extend(_tool_result_messages(tool_calls_result))
     if prompt is not None or image_urls or audio_urls or extra_parts:
-        messages.append({
-            "role": "user",
-            "content": _user_content(prompt, image_urls, audio_urls, extra_parts),
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": _user_content(prompt, image_urls, audio_urls, extra_parts),
+            }
+        )
     return messages
 
 
 def _tools(func_tool) -> tuple[list[dict], dict[str, Any]]:
     if not func_tool:
         return [], {}
-    values = list(getattr(func_tool, "tools", None) or getattr(func_tool, "func_list", None) or [])
+    values = list(
+        getattr(func_tool, "tools", None) or getattr(func_tool, "func_list", None) or []
+    )
     if not values and hasattr(func_tool, "__iter__"):
         values = list(func_tool)
     handlers = {
@@ -389,9 +402,7 @@ async def _call_tool(tool, arguments: dict, *, event=None, context=None):
             raise RuntimeError(f"LLM tool {getattr(tool, 'name', '')} has no handler")
         result = caller(None, **arguments)
     if inspect.isasyncgen(result):
-        chunks = []
-        async for item in result:
-            chunks.append(str(_plain_tool_result(item) or ""))
+        chunks = [str(_plain_tool_result(item) or "") async for item in result]
         return "".join(chunks)
     if inspect.isawaitable(result):
         result = await result
@@ -403,16 +414,21 @@ def _usage(raw: dict | None) -> TokenUsage:
     prompt = int(raw.get("prompt_tokens") or raw.get("input_tokens") or 0)
     cached = int(
         raw.get("prompt_tokens_details", {}).get("cached_tokens", 0)
-        if isinstance(raw.get("prompt_tokens_details"), dict) else 0
+        if isinstance(raw.get("prompt_tokens_details"), dict)
+        else 0
     )
     output = int(raw.get("completion_tokens") or raw.get("output_tokens") or 0)
-    return TokenUsage(input_other=max(0, prompt - cached), input_cached=cached, output=output)
+    return TokenUsage(
+        input_other=max(0, prompt - cached), input_cached=cached, output=output
+    )
 
 
 class Provider:
-    """AstrBot chat Provider facade for one configured ``ai_llm`` provider."""
+    """单个已配置 ``ai_llm`` 提供方对应的 AstrBot 对话提供方外观。"""
 
-    def __init__(self, provider_config: dict, provider_settings: dict | None = None) -> None:
+    def __init__(
+        self, provider_config: dict, provider_settings: dict | None = None
+    ) -> None:
         self.provider_config = dict(provider_config or {})
         self.provider_settings = dict(provider_settings or {})
         self.model_name = str(self.provider_config.get("model") or "")
@@ -455,7 +471,9 @@ class Provider:
         default = str(self.provider_config.get("model") or "")
         if default:
             models.append(default)
-        return list(dict.fromkeys(model for model in models if model and model not in disabled))
+        return list(
+            dict.fromkeys(model for model in models if model and model not in disabled)
+        )
 
     async def text_chat(
         self,
@@ -489,7 +507,11 @@ class Provider:
         if service is None:
             raise RuntimeError("AI LLM 模块未安装或未启用")
         messages = await _messages(
-            prompt, contexts, image_urls, audio_urls, extra_user_content_parts,
+            prompt,
+            contexts,
+            image_urls,
+            audio_urls,
+            extra_user_content_parts,
             tool_calls_result,
         )
         schemas, handlers = _tools(func_tool)
@@ -503,7 +525,8 @@ class Provider:
             return await _call_tool(tool, arguments, event=event, context=astr_context)
 
         requested_model = (
-            str(model or "") if model is not None
+            str(model or "")
+            if model is not None
             else (self.get_model() if self._model_overridden else "")
         )
         call_kwargs = {
@@ -513,14 +536,20 @@ class Provider:
             # 留空时由 ai_llm 按中央模型优先级与故障切换策略选择。
             "model": requested_model,
             "session_id": str(session_id or ""),
-            "consumer_plugin": str(kwargs.pop("consumer_plugin", "") or _consumer_plugin()),
+            "consumer_plugin": str(
+                kwargs.pop("consumer_plugin", "") or _consumer_plugin()
+            ),
             "tools": schemas or None,
             "tool_handler": tool_handler if handlers else None,
         }
         for key in ("temperature", "max_tokens", "max_tool_rounds", "prepare_context"):
             if key in kwargs and kwargs[key] is not None:
                 call_kwargs[key] = kwargs[key]
-        runner = service.run_agent if kwargs.pop("enable_runtime_tools", False) else service.complete
+        runner = (
+            service.run_agent
+            if kwargs.pop("enable_runtime_tools", False)
+            else service.complete
+        )
         result = await runner(**call_kwargs)
         text = str(result.get("text") or "")
         return LLMResponse(
@@ -550,10 +579,16 @@ class Provider:
             # ai_llm 的原生流接口不执行工具；带工具时走完整调用，至少保证
             # AstrBot 插件拿到真实工具结果和最终回复。
             yield await self.text_chat(
-                prompt=prompt, session_id=session_id, image_urls=image_urls,
-                audio_urls=audio_urls, func_tool=func_tool, contexts=contexts,
-                system_prompt=system_prompt, tool_calls_result=tool_calls_result,
-                model=model, extra_user_content_parts=extra_user_content_parts,
+                prompt=prompt,
+                session_id=session_id,
+                image_urls=image_urls,
+                audio_urls=audio_urls,
+                func_tool=func_tool,
+                contexts=contexts,
+                system_prompt=system_prompt,
+                tool_calls_result=tool_calls_result,
+                model=model,
+                extra_user_content_parts=extra_user_content_parts,
                 **kwargs,
             )
             return
@@ -561,14 +596,19 @@ class Provider:
         if service is None:
             raise RuntimeError("AI LLM 模块未安装或未启用")
         messages = await _messages(
-            prompt, contexts, image_urls, audio_urls, extra_user_content_parts,
+            prompt,
+            contexts,
+            image_urls,
+            audio_urls,
+            extra_user_content_parts,
             tool_calls_result,
         )
         chunks = []
         run_id = None
         usage = TokenUsage()
         requested_model = (
-            str(model or "") if model is not None
+            str(model or "")
+            if model is not None
             else (self.get_model() if self._model_overridden else "")
         )
         stream_kwargs = {
@@ -587,16 +627,22 @@ class Provider:
                 text = str(event.get("text") or "")
                 chunks.append(text)
                 yield LLMResponse(
-                    role="assistant", completion_text=text, raw_completion=event,
-                    is_chunk=True, id=run_id,
+                    role="assistant",
+                    completion_text=text,
+                    raw_completion=event,
+                    is_chunk=True,
+                    id=run_id,
                 )
             elif event.get("type") == "done":
                 usage = _usage(event.get("usage"))
         text = "".join(chunks)
         yield LLMResponse(
-            role="assistant", completion_text=text,
-            result_chain=MessageChain().message(text), is_chunk=False,
-            id=run_id, usage=usage,
+            role="assistant",
+            completion_text=text,
+            result_chain=MessageChain().message(text),
+            is_chunk=False,
+            id=run_id,
+            usage=usage,
         )
 
     async def test(self) -> None:
@@ -604,7 +650,7 @@ class Provider:
 
 
 class ProviderManager:
-    """Dynamic view of providers configured in the central ``ai_llm`` module."""
+    """中央 ``ai_llm`` 模块中已配置提供方的动态视图。"""
 
     def __init__(self) -> None:
         self._cache: dict[str, Provider] = {}
@@ -619,7 +665,8 @@ class ProviderManager:
     def _snapshot(self) -> tuple[list[Provider], str]:
         config = _public_config()
         records = [
-            item for item in config.get("providers", [])
+            item
+            for item in config.get("providers", [])
             if isinstance(item, dict) and item.get("enabled") and item.get("id")
         ]
         active_ids = set()
@@ -634,7 +681,9 @@ class ProviderManager:
             else:
                 provider.refresh(record)
             providers.append(provider)
-        self._cache = {key: value for key, value in self._cache.items() if key in active_ids}
+        self._cache = {
+            key: value for key, value in self._cache.items() if key in active_ids
+        }
         return providers, str(config.get("active_provider") or "")
 
     @property
@@ -648,9 +697,9 @@ class ProviderManager:
     @property
     def curr_provider_inst(self) -> Provider | None:
         providers, active = self._snapshot()
-        return next((provider for provider in providers if provider.meta().id == active), None) or (
-            providers[0] if providers else None
-        )
+        return next(
+            (provider for provider in providers if provider.meta().id == active), None
+        ) or (providers[0] if providers else None)
 
     def get_using_provider(self, provider_type=None, umo=None):
         if provider_type not in (None, ProviderType.CHAT_COMPLETION):

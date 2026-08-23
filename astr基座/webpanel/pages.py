@@ -11,6 +11,7 @@ AstrBot 插件可在插件目录 ``pages/<页面名>/index.html`` 下自带 Web 
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import mimetypes
@@ -33,6 +34,12 @@ _PAGES_DIR_NAME = "pages"
 _ENTRY_FILE = "index.html"
 
 
+def _read_bytes(path: str) -> bytes:
+    """读取静态资源文件。"""
+    with open(path, "rb") as file:
+        return file.read()
+
+
 # ==================================================================== #
 #  页面发现
 # ==================================================================== #
@@ -49,7 +56,11 @@ def list_app_pages(app_dir: str) -> list[str]:
     except OSError:
         return out
     for entry in entries:
-        if not entry.is_dir() or entry.name.startswith(".") or entry.name in (".", ".."):
+        if (
+            not entry.is_dir()
+            or entry.name.startswith(".")
+            or entry.name in (".", "..")
+        ):
             continue
         if os.path.isfile(os.path.join(entry.path, _ENTRY_FILE)):
             out.append(entry.name)
@@ -114,7 +125,7 @@ def _rewrite_html(html: str, app: str, page: str, cur_rel: str, token: str) -> s
         if not _is_relative(url):
             return m.group(0)
         rel = _resolve_rel(cur_rel, url)
-        return f'{m.group("attr")}={m.group("q")}{_asset_url(app, page, rel, token)}{m.group("q")}'
+        return f"{m.group('attr')}={m.group('q')}{_asset_url(app, page, rel, token)}{m.group('q')}"
 
     return _HTML_ATTR_RE.sub(repl, html)
 
@@ -125,13 +136,13 @@ def _rewrite_css(css: str, app: str, page: str, cur_rel: str, token: str) -> str
         if not _is_relative(url):
             return m.group(0)
         rel = _resolve_rel(cur_rel, url)
-        return f'url({m.group("q")}{_asset_url(app, page, rel, token)}{m.group("q")})'
+        return f"url({m.group('q')}{_asset_url(app, page, rel, token)}{m.group('q')})"
 
     return _CSS_URL_RE.sub(repl, css)
 
 
 # ==================================================================== #
-#  bridge SDK (注入 index.html, 提供 window.AstrBotPluginPage)
+#  桥接工具包（注入 index.html，并提供 window.AstrBotPluginPage）
 # ==================================================================== #
 
 _BRIDGE_JS = r"""
@@ -233,7 +244,7 @@ def _inject_bridge(html: str, app: str, page: str, token: str) -> str:
     tag = f"<script>{js}</script>"
     m = _HEAD_RE.search(html)
     if m:
-        return html[: m.end()] + tag + html[m.end():]
+        return html[: m.end()] + tag + html[m.end() :]
     return tag + html
 
 
@@ -250,20 +261,33 @@ async def handle_page(request):
     page = _safe_name(request.query.get("page", ""))
     token = request.query.get("token", "")
     if not app_name or not page:
-        return web.json_response({"success": False, "message": "缺少 app / page 参数"}, status=400)
+        return web.json_response(
+            {"success": False, "message": "缺少 app / page 参数"}, status=400
+        )
     base = os.path.join(_APPS_DIR, app_name, _PAGES_DIR_NAME, page)
     if not os.path.isdir(base):
-        return web.Response(text="插件页面不存在", status=404, content_type="text/plain", charset="utf-8")
+        return web.Response(
+            text="插件页面不存在",
+            status=404,
+            content_type="text/plain",
+            charset="utf-8",
+        )
     rel = (request.query.get("path", "") or _ENTRY_FILE).replace("\\", "/").lstrip("/")
     path = _safe_join(base, rel)
     if not path or not os.path.isfile(path):
-        return web.Response(text="文件不存在", status=404, content_type="text/plain", charset="utf-8")
+        return web.Response(
+            text="文件不存在", status=404, content_type="text/plain", charset="utf-8"
+        )
     ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
     try:
-        with open(path, "rb") as f:
-            content = f.read()
+        content = await asyncio.to_thread(_read_bytes, path)
     except OSError as e:
-        return web.Response(text=f"读取失败: {e}", status=500, content_type="text/plain", charset="utf-8")
+        return web.Response(
+            text=f"读取失败: {e}",
+            status=500,
+            content_type="text/plain",
+            charset="utf-8",
+        )
 
     ext = os.path.splitext(path)[1].lower()
     if ext in (".html", ".htm"):
@@ -275,7 +299,9 @@ async def handle_page(request):
         text = content.decode("utf-8", errors="replace")
         text = _rewrite_css(text, app_name, page, rel, token)
         return web.Response(text=text, content_type="text/css", charset="utf-8")
-    return web.Response(body=content, headers={"Content-Type": ctype, "Cache-Control": "no-cache"})
+    return web.Response(
+        body=content, headers={"Content-Type": ctype, "Cache-Control": "no-cache"}
+    )
 
 
 # ==================================================================== #
@@ -291,7 +317,7 @@ def _route_pattern(route: str) -> str:
     chunks = []
     pos = 0
     for m in _ROUTE_PARAM_RE.finditer(normalized):
-        chunks.append(re.escape(normalized[pos:m.start()]))
+        chunks.append(re.escape(normalized[pos : m.start()]))
         name = m.group(2)
         chunks.append(f"(?P<{name}>.*)" if m.group(1) else f"(?P<{name}>[^/]+)")
         pos = m.end()
@@ -323,17 +349,24 @@ def _get_quart_app():
     return _quart_app
 
 
-async def _call_web_api(handler, path_params: dict, *, method: str, path: str,
-                        headers: list, body: bytes):
+async def _call_web_api(
+    handler, path_params: dict, *, method: str, path: str, headers: list, body: bytes
+):
     """在 quart 请求上下文里调用插件 handler (插件普遍用 quart 的 request/jsonify)。"""
     app = _get_quart_app()
-    async with app.test_request_context(path, method=method, headers=headers, data=body):
+    async with app.test_request_context(
+        path, method=method, headers=headers, data=body
+    ):
         rv = handler(**path_params)
         if inspect.isawaitable(rv):
             rv = await rv
         resp = await app.make_response(rv)
         payload = await resp.get_data()
-        return resp.status_code, resp.headers.get("Content-Type", "application/octet-stream"), payload
+        return (
+            resp.status_code,
+            resp.headers.get("Content-Type", "application/octet-stream"),
+            payload,
+        )
 
 
 async def handle_page_api(request):
@@ -342,10 +375,14 @@ async def handle_page_api(request):
 
     subpath = request.query.get("path", "").strip()
     if not subpath:
-        return web.json_response({"status": "error", "message": "缺少 path 参数", "data": {}})
+        return web.json_response(
+            {"status": "error", "message": "缺少 path 参数", "data": {}}
+        )
     matched = _match_web_api(subpath, request.method)
     if not matched:
-        return web.json_response({"status": "error", "message": "未找到该路由", "data": {}})
+        return web.json_response(
+            {"status": "error", "message": "未找到该路由", "data": {}}
+        )
     handler, path_params = matched
 
     # 透传除 path/token 外的查询参数; body/头原样进 quart 上下文 (multipart 上传可解析)
@@ -354,20 +391,31 @@ async def handle_page_api(request):
     quart_path = "/" + subpath.lstrip("/") + (f"?{qs}" if qs else "")
     body = await request.read()
     headers = [
-        (k, v) for k, v in request.headers.items()
+        (k, v)
+        for k, v in request.headers.items()
         if k.lower() not in ("host", "content-length", "authorization")
     ]
     try:
         status, ctype, payload = await _call_web_api(
-            handler, path_params, method=request.method,
-            path=quart_path, headers=headers, body=body,
+            handler,
+            path_params,
+            method=request.method,
+            path=quart_path,
+            headers=headers,
+            body=body,
         )
     except ModuleNotFoundError as e:
         log.warning(f"[astr基座] 插件页 API 缺少依赖: {e}")
         return web.json_response(
-            {"status": "error", "message": f"缺少依赖 {e.name}, 请在框架环境安装后重试", "data": {}}
+            {
+                "status": "error",
+                "message": f"缺少依赖 {e.name}, 请在框架环境安装后重试",
+                "data": {},
+            }
         )
     except Exception as e:
         log.error(f"[astr基座] 插件页 API 调用失败 [{subpath}]: {e}", exc_info=True)
-        return web.json_response({"status": "error", "message": f"插件 API 调用失败: {e}", "data": {}})
+        return web.json_response(
+            {"status": "error", "message": f"插件 API 调用失败: {e}", "data": {}}
+        )
     return web.Response(body=payload, status=status, headers={"Content-Type": ctype})

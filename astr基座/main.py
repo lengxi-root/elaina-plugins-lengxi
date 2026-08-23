@@ -17,10 +17,10 @@ from core.plugin.decorators import on_load, on_unload
 # 热重载时旧的导入缓存可能仍认为 bridge 是单文件模块, 先刷新再导入
 importlib.invalidate_caches()
 
-from .runtime import bridge, deps
-from .runtime.shim import install as install_shim
-from .runtime.shim import uninstall as uninstall_shim
-from .webpanel import panel as webpanel
+from .runtime import bridge, deps  # noqa: E402 - 刷新旧导入缓存后再加载兼容层
+from .runtime.shim import install as install_shim  # noqa: E402
+from .runtime.shim import uninstall as uninstall_shim  # noqa: E402
+from .webpanel import panel as webpanel  # noqa: E402
 
 log = get_logger(PLUGIN, "astr基座")
 
@@ -108,7 +108,11 @@ def _setup():
 
     # 1) 配置
     try:
-        config = ctx.ensure_config(_DEFAULT_CONFIG, comments=_CONFIG_COMMENTS) if ctx else dict(_DEFAULT_CONFIG)
+        config = (
+            ctx.ensure_config(_DEFAULT_CONFIG, comments=_CONFIG_COMMENTS)
+            if ctx
+            else dict(_DEFAULT_CONFIG)
+        )
     except Exception as e:
         log.warning(f"[astr基座] 读取配置失败, 使用默认: {e}")
         config = dict(_DEFAULT_CONFIG)
@@ -116,7 +120,11 @@ def _setup():
 
     # 2) 数据根目录 (StarTools.get_data_dir 用)
     try:
-        data_root = ctx.get_data_path("apps") if ctx else os.path.join(_PLUGIN_DIR, "data", "apps")
+        data_root = (
+            ctx.get_data_path("apps")
+            if ctx
+            else os.path.join(_PLUGIN_DIR, "data", "apps")
+        )
     except Exception:
         data_root = os.path.join(_PLUGIN_DIR, "data", "apps")
     os.makedirs(data_root, exist_ok=True)

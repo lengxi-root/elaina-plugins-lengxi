@@ -16,6 +16,7 @@ log = state.log
 
 # ==================== 参数解析 (复刻 AstrBot) ====================
 
+
 class GreedyStr(str):
     """标记接收其余全部文本的参数类型。"""
 
@@ -84,6 +85,7 @@ def validate_and_convert_params(tokens: list, param_type: dict) -> dict:
 
 # ==================== filter 枚举 ====================
 
+
 class PermissionType:
     ADMIN = "admin"
     MEMBER = "member"
@@ -96,6 +98,7 @@ class EventMessageType:
 
 
 # ==================== filter 装饰器 ====================
+
 
 def _add_command(func, entry: dict):
     cmds = getattr(func, "_astrbot_commands", None)
@@ -110,12 +113,14 @@ def _command_decorator(command_name: str, alias=None, **_kw):
 
     def deco(func):
         return _add_command(func, {"kind": "command", "names": names})
+
     return deco
 
 
 def _regex_decorator(pattern: str, **_kw):
     def deco(func):
         return _add_command(func, {"kind": "regex", "pattern": pattern})
+
     return deco
 
 
@@ -126,6 +131,7 @@ def _event_message_type_decorator(msg_type, **_kw):
         func._astrbot_msg_type = value
         _add_command(func, {"kind": "listen", "msg_type": value})
         return func
+
     return deco
 
 
@@ -135,12 +141,14 @@ def _permission_type_decorator(perm_type, **_kw):
     def deco(func):
         func._astrbot_perm = value
         return func
+
     return deco
 
 
 def _passthrough_decorator(*_a, **_k):
     def deco(func):
         return func
+
     return deco
 
 
@@ -165,6 +173,7 @@ def _group_decorator(name: str):
 
     def deco(_func):
         return grp
+
     return deco
 
 
@@ -201,6 +210,7 @@ class _FilterModule(types.ModuleType):
 
 # ==================== 指令收集 ====================
 
+
 def _build_command_pattern(names: list) -> str:
     alt = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
     return rf"^\s*/?(?:{alt})(?=\s|$)"
@@ -216,10 +226,15 @@ def _build_exclusive_pattern(cmd: CommandSpec) -> str:
         name_esc = re.escape(name)
         own = set(cmd.match_names)
         suffixes = sorted(
-            (re.escape(other[len(name):])
-             for other in _all_registered_cmd_names
-             if other not in own and other.startswith(name) and len(other) > len(name)),
-            key=len, reverse=True,
+            (
+                re.escape(other[len(name) :])
+                for other in _all_registered_cmd_names
+                if other not in own
+                and other.startswith(name)
+                and len(other) > len(name)
+            ),
+            key=len,
+            reverse=True,
         )
         if suffixes:
             neg = "|".join(suffixes)
@@ -233,9 +248,18 @@ def _build_exclusive_pattern(cmd: CommandSpec) -> str:
 
 
 class CommandSpec:
-    def __init__(self, kind, names, method_name, handler_params, pattern, *,
-                 msg_type="all", perm=""):
-        self.kind = kind                      # "command" | "regex" | "listen"
+    def __init__(
+        self,
+        kind,
+        names,
+        method_name,
+        handler_params,
+        pattern,
+        *,
+        msg_type="all",
+        perm="",
+    ):
+        self.kind = kind  # 处理器类型：指令、正则或监听器
         self.names = names
         self.method_name = method_name
         self.handler_params = handler_params
@@ -262,13 +286,27 @@ class CommandSpec:
     def from_entry(cls, entry: dict, method_name: str, func) -> CommandSpec:
         perm = getattr(func, "_astrbot_perm", "")
         if entry["kind"] == "regex":
-            return cls("regex", [method_name], method_name, {}, entry["pattern"], perm=perm)
+            return cls(
+                "regex", [method_name], method_name, {}, entry["pattern"], perm=perm
+            )
         if entry["kind"] == "listen":
-            return cls("listen", [method_name], method_name, {}, r"[\s\S]*",
-                       msg_type=entry.get("msg_type", "all"), perm=perm)
-        return cls("command", entry["names"], method_name,
-                   build_handler_params(func), _build_command_pattern(entry["names"]),
-                   perm=perm)
+            return cls(
+                "listen",
+                [method_name],
+                method_name,
+                {},
+                r"[\s\S]*",
+                msg_type=entry.get("msg_type", "all"),
+                perm=perm,
+            )
+        return cls(
+            "command",
+            entry["names"],
+            method_name,
+            build_handler_params(func),
+            _build_command_pattern(entry["names"]),
+            perm=perm,
+        )
 
 
 class PluginSpec:
@@ -287,11 +325,18 @@ class PluginSpec:
 
 def register(name="", author="", desc="", version="", repo="", *args, **kwargs):
     """@register(...) 装饰 Star 类: 仅记录元数据 (实际收集在 collect_app_specs)。"""
-    meta = {"name": name, "author": author, "desc": desc, "version": version, "repo": repo}
+    meta = {
+        "name": name,
+        "author": author,
+        "desc": desc,
+        "version": version,
+        "repo": repo,
+    }
 
     def deco(cls):
         cls._astrbot_meta = meta
         return cls
+
     return deco
 
 
@@ -307,19 +352,22 @@ def _collect_commands(cls) -> list:
             if not entries:
                 continue
             seen.add(attr_name)
-            for entry in entries:
-                cmds.append(CommandSpec.from_entry(entry, attr_name, member))
+            cmds.extend(
+                CommandSpec.from_entry(entry, attr_name, member) for entry in entries
+            )
     return cmds
 
 
 def _read_metadata_yaml(app_dir: str) -> dict:
     import os
+
     for fn in ("metadata.yaml", "metadata.yml"):
         path = os.path.join(app_dir, fn)
         if not os.path.isfile(path):
             continue
         try:
             import yaml
+
             with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             if isinstance(data, dict):
@@ -346,10 +394,13 @@ def collect_app_specs(app_name: str, module_name: str, app_dir: str) -> int:
             continue
         meta = dict(getattr(cls, "_astrbot_meta", {}) or {})
         if not meta.get("name"):
-            meta["name"] = (meta_yaml.get("name") or meta_yaml.get("display_name")
-                            or app_name)
+            meta["name"] = (
+                meta_yaml.get("name") or meta_yaml.get("display_name") or app_name
+            )
         meta.setdefault("author", meta_yaml.get("author", ""))
-        meta.setdefault("desc", meta_yaml.get("desc", "") or meta_yaml.get("description", ""))
+        meta.setdefault(
+            "desc", meta_yaml.get("desc", "") or meta_yaml.get("description", "")
+        )
         meta.setdefault("version", meta_yaml.get("version", ""))
         meta.setdefault("repo", meta_yaml.get("repo", ""))
         spec = PluginSpec(cls, meta, app_name=app_name)
@@ -357,14 +408,21 @@ def collect_app_specs(app_name: str, module_name: str, app_dir: str) -> int:
         state.PLUGIN_SPECS.append(spec)
         existing.add(id(cls))
         found += 1
-        log.info(f"[astrbot基座] 发现插件 [{spec.name}] v{spec.version}, 指令 {len(spec.commands)} 条")
+        log.info(
+            f"[astrbot基座] 发现插件 [{spec.name}] v{spec.version}, 指令 {len(spec.commands)} 条"
+        )
     return found
 
 
 # ==================== 分发 ====================
 
-def _strip_command(content: str, match_names: list, prefix: str = "",
-                   exclude_names: frozenset[str] | None = None):
+
+def _strip_command(
+    content: str,
+    match_names: list,
+    prefix: str = "",
+    exclude_names: frozenset[str] | None = None,
+):
     """归一空白, 去掉可选 '/' + 插件前缀 + 命中的指令名, 返回 (matched, tokens)。"""
     msg = " ".join((content or "").split())
     if msg.startswith("/"):
@@ -372,14 +430,14 @@ def _strip_command(content: str, match_names: list, prefix: str = "",
     if prefix:
         if not msg.startswith(prefix):
             return False, []
-        msg = msg[len(prefix):].lstrip()
+        msg = msg[len(prefix) :].lstrip()
     for full in match_names:
         if msg == full or msg.startswith(full + " "):
             if exclude_names:
                 for longer in exclude_names:
                     if msg == longer or msg.startswith(longer + " "):
                         return False, []
-            return True, msg[len(full):].split()
+            return True, msg[len(full) :].split()
     return False, []
 
 
@@ -388,7 +446,7 @@ def _strip_prefix(content: str, prefix: str) -> str:
         return content
     msg = " ".join((content or "").split())
     body = msg[1:].lstrip() if msg.startswith("/") else msg
-    return body[len(prefix):].lstrip() if body.startswith(prefix) else content
+    return body[len(prefix) :].lstrip() if body.startswith(prefix) else content
 
 
 def _resolve_role(event) -> str:
@@ -419,7 +477,10 @@ async def _invoke(method, astr_event, event, kwargs):
         if astr_event.get_result() is not None:
             await sending.send_result(event, astr_event.get_result())
     except Exception as e:
-        log.error(f"[astrbot基座] 指令 [{astr_event.message_str[:20]}] 执行异常: {e}", exc_info=True)
+        log.error(
+            f"[astrbot基座] 指令 [{astr_event.message_str[:20]}] 执行异常: {e}",
+            exc_info=True,
+        )
 
 
 def make_wrapper(spec: PluginSpec, cmd: CommandSpec):
@@ -436,8 +497,12 @@ def make_wrapper(spec: PluginSpec, cmd: CommandSpec):
         kwargs: dict = {}
         content = None
         if cmd.kind == "command":
-            ok, tokens = _strip_command(event.content, cmd.match_names, cmd.prefix,
-                                        exclude_names=cmd._exclude_names)
+            ok, tokens = _strip_command(
+                event.content,
+                cmd.match_names,
+                cmd.prefix,
+                exclude_names=cmd._exclude_names,
+            )
             if not ok:
                 return
             try:
@@ -471,7 +536,11 @@ def build_handlers():
                 own = set(cmd.names)
                 for name in cmd.names:
                     for other in _all_registered_cmd_names:
-                        if other not in own and other.startswith(name) and len(other) > len(name):
+                        if (
+                            other not in own
+                            and other.startswith(name)
+                            and len(other) > len(name)
+                        ):
                             longer.add(other)
                 cmd._exclude_names = frozenset(longer) if longer else None
 
@@ -503,6 +572,7 @@ def build_handlers():
 
 # ==================== 生命周期 ====================
 
+
 def _inject_star_attrs(spec):
     """复刻 AstrBot: 实例化前把 name/author/plugin_id 注入到类上。"""
     cls = spec.cls
@@ -519,8 +589,13 @@ def _inject_star_attrs(spec):
 def _construct_star(cls, context, config):
     """兼容 Star.__init__ 签名: (context, config) / (context) / ()。"""
     try:
-        nparams = len([p for p in inspect.signature(cls.__init__).parameters.values()
-                       if p.name != "self"])
+        nparams = len(
+            [
+                p
+                for p in inspect.signature(cls.__init__).parameters.values()
+                if p.name != "self"
+            ]
+        )
     except (ValueError, TypeError):
         nparams = 1
     if nparams >= 2:
@@ -533,8 +608,13 @@ def _construct_star(cls, context, config):
 def _app_dir_of(spec: PluginSpec):
     import os
     import sys
+
     mod = sys.modules.get(spec.module)
-    return os.path.dirname(mod.__file__) if mod and getattr(mod, "__file__", None) else None
+    return (
+        os.path.dirname(mod.__file__)
+        if mod and getattr(mod, "__file__", None)
+        else None
+    )
 
 
 def _load_app_config(spec: PluginSpec) -> AstrBotConfig:
@@ -568,7 +648,9 @@ async def instantiate_all():
                     log.warning(f"[astrbot基座] [{spec.name}] initialize() 异常: {e}")
             log.info(f"[astrbot基座] 已实例化插件 [{spec.name}]")
         except Exception as e:
-            log.error(f"[astrbot基座] 实例化插件 [{spec.name}] 失败: {e}", exc_info=True)
+            log.error(
+                f"[astrbot基座] 实例化插件 [{spec.name}] 失败: {e}", exc_info=True
+            )
     return context
 
 

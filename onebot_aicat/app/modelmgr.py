@@ -6,13 +6,14 @@
 """
 
 import asyncio
+import contextlib
 import time
 
 import aiohttp
 
 from . import aiconfig
 
-# model -> {'ok': bool|None, 'latency_ms': int, 'checked_at': float, 'error': str}
+# 模型名对应健康状态、延迟、检查时间和错误信息
 _health: dict = {}
 _lock = asyncio.Lock()
 
@@ -21,23 +22,23 @@ def status() -> dict:
     """返回可用性快照 (供前端展示)。"""
     return {
         m: {
-            'ok': v.get('ok'),
-            'latency_ms': v.get('latency_ms', 0),
-            'checked_at': v.get('checked_at', 0),
-            'error': v.get('error', ''),
+            "ok": v.get("ok"),
+            "latency_ms": v.get("latency_ms", 0),
+            "checked_at": v.get("checked_at", 0),
+            "error": v.get("error", ""),
         }
         for m, v in _health.items()
     }
 
 
-def record_result(model: str, ok: bool, latency_ms: int = 0, error: str = ''):
+def record_result(model: str, ok: bool, latency_ms: int = 0, error: str = ""):
     if not model:
         return
     _health[model] = {
-        'ok': ok,
-        'latency_ms': int(latency_ms),
-        'checked_at': time.time(),
-        'error': (error or '')[:200],
+        "ok": ok,
+        "latency_ms": int(latency_ms),
+        "checked_at": time.time(),
+        "error": (error or "")[:200],
     }
 
 
@@ -45,36 +46,38 @@ async def check_model(session: aiohttp.ClientSession, model: str) -> dict:
     """对单个模型做一次极小可用性探测, 返回 {ok, latency_ms, error}。"""
     base = aiconfig.base_url()
     key = aiconfig.api_key()
-    url = base + '/chat/completions'
-    headers = {'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}
+    url = base + "/chat/completions"
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     payload = {
-        'model': model,
-        'messages': [{'role': 'user', 'content': 'ping'}],
-        'max_tokens': 1,
+        "model": model,
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 1,
     }
     start = time.monotonic()
     try:
         timeout = aiohttp.ClientTimeout(total=20)
         for attempt in range(2):
-            async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+            async with session.post(
+                url, json=payload, headers=headers, timeout=timeout
+            ) as resp:
                 text = await resp.text()
                 latency = int((time.monotonic() - start) * 1000)
                 if resp.status == 200:
                     record_result(model, True, latency)
-                    return {'ok': True, 'latency_ms': latency, 'error': ''}
+                    return {"ok": True, "latency_ms": latency, "error": ""}
                 low = text.lower()
                 # 部分模型不支持 max_tokens (如 gpt-5 用 max_completion_tokens), 去掉重试
-                if attempt == 0 and resp.status == 400 and 'max_tokens' in low:
-                    payload.pop('max_tokens', None)
+                if attempt == 0 and resp.status == 400 and "max_tokens" in low:
+                    payload.pop("max_tokens", None)
                     continue
-                err = f'HTTP {resp.status}: {text[:120]}'
+                err = f"HTTP {resp.status}: {text[:120]}"
                 record_result(model, False, latency, err)
-                return {'ok': False, 'latency_ms': latency, 'error': err}
+                return {"ok": False, "latency_ms": latency, "error": err}
     except (TimeoutError, aiohttp.ClientError, Exception) as e:  # noqa: BLE001
         latency = int((time.monotonic() - start) * 1000)
         record_result(model, False, latency, str(e))
-        return {'ok': False, 'latency_ms': latency, 'error': str(e)}
-    return {'ok': False, 'latency_ms': 0, 'error': 'unknown'}
+        return {"ok": False, "latency_ms": latency, "error": str(e)}
+    return {"ok": False, "latency_ms": 0, "error": "unknown"}
 
 
 async def check_models(models: list) -> dict:
@@ -86,6 +89,7 @@ async def check_models(models: list) -> dict:
     result: dict = {}
 
     async with aiohttp.ClientSession() as session:
+
         async def _run(m: str):
             async with sem:
                 result[m] = await check_model(session, m)
@@ -107,7 +111,7 @@ def candidate_models() -> list:
     priority = aiconfig.model_priority()
     healthy, untested, unhealthy = [], [], []
     for m in priority:
-        ok = _health.get(m, {}).get('ok')
+        ok = _health.get(m, {}).get("ok")
         if ok is True:
             healthy.append(m)
         elif ok is None:
@@ -131,7 +135,5 @@ async def poll_loop(interval_getter, stop_event: asyncio.Event):
         except Exception:  # noqa: BLE001
             pass
         interval = max(30, int(interval_getter()))
-        try:
+        with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
-        except (TimeoutError, asyncio.TimeoutError):
-            pass

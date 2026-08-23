@@ -6,8 +6,8 @@ from core.base.logger import PLUGIN, get_logger
 
 log = get_logger(PLUGIN, "astr基座")
 
-PLUGIN_SPECS: list = []   # 发现到的 AstrBot 插件 (PluginSpec)
-_CONFIG: dict = {}        # 基座配置
+PLUGIN_SPECS: list = []  # 发现到的 AstrBot 插件 (PluginSpec)
+_CONFIG: dict = {}  # 基座配置
 STAR_SUBCLASSES: list = []  # 所有定义过的 Star 子类 (按 import 顺序)
 _APPS_DATA_ROOT = {"path": ""}  # apps 数据根目录 (装 dict 便于跨模块取最新)
 WEB_APIS: list = []  # 插件 register_web_api 登记的后端 API: (route, handler, methods, desc)
@@ -34,7 +34,8 @@ def unregister_web_api(route: str, methods=None):
     route = "/" + str(route or "").strip().lstrip("/")
     methods = [str(m).upper() for m in methods] if methods else None
     WEB_APIS[:] = [
-        (r, h, m, d) for r, h, m, d in WEB_APIS
+        (r, h, m, d)
+        for r, h, m, d in WEB_APIS
         if not (r == route and (methods is None or m == methods))
     ]
 
@@ -54,9 +55,11 @@ def apps_data_root() -> str:
 
 # ---- 框架内部访问 ----
 
+
 def _bot_manager():
     try:
         from core.bot.manager import _bot_manager_ref
+
         return _bot_manager_ref
     except Exception:
         return None
@@ -108,6 +111,7 @@ def sender_for_appid(appid: str):
 def is_bot_owner(event) -> bool:
     try:
         from core.base.config import cfg as core_cfg
+
         uid = str(getattr(event, "user_id", "") or "")
         if not uid:
             return False
@@ -137,7 +141,9 @@ def proactive_group_set() -> set:
                 "WHERE allow_proactive_msg = 1 AND in_group = 1 "
                 "ORDER BY rowid DESC"
             )
-            _proactive_groups = {r["group_id"] for r in rows if r.get("group_id")} if rows else set()
+            _proactive_groups = (
+                {r["group_id"] for r in rows if r.get("group_id")} if rows else set()
+            )
     except Exception:
         pass
     return _proactive_groups

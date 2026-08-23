@@ -11,16 +11,18 @@ from .mod import state
 from .mod.reply_templates import initialize_reply_templates
 
 __plugin_meta__ = {
-    'name': '群管',
-    'author': '冷曦',
-    'description': '违禁词过滤、入群验证、禁言、入群审批、消息撤回等群管理功能',
-    'version': '1.3.8',
-    'license': 'MIT',
+    "name": "群管",
+    "author": "冷曦",
+    "description": "违禁词过滤、入群验证、禁言、入群审批、消息撤回等群管理功能",
+    "version": "1.3.10",
+    "license": "MIT",
 }
 
-log = get_logger(PLUGIN, '群管')
-_PANEL_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web', 'panel.html')
-_PAGE_KEY = 'groupguard'
+log = get_logger(PLUGIN, "群管")
+_PANEL_HTML = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "web", "panel.html"
+)
+_PAGE_KEY = "groupguard"
 _ICON = (
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" '
     'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
@@ -34,12 +36,16 @@ async def _init():
     initialize_reply_templates()
     state.start_cleanup()
     register_page(
-        key=_PAGE_KEY, label='群管', source='plugin', source_name='groupguard',
-        icon=_ICON, html_file=_PANEL_HTML,
+        key=_PAGE_KEY,
+        label="群管",
+        source="plugin",
+        source_name="groupguard",
+        icon=_ICON,
+        html_file=_PANEL_HTML,
     )
     webpanel.register_routes()
     await remote.start()
-    log.info('群管插件已加载')
+    log.info("群管插件已加载")
 
 
 @on_unload
@@ -48,4 +54,4 @@ async def _cleanup():
     await remote.stop()
     webpanel.unregister_routes()
     unregister_page(_PAGE_KEY)
-    log.info('群管插件已卸载')
+    log.info("群管插件已卸载")

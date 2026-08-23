@@ -10,11 +10,11 @@ from .global_settings import get_global_forbidden, get_global_settings
 def _get_forbidden(group_id):
     connection = get_db()
     rows = connection.execute(
-        'SELECT word FROM forbidden_words WHERE group_id = ? ORDER BY rowid',
+        "SELECT word FROM forbidden_words WHERE group_id = ? ORDER BY rowid",
         (group_id,),
     ).fetchall()
     connection.close()
-    return tuple(row['word'] for row in rows)
+    return tuple(row["word"] for row in rows)
 
 
 def get_forbidden(group_id):
@@ -22,9 +22,9 @@ def get_forbidden(group_id):
 
 
 def contains_forbidden(group_id, content):
-    """Match content against the cached immutable word set."""
+    """使用缓存的不可变词集匹配内容。"""
     words = list(_get_forbidden(group_id))
-    if get_global_settings()['apply_global_forbidden_to_groups']:
+    if get_global_settings()["apply_global_forbidden_to_groups"]:
         words.extend(get_global_forbidden())
     return any(word in content for word in words)
 
@@ -32,7 +32,7 @@ def contains_forbidden(group_id, content):
 def add_forbidden(group_id, word):
     connection = get_db()
     connection.execute(
-        'INSERT OR IGNORE INTO forbidden_words (group_id, word) VALUES (?, ?)',
+        "INSERT OR IGNORE INTO forbidden_words (group_id, word) VALUES (?, ?)",
         (group_id, word),
     )
     connection.commit()
@@ -43,7 +43,7 @@ def add_forbidden(group_id, word):
 def delete_forbidden(group_id, word):
     connection = get_db()
     connection.execute(
-        'DELETE FROM forbidden_words WHERE group_id = ? AND word = ?',
+        "DELETE FROM forbidden_words WHERE group_id = ? AND word = ?",
         (group_id, word),
     )
     connection.commit()
@@ -54,7 +54,7 @@ def delete_forbidden(group_id, word):
 def clear_forbidden(group_id):
     connection = get_db()
     cursor = connection.execute(
-        'DELETE FROM forbidden_words WHERE group_id = ?',
+        "DELETE FROM forbidden_words WHERE group_id = ?",
         (group_id,),
     )
     connection.commit()
