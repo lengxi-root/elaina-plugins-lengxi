@@ -86,7 +86,6 @@ def _legacy_config(config):
     result['rules'] = [
         {
             **rule,
-            'replaceText': rule.get('replace_text', ''),
             'ownerOnly': rule.get('owner_only', False),
             'blockedGroups': rule.get('blocked_groups', []),
             'blockedUsers': rule.get('blocked_users', []),

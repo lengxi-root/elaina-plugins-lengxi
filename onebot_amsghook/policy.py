@@ -9,7 +9,6 @@ EXTERNAL_CALLER = 'OneBot 外部调用'
 
 DEFAULT_CONFIG = {
     'enabled': True,
-    'global_suffix': '',
     'debug': False,
     'owner_qq': '',
     'blocked_groups': [],
@@ -62,10 +61,7 @@ def normalize_rule(raw):
     raw = raw if isinstance(raw, dict) else {}
     return {
         'name': str(raw.get('name') or '').strip(),
-        'enabled': bool(raw.get('enabled', False)),
-        'suffix': str(raw.get('suffix') or ''),
         'replace': bool(raw.get('replace', False)),
-        'replace_text': str(raw.get('replace_text') or raw.get('replaceText') or ''),
         'owner_only': bool(raw.get('owner_only', raw.get('ownerOnly', False))),
         'blocked_groups': _string_list(raw.get('blocked_groups', raw.get('blockedGroups'))),
         'blocked_users': _string_list(raw.get('blocked_users', raw.get('blockedUsers'))),
@@ -77,7 +73,6 @@ def normalize_config(raw=None):
     result = deepcopy(DEFAULT_CONFIG)
     aliases = {
         'enabled': ('enabled',),
-        'global_suffix': ('global_suffix', 'globalSuffix'),
         'debug': ('debug',),
         'owner_qq': ('owner_qq', 'ownerQQ'),
         'global_owner_only': ('global_owner_only', 'globalOwnerOnly'),
@@ -97,7 +92,6 @@ def normalize_config(raw=None):
     ):
         result[key] = bool(result[key])
     result['owner_qq'] = str(result['owner_qq'] or '').strip()
-    result['global_suffix'] = str(result['global_suffix'] or '')
     result['wake_timeout_seconds'] = _bounded_int(
         result['wake_timeout_seconds'], 15, 5, 60,
     )
@@ -215,48 +209,6 @@ def caller_name(source_plugin):
 def find_rule(config, source_plugin):
     name = caller_name(source_plugin)
     return next((item for item in config.get('rules', []) if item.get('name') == name), None)
-
-
-def parse_replacements(value):
-    rules = []
-    for item in str(value or '').split(';'):
-        separator = item.find('=')
-        if separator <= 0:
-            continue
-        rules.append((item[:separator], item[separator + 1:]))
-    return rules
-
-
-def replace_text(text, replacements):
-    for source, target in replacements:
-        text = text.replace(source, target)
-    return text
-
-
-def transform_message(message, *, replace_spec='', suffix=''):
-    replacements = parse_replacements(replace_spec)
-    if isinstance(message, str):
-        return replace_text(message, replacements) + suffix
-    if not isinstance(message, list):
-        return message
-
-    transformed = []
-    last_text_index = -1
-    for segment in message:
-        if not isinstance(segment, dict):
-            transformed.append(segment)
-            continue
-        copied = dict(segment)
-        data = dict(segment.get('data') or {})
-        if segment.get('type') == 'text' and 'text' in data:
-            data['text'] = replace_text(str(data.get('text') or ''), replacements)
-            copied['data'] = data
-            last_text_index = len(transformed)
-        transformed.append(copied)
-    if suffix and last_text_index >= 0:
-        item = transformed[last_text_index]
-        item['data']['text'] += suffix
-    return transformed
 
 
 def extract_text(message):

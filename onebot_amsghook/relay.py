@@ -28,9 +28,6 @@ from .policy import (
     group_target,
     official_message_event,
     official_message_supported,
-    parse_replacements,
-    replace_text,
-    transform_message,
 )
 from .qqbot import OfficialBotApiError, OfficialBotBridge, send_result
 from .runtime import runtime
@@ -639,31 +636,22 @@ async def intercept_api(request, call_next):
         return await call_next()
 
     rule = find_rule(config, request.source_plugin)
-    replacement = rule.get('replace_text', '') if rule else ''
-    suffix = rule.get('suffix', '') if rule and rule.get('enabled') else ''
-    transformed = transform_message(
-        message,
-        replace_spec=replacement if rule and (rule.get('enabled') or rule.get('replace')) else '',
-        suffix=suffix,
-    )
-    request.params['message'] = transformed
-
     group_id = group_target(request.action, request.params)
     replace_enabled = bool(config.get('global_replace') or (rule and rule.get('replace')))
     bridge = runtime.bridge
     if (
-        not group_id or not replace_enabled or not official_message_supported(transformed)
+        not group_id or not replace_enabled or not official_message_supported(message)
         or bridge is None or not bridge.connected
         or not await official_in_group(group_id, request.self_id)
     ):
         return await call_next()
 
     if not store.mappings().get(group_id):
-        if await queue_bootstrap(request, transformed):
+        if await queue_bootstrap(request, message):
             return synthetic_success()
         return await call_next()
 
-    result = await send_official(group_id, request.self_id, transformed)
+    result = await send_official(group_id, request.self_id, message)
     if result['success']:
         runtime.add_log(
             'info', f'官机代发成功: 群={group_id}, 来源={caller_name(request.source_plugin)}',
@@ -673,8 +661,3 @@ async def intercept_api(request, call_next):
         await violation_notice(group_id, request.self_id)
         return synthetic_success()
     return await call_next()
-
-
-def apply_dm_replacements(text, source_plugin=''):
-    rule = find_rule(store.config(), source_plugin)
-    return replace_text(text, parse_replacements(rule.get('replace_text', '') if rule else ''))

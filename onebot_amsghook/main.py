@@ -20,7 +20,7 @@ from .runtime import runtime
 __plugin_meta__ = {
     'name': '官机代发拦截',
     'author': '冷曦',
-    'description': '拦截插件出站消息，支持文本变换、官方机器人收发与按钮建链',
+    'description': '拦截插件出站消息，支持官方机器人收发与按钮建链',
     'version': '1.2.1',
     'license': 'MIT',
 }
@@ -129,7 +129,7 @@ async def official_bot_status(event, _match):
         f'规则数：{len(config.get("rules", []))}',
     ]
     lines.extend(
-        f'{"HOOK" if rule.get("enabled") else "SKIP"} {rule.get("name")}'
+        f'{"官机代发" if rule.get("replace") else "原路发送"} {rule.get("name")}'
         for rule in config.get('rules', [])
     )
     lines.extend([
