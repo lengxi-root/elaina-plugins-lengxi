@@ -6,15 +6,14 @@ import re
 import time
 import weakref
 from collections import OrderedDict, deque
-from datetime import datetime, timedelta
 from itertools import chain
 
 from core.plugin.decorators import interceptor
 
 from ..mod import db, state
 from ..mod.replies import respond
+from ..mod.server_time import MuteTimeRetry, build_mute_members
 from ..mod.storage.audit import record_audit, record_received, record_result
-from ..mod.utils import api_pair
 from ..mod.verify import send_verify
 
 _LINK_RE = re.compile(
@@ -65,23 +64,15 @@ async def _notify_safe(event, key, **data):
 
 
 async def _mute_safe(event, minutes, trigger="automatic"):
-    expire_at = (datetime.now().astimezone() + timedelta(minutes=minutes)).isoformat(
-        timespec="seconds"
-    )
-    payload = [
-        {
-            "op": "add",
-            "member_openid": str(getattr(event, "user_id", "") or ""),
-            "mute_expire_at": expire_at,
-        }
-    ]
-    success, response = await api_pair(
-        event.sender.set_group_member_mute(event.group_id, payload)
+    target_id = str(getattr(event, "user_id", "") or "")
+    success, response = await MuteTimeRetry().execute(
+        event.sender,
+        event.group_id,
+        lambda: build_mute_members([target_id], minutes=minutes),
     )
     success = bool(success)
     error = "" if success else str(response or "mute_failed")
     details = {"trigger": trigger, "minutes": minutes, "error": error}
-    target_id = str(getattr(event, "user_id", "") or "")
     record_audit(
         event,
         "mute",

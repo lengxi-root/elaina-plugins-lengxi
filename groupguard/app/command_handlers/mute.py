@@ -1,12 +1,12 @@
 """群成员禁言管理命令。"""
 
 import re
-from datetime import datetime, timedelta
 
 from core.plugin.decorators import handler
 
 from ...mod.panel import show_mute_panel
 from ...mod.perms import get_bot_group_state, get_operable_members
+from ...mod.server_time import MuteTimeRetry, build_mute_members
 from ...mod.utils import reply_at
 from .common import (
     HANDLER_OPTIONS,
@@ -120,15 +120,11 @@ async def cmd_mute_member(event, match):
         finish_action(event, "mute", False, details={"reason": "self_target"})
         return await reply_at(event, "mute_self_denied")
 
-    expire_at = (datetime.now().astimezone() + timedelta(minutes=minutes)).isoformat(
-        timespec="seconds"
-    )
-    payload = [
-        {"op": "add", "member_openid": member_id, "mute_expire_at": expire_at}
-        for member_id, _member_role in members
-    ]
-    success, response = await api_pair(
-        event.sender.set_group_member_mute(event.group_id, payload)
+    member_ids = [member_id for member_id, _member_role in members]
+    success, response = await MuteTimeRetry().execute(
+        event.sender,
+        event.group_id,
+        lambda: build_mute_members(member_ids, minutes=minutes),
     )
     trace_phase(
         event,

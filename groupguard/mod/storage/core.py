@@ -63,7 +63,8 @@ def init_tables(connection):
         CREATE TABLE IF NOT EXISTS global_settings (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             show_join_verification INTEGER DEFAULT 0,
-            apply_global_forbidden_to_groups INTEGER DEFAULT 0
+            apply_global_forbidden_to_groups INTEGER DEFAULT 0,
+            auto_sync_server_time INTEGER DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS global_forbidden_words (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +166,12 @@ def init_tables(connection):
         connection,
         "global_settings",
         "apply_global_forbidden_to_groups",
+        "INTEGER DEFAULT 0",
+    )
+    _ensure_column(
+        connection,
+        "global_settings",
+        "auto_sync_server_time",
         "INTEGER DEFAULT 0",
     )
     action_added = _ensure_column(

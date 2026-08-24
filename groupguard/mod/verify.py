@@ -2,11 +2,11 @@
 
 import secrets
 import time
-from datetime import datetime, timedelta
 from random import SystemRandom
 
 from . import state
 from .replies import respond
+from .server_time import MuteTimeRetry, build_mute_members
 from .storage import get_group_cfg
 from .storage.audit import record_audit, record_received, record_result
 from .utils import api_pair
@@ -35,24 +35,19 @@ def _reply_succeeded(result):
 
 
 async def _mute_failed_user(event, group_id, user_id):
-    expire_at = (
-        datetime.now().astimezone() + timedelta(seconds=VERIFY_FAILURE_MUTE)
-    ).isoformat(timespec="seconds")
     tracked = state.is_verification_muted(group_id, user_id)
     operations = ("update", "add") if tracked else ("add",)
     success, response = False, None
+    retry = MuteTimeRetry()
     for operation in operations:
-        success, response = await api_pair(
-            event.sender.set_group_member_mute(
-                group_id,
-                [
-                    {
-                        "op": operation,
-                        "member_openid": user_id,
-                        "mute_expire_at": expire_at,
-                    }
-                ],
-            )
+        success, response = await retry.execute(
+            event.sender,
+            group_id,
+            lambda operation=operation: build_mute_members(
+                [user_id],
+                operation=operation,
+                seconds=VERIFY_FAILURE_MUTE,
+            ),
         )
         if success:
             break
@@ -83,25 +78,20 @@ async def _mute_failed_user(event, group_id, user_id):
 
 async def mute_for_verification(event, group_id, user_id, seconds):
     """临时禁言成员，并记录该禁言由本插件管理。"""
-    expire_at = (
-        datetime.now().astimezone()
-        + timedelta(seconds=max(1, int(seconds)) + VERIFY_MUTE_GRACE)
-    ).isoformat(timespec="seconds")
+    duration = max(1, int(seconds)) + VERIFY_MUTE_GRACE
     tracked = state.is_verification_muted(group_id, user_id)
     operations = ("update", "add") if tracked else ("add",)
     success, response = False, None
+    retry = MuteTimeRetry()
     for operation in operations:
-        success, response = await api_pair(
-            event.sender.set_group_member_mute(
-                group_id,
-                [
-                    {
-                        "op": operation,
-                        "member_openid": user_id,
-                        "mute_expire_at": expire_at,
-                    }
-                ],
-            )
+        success, response = await retry.execute(
+            event.sender,
+            group_id,
+            lambda operation=operation: build_mute_members(
+                [user_id],
+                operation=operation,
+                seconds=duration,
+            ),
         )
         if success:
             break
@@ -116,7 +106,7 @@ async def mute_for_verification(event, group_id, user_id, seconds):
         success=success,
         affected_count=1 if success else 0,
         target_id=user_id,
-        details={"error": error, "expire_at": expire_at},
+        details={"error": error},
         source="verification",
     )
     return success

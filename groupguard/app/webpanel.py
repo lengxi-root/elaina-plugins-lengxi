@@ -706,6 +706,13 @@ async def _save_global_settings(request):
                 ),
                 "全局违禁词群过滤开关",
             ),
+            "auto_sync_server_time": _require_bool(
+                body.get(
+                    "auto_sync_server_time",
+                    current.get("auto_sync_server_time", False),
+                ),
+                "服务器自动校时开关",
+            ),
         }
         db.save_global_settings(updated)
         changed = [key for key in updated if current.get(key) != updated[key]]

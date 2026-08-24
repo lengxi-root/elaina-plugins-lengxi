@@ -10,23 +10,30 @@ from .core import get_db
 def _get_global_settings():
     connection = get_db()
     row = connection.execute(
-        "SELECT show_join_verification, apply_global_forbidden_to_groups "
+        "SELECT show_join_verification, apply_global_forbidden_to_groups, "
+        "auto_sync_server_time "
         "FROM global_settings WHERE id = 1"
     ).fetchone()
     connection.close()
     if not row:
-        return False, False
+        return False, False, False
     return (
         bool(row["show_join_verification"]),
         bool(row["apply_global_forbidden_to_groups"]),
+        bool(row["auto_sync_server_time"]),
     )
 
 
 def get_global_settings():
-    show_join_verification, apply_global_forbidden_to_groups = _get_global_settings()
+    (
+        show_join_verification,
+        apply_global_forbidden_to_groups,
+        auto_sync_server_time,
+    ) = _get_global_settings()
     return {
         "show_join_verification": show_join_verification,
         "apply_global_forbidden_to_groups": apply_global_forbidden_to_groups,
+        "auto_sync_server_time": auto_sync_server_time,
     }
 
 
@@ -34,14 +41,16 @@ def save_global_settings(settings):
     connection = get_db()
     connection.execute(
         "INSERT INTO global_settings "
-        "(id, show_join_verification, apply_global_forbidden_to_groups) "
-        "VALUES (1, ?, ?) "
+        "(id, show_join_verification, apply_global_forbidden_to_groups, "
+        "auto_sync_server_time) VALUES (1, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET "
         "show_join_verification=excluded.show_join_verification, "
-        "apply_global_forbidden_to_groups=excluded.apply_global_forbidden_to_groups",
+        "apply_global_forbidden_to_groups=excluded.apply_global_forbidden_to_groups, "
+        "auto_sync_server_time=excluded.auto_sync_server_time",
         (
             int(bool(settings.get("show_join_verification"))),
             int(bool(settings.get("apply_global_forbidden_to_groups"))),
+            int(bool(settings.get("auto_sync_server_time"))),
         ),
     )
     connection.commit()
