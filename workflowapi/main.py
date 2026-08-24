@@ -22,20 +22,22 @@ from core.plugin.web_pages import (
     unregister_route,
 )
 
-from .mod import store, watcher, webapi
-from .mod.executor import close_http_session, execute_workflow
+from .services import watcher
+from .services.executor import close_http_session, execute_workflow
+from .storage import repository as store
+from .web import routes as webapi
 
 __plugin_meta__ = {
     "name": "工作流API",
     "author": "ElainaBot",
     "description": "JSON 驱动的可视化工作流/API 插件: 正则存 JSON、自动热更新、可视化自定义任意 API 回复",
-    "version": "1.0.3",
+    "version": "2.0.1",
 }
 
 log = get_logger(PLUGIN, "工作流API")
 
 _PAGE_KEY = "workflow-api"
-_HTML_PATH = os.path.join(store.ROOT_DIR, "panel.html")
+_HTML_PATH = os.path.join(store.ROOT_DIR, "assets", "panel.html")
 
 _ICON = (
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
@@ -132,7 +134,7 @@ async def _on_load():
 
 @on_unload
 async def _on_unload():
-    watcher.stop()
+    await watcher.stop()
     _teardown_routes()
     unregister_page(_PAGE_KEY)
     await close_http_session()

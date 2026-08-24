@@ -4,13 +4,15 @@ import asyncio
 import os
 import re
 
-from core.base.logger import PLUGIN, get_logger
-from core.plugin.decorators import handler, on_load, on_unload
-from core.plugin.web_pages import register_page, unregister_page
+from core.plugins import PLUGIN, get_logger
+from core.plugins import handler, on_load, on_unload
+from core.plugins import register_page, unregister_page
 
-from .app import commands, guard, logbuf, store, verify, webpanel
-from .app.runtime import get_runtime, stop_background
-from .app.utils import call_api, is_bot_admin
+from .services import commands, guard, logbuf, verify
+from .services.runtime import get_runtime, stop_background
+from .services.utils import call_api, is_bot_admin
+from .storage import repository as store
+from .web import routes as webpanel
 
 __plugin_meta__ = {
     "name": "群管 (groupguard)",
@@ -22,7 +24,7 @@ __plugin_meta__ = {
 log = get_logger(PLUGIN, "groupguard")
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-_PANEL_HTML = os.path.join(_PLUGIN_DIR, "panel.html")
+_PANEL_HTML = os.path.join(_PLUGIN_DIR, "assets", "panel.html")
 _PAGE_KEY = "groupguard"
 
 _ICON = (
@@ -298,7 +300,12 @@ async def on_group_card(event, match):
 @handler(r".*", name="groupguard_ban", event_types=["notice.group_ban"], priority=50)
 async def on_group_ban(event, match):
     duration = event.raw_data.get("duration", 0) if event.sub_type == "ban" else 0
-    store.record_group_ban(str(event.group_id), str(event.user_id), duration)
+    await asyncio.to_thread(
+        store.record_group_ban,
+        str(event.group_id),
+        str(event.user_id),
+        duration,
+    )
 
 
 @handler(
@@ -315,7 +322,11 @@ async def on_group_decrease(event, match):
     verify.cancel_session(group_id, user_id)
     if event.sub_type != "leave":
         return
-    remaining = store.freeze_group_ban_on_leave(group_id, user_id)
+    remaining = await asyncio.to_thread(
+        store.freeze_group_ban_on_leave,
+        group_id,
+        user_id,
+    )
     if remaining:
         log.info(f"禁言用户退群: 用户 {user_id}@{group_id}, 冻结剩余 {remaining} 秒")
     conf = store.config()
@@ -330,5 +341,5 @@ async def on_group_decrease(event, match):
     bl = target.setdefault(key, [])
     if user_id not in bl:
         bl.append(user_id)
-        store.save()
+        await store.save()
         log.info(f"退群拉黑: 用户 {user_id} 退出群 {group_id}")

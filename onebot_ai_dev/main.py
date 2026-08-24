@@ -11,12 +11,12 @@ Web 面板:        登录框架后台 → 侧边栏「AI 开发」页面。
 import logging
 import os
 
-from core.plugin.decorators import handler, on_load, on_unload
-from core.plugin.web_pages import register_page, unregister_page
-from .app import agent as agentmod
-from .app import aiconfig
-from .app import webpanel
-from .app.store import AIStore
+from core.plugins import handler, on_load, on_unload, run_sync
+from core.plugins import register_page, unregister_page
+from .services import agent as agentmod
+from .services import aiconfig
+from .storage.repository import AIStore
+from .web import routes as webpanel
 
 __plugin_meta__ = {
     "name": "AI 开发助手",
@@ -28,20 +28,20 @@ __plugin_meta__ = {
 log = logging.getLogger("ElainaBot.plugins.ai_dev")
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-_PANEL_HTML = os.path.join(_PLUGIN_DIR, "panel.html")
+_PANEL_HTML = os.path.join(_PLUGIN_DIR, "assets", "panel.html")
 _PAGE_KEY = "ai-dev"
 
 
 @on_load
 async def init():
     """注册侧边栏页面 + /api/ext/aidev/* 路由 + 初始化存储 (热重载安全)"""
-    from core.application import get_app
+    from core.plugins import get_app
 
     app = get_app()
 
     # AIStore 单例挂在 Application 上, 跨热重载保持同一实例
     if app is not None and getattr(app, "_ai_dev_store", None) is None:
-        app._ai_dev_store = AIStore(os.path.join(_PLUGIN_DIR, "data"))
+        app._ai_dev_store = await run_sync(AIStore, os.path.join(_PLUGIN_DIR, "data"))
 
     # 注册侧边栏页面 (iframe 渲染 panel.html)
     register_page(
@@ -80,7 +80,7 @@ async def handle_ai(event, match):
     raw_prompt = match.group(1).strip()
     resume = raw_prompt.startswith("继续 " )
     prompt = raw_prompt[3:].strip() if resume else raw_prompt
-    from core.application import get_app
+    from core.plugins import get_app
 
     store = getattr(get_app(), "_ai_dev_store", None)
     if store is None:
@@ -89,7 +89,7 @@ async def handle_ai(event, match):
     source = f"qq:{event.user_id}"
     session = store.latest_session(source) if resume else None
     if session is None:
-        session = store.create_session(prompt[:24] or "QQ 开发任务", source=source)
+        session = await store.create_session(prompt[:24] or "QQ 开发任务", source=source)
     sid = session["id"]
     await event.reply("已收到, AI 正在处理...")
     try:

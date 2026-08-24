@@ -22,8 +22,9 @@
 astr基座/
 ├── main.py            # 插件入口: 注入 shim -> 扫描 apps -> 注册指令 -> 挂 Web 面板
 ├── requirements.txt   # 基座自身依赖 (jinja2, html_render 需要)
-├── runtime/           # 兼容层与运行时桥接 (commands/components/events/sending/rendering/...)
-├── webpanel/          # Web 管理面板 (panel.py + panel.html): 装/卸/启停/配置/日志
+├── services/          # 兼容层与运行时桥接 (commands/components/events/sending/rendering/...)
+├── web/               # Web 管理面板路由与页面适配
+├── assets/            # Web 管理面板静态资源
 └── apps/              # 放 AstrBot 插件, 每个一个子目录 (含 main.py); 出厂为空
 ```
 

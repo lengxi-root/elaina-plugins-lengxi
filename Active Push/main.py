@@ -1,24 +1,29 @@
 """主动推送插件 — 群聊与私聊独立配置、发送和断点继续。"""
 
+import asyncio
 import os
 
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .mod import push, store, webapi
+from .services import broadcast as push
+from .storage import repository as store
+from .web import routes as webapi
 
 __plugin_meta__ = {
     "name": "主动推送",
     "author": "ElainaBot",
     "description": "向全部全量群或私聊用户发送主动消息, 支持推送记录与断点继续",
-    "version": "1.2.4",
+    "version": "2.0.1",
 }
 
 log = get_logger(PLUGIN, "主动推送")
 
 _PAGE_KEY = "broadcast-push"
-_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "panel.html")
+_HTML_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "assets", "panel.html"
+)
 
 _ICON = (
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
@@ -38,8 +43,10 @@ async def cmd_broadcast(event, match):
     content = match.group(1).strip()
     if not content:
         return await event.reply("消息内容不能为空")
-    cfg = store.get_mode_config("group")
-    groups = push.get_full_access_groups(cfg.get("push_appid", ""))
+    cfg = await asyncio.to_thread(store.get_mode_config, "group")
+    groups = await asyncio.to_thread(
+        push.get_full_access_groups, cfg.get("push_appid", "")
+    )
     if not groups:
         return await event.reply("暂无全量群记录")
     await event.reply(f"开始推送到 {len(groups)} 个全量群…")
@@ -96,8 +103,9 @@ async def cmd_private_broadcast(event, match):
     content = match.group(1).strip()
     if not content:
         return await event.reply("消息内容不能为空")
-    users = push.get_private_users(
-        store.get_mode_config("private").get("push_appid", "")
+    private_cfg = await asyncio.to_thread(store.get_mode_config, "private")
+    users = await asyncio.to_thread(
+        push.get_private_users, private_cfg.get("push_appid", "")
     )
     if not users:
         return await event.reply("暂无私聊用户记录")
@@ -140,12 +148,16 @@ async def cmd_private_test(event, match):
 
 @handler(r"^全量推送$", name="全量推送提示", desc="提示全量推送用法", owner_only=True)
 async def cmd_broadcast_tip(event, match):
-    group_cfg = store.get_mode_config("group")
-    private_cfg = store.get_mode_config("private")
-    groups = len(push.get_full_access_groups(group_cfg.get("push_appid", "")))
-    users = len(push.get_private_users(private_cfg.get("push_appid", "")))
+    group_cfg, private_cfg = await asyncio.gather(
+        asyncio.to_thread(store.get_mode_config, "group"),
+        asyncio.to_thread(store.get_mode_config, "private"),
+    )
+    groups, users = await asyncio.gather(
+        asyncio.to_thread(push.get_full_access_groups, group_cfg.get("push_appid", "")),
+        asyncio.to_thread(push.get_private_users, private_cfg.get("push_appid", "")),
+    )
     await event.reply(
-        f"当前全量群 {groups} 个, 私聊用户 {users} 个\n"
+        f"当前全量群 {len(groups)} 个, 私聊用户 {len(users)} 个\n"
         "群聊: 全量推送 / 继续群推送 / 测试推送 + 消息内容\n"
         "私聊: 私聊推送 / 继续私聊推送 / 私聊测试推送 + 消息内容"
     )
@@ -153,7 +165,7 @@ async def cmd_broadcast_tip(event, match):
 
 @on_load
 async def _on_load():
-    store.init_db()
+    await asyncio.to_thread(store.init_db)
     webapi.register_routes()
     register_page(
         key=_PAGE_KEY,

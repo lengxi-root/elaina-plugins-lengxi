@@ -6,21 +6,24 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .app import commands, monitor, remote, verify_events, webpanel  # noqa: F401
-from .mod import state
-from .mod.reply_templates import initialize_reply_templates
+from .handlers import commands as _commands  # noqa: F401
+from .handlers import events as _events  # noqa: F401
+from .handlers import monitor as _monitor  # noqa: F401
+from .services import remote, state
+from .services.templates import initialize_reply_templates
+from .web import routes as webpanel
 
 __plugin_meta__ = {
     "name": "群管",
     "author": "冷曦",
     "description": "违禁词过滤、入群验证、禁言、入群审批、消息撤回等群管理功能",
-    "version": "1.3.11",
+    "version": "2.0.2",
     "license": "MIT",
 }
 
 log = get_logger(PLUGIN, "群管")
 _PANEL_HTML = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "web", "panel.html"
+    os.path.dirname(os.path.abspath(__file__)), "assets", "panel.html"
 )
 _PAGE_KEY = "groupguard"
 _ICON = (
@@ -50,7 +53,7 @@ async def _init():
 
 @on_unload
 async def _cleanup():
-    state.stop_cleanup()
+    await state.stop_cleanup()
     await remote.stop()
     webpanel.unregister_routes()
     unregister_page(_PAGE_KEY)

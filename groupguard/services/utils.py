@@ -1,0 +1,33 @@
+"""工具函数 — 时长解析/格式化"""
+
+import re
+
+from .responses import format_remaining as format_remaining
+from .responses import respond
+
+
+async def api_pair(awaitable, failure=False):
+    """将 API 异常和非元组返回统一为二元结果。"""
+    try:
+        result = await awaitable
+        if isinstance(result, tuple):
+            return (result + (None, None))[:2]
+        return result, None
+    except Exception as error:  # noqa: BLE001
+        return failure, {"message": type(error).__name__}
+
+
+async def reply_at(event, key, **data):
+    """兼容别名；回复内容仅在 mod.replies 中定义。"""
+    return await respond(event, key, **data)
+
+
+def parse_duration(text, default_minutes=10):
+    """从命令文本解析处罚时长(秒), 支持 '发言撤回 30 @xx' / '30分钟' / '90秒'"""
+    match = re.search(r"(?:发言)?撤回\s*(\d+)\s*(?:分钟|分|min)?", text, re.I)
+    if match:
+        return int(match.group(1)) * 60
+    match = re.search(r"(\d+)\s*(?:秒|s)", text, re.I)
+    if match:
+        return int(match.group(1))
+    return default_minutes * 60

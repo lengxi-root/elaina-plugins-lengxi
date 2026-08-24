@@ -1,0 +1,1 @@
+"""Group guard persistence."""

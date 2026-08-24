@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from core.plugin.decorators import (
+from core.plugins import (
     api_interceptor,
     handler,
     handler_filter,
@@ -12,10 +12,12 @@ from core.plugin.decorators import (
     on_load,
     on_unload,
 )
-from core.plugin.web_pages import register_page, unregister_page
+from core.plugins import register_page, unregister_page
 
-from . import relay, store, webapi
-from .runtime import runtime
+from .services import relay
+from .services.runtime import runtime
+from .storage import repository as store
+from .web import routes as webapi
 
 __plugin_meta__ = {
     'name': '官机代发拦截',
@@ -26,7 +28,7 @@ __plugin_meta__ = {
 }
 
 _PAGE_KEY = 'onebot-amsghook'
-_PANEL_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'panel.html')
+_PANEL_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'panel.html')
 _ICON = (
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" '
     'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
@@ -47,7 +49,7 @@ async def intercept_blocked_events(event):
     config = store.config()
     if not config.get('enabled') or getattr(event, 'post_type', '') != 'message':
         return False
-    if event.raw_data.get('_elaina_inline_keyboard'):
+    if getattr(event, 'group_id', None):
         await relay.handle_keyboard_event(event)
     group_id = str(getattr(event, 'group_id', '') or '')
     user_id = str(getattr(event, 'user_id', '') or '')
@@ -142,7 +144,7 @@ async def official_bot_status(event, _match):
 
 @on_load
 async def initialize():
-    store.ensure_files()
+    await store.ensure_files()
     register_page(
         _PAGE_KEY,
         '官机代发',

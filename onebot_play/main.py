@@ -10,12 +10,13 @@ Web 面板: 登录框架后台 -> 侧边栏「娱乐插件」页面。
 import os
 import re
 
-from core.base.logger import PLUGIN, get_logger
-from core.plugin.decorators import interceptor, on_load, on_unload
-from core.plugin.web_pages import register_page, unregister_page
+from core.plugins import PLUGIN, get_logger, run_sync
+from core.plugins import interceptor, on_load, on_unload
+from core.plugins import register_page, unregister_page
 
-from .app import config, draw, meme, menu, music, webpanel
-from .app.message import send_record, send_reply
+from .services import config, draw, meme, menu, music
+from .services.message import send_record, send_reply
+from .web import routes as webpanel
 
 __plugin_meta__ = {
     "name": "娱乐插件 (play)",
@@ -27,7 +28,7 @@ __plugin_meta__ = {
 log = get_logger(PLUGIN, "play")
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-_PANEL_HTML = os.path.join(_PLUGIN_DIR, "panel.html")
+_PANEL_HTML = os.path.join(_PLUGIN_DIR, "assets", "panel.html")
 _PAGE_KEY = "play"
 
 _ICON = (
@@ -52,7 +53,7 @@ async def init():
     )
     webpanel.register_routes()
     if config.enable_meme():
-        meme.reload_data()
+        await run_sync(meme.reload_data)
     log.info("play 娱乐插件已加载")
 
 

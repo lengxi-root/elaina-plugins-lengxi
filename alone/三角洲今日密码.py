@@ -4,7 +4,7 @@ __plugin_meta__ = {
     "name": "三角洲今日密码",
     "author": "lengxi",
     "description": "三角洲行动每日密码查询，支持详细地图显示",
-    "version": "1.0.0",
+    "version": "1.0.1",
 }
 
 
@@ -116,11 +116,7 @@ async def _get_data(event):
     # 写入缓存
     _cache = (today, data, 0.0)
     if data:
-        asyncio.get_event_loop().call_soon(
-            lambda: asyncio.create_task(
-                asyncio.to_thread(_write_sync, today_path, data)
-            )
-        )
+        await asyncio.to_thread(_write_sync, today_path, data)
     return data
 
 

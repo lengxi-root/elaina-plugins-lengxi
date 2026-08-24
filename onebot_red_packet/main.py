@@ -11,15 +11,14 @@ import time
 from copy import deepcopy
 from datetime import datetime
 
-import core.plugin.context as _ctx_mod
-from core.application import get_app
-from core.base.config import cfg
-from core.onebot.api import get_api
-from core.plugin.decorators import handler, on_load, on_unload
-from core.plugin.web_pages import register_page, unregister_page
+from core.plugins import current_plugin, get_app, write_json
+from core.plugins import config as cfg
+from core.plugins import get_api
+from core.plugins import handler, on_load, on_unload
+from core.plugins import register_page, unregister_page
 
-from .policy import DEFAULT_SETTINGS, normalize_settings, rejection_reason
-from . import webapi
+from .services.policy import DEFAULT_SETTINGS, normalize_settings, rejection_reason
+from .web import routes as webapi
 
 __plugin_meta__ = {
     'name': 'QQ 抢红包',
@@ -29,14 +28,14 @@ __plugin_meta__ = {
     'license': 'MIT',
 }
 
-ctx = _ctx_mod.ctx
+ctx = current_plugin()
 log = ctx.log
 _STATE_PATH = ctx.get_data_path('state.json')
 _STATE_LOCK = asyncio.Lock()
 _SEEN: dict[tuple[str, str], float] = {}
 _GROUP_PAUSED_UNTIL: dict[tuple[str, str], float] = {}
 _PAGE_KEY = 'red-packet'
-_PANEL_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'panel.html')
+_PANEL_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'panel.html')
 _ICON = (
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" '
     'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
@@ -78,11 +77,8 @@ def _load_state():
 _STATE = _load_state()
 
 
-def _save_state():
-    temporary = _STATE_PATH + '.tmp'
-    with open(temporary, 'w', encoding='utf-8') as file:
-        json.dump(_STATE, file, ensure_ascii=False, indent=2)
-    os.replace(temporary, _STATE_PATH)
+async def _save_state():
+    await write_json(_STATE_PATH, _STATE)
 
 
 def state_snapshot():
@@ -92,7 +88,7 @@ def state_snapshot():
 async def replace_settings(raw):
     async with _STATE_LOCK:
         _STATE['settings'] = normalize_settings(raw)
-        _save_state()
+        await _save_state()
         return deepcopy(_STATE['settings'])
 
 
@@ -100,14 +96,14 @@ async def set_account_enabled(self_id, enabled):
     async with _STATE_LOCK:
         account = _STATE['accounts'].setdefault(str(self_id), {})
         account['enabled'] = bool(enabled)
-        _save_state()
+        await _save_state()
 
 
 async def reset_statistics():
     async with _STATE_LOCK:
         _STATE['stats'] = {}
         _STATE['history'] = []
-        _save_state()
+        await _save_state()
 
 
 def _account_enabled(self_id):
@@ -182,7 +178,7 @@ async def _change_settings(change):
     async with _STATE_LOCK:
         change(_STATE['settings'])
         _STATE['settings'] = normalize_settings(_STATE['settings'])
-        _save_state()
+        await _save_state()
 
 
 def _prune_runtime_cache(now):
@@ -235,7 +231,7 @@ async def _append_history(self_id, packet, *, success, amount=0.0, error='', ski
             stats['today_count'] = int(stats.get('today_count') or 0) + 1
             stats['today_amount'] = round(float(stats.get('today_amount') or 0) + entry['amount'], 2)
             stats['last_grab_time'] = entry['time']
-        _save_state()
+        await _save_state()
 
 
 async def _send_password(self_id, packet, settings):
@@ -318,7 +314,7 @@ async def _notify_detected(self_id, packet):
 @on_load
 async def initialize():
     if not os.path.isfile(_STATE_PATH):
-        _save_state()
+        await _save_state()
     register_page(
         _PAGE_KEY,
         'QQ 抢红包',
@@ -432,7 +428,7 @@ async def control_red_packet(event, match):
         async with _STATE_LOCK:
             account = _STATE['accounts'].setdefault(self_id, {})
             account['enabled'] = command == '开启'
-            _save_state()
+            await _save_state()
         await event.reply(f'当前 QQ 抢红包已{command}')
         return
 
@@ -461,7 +457,7 @@ async def control_red_packet_legacy(event, match):
         async with _STATE_LOCK:
             account = _STATE['accounts'].setdefault(self_id, {})
             account['enabled'] = command == '开启'
-            _save_state()
+            await _save_state()
         await event.reply(f'当前 QQ 自动抢红包已{command}')
         return
 

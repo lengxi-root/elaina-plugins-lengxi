@@ -1,0 +1,1 @@
+"""Entertainment plugin web routes."""

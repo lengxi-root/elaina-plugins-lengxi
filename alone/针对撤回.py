@@ -1,6 +1,7 @@
 """针对撤回插件 — 针对指定用户自动撤回消息"""
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -8,7 +9,7 @@ import time
 from urllib.parse import quote
 
 from core.base.logger import PLUGIN, get_logger
-from core.plugin.decorators import handler, interceptor, on_load
+from core.plugin.decorators import handler, interceptor, on_load, on_unload
 
 log = get_logger(PLUGIN, "针对撤回")
 
@@ -16,7 +17,7 @@ __plugin_meta__ = {
     "name": "针对撤回",
     "author": "ElainaBot",
     "description": "针对指定用户自动撤回消息",
-    "version": "2.0.1",
+    "version": "2.0.2",
 }
 
 # ==================== 数据持久化 ====================
@@ -56,11 +57,16 @@ def _load_targets():
     _targets = migrated
 
 
-def _save_targets():
+def _save_targets(snapshot=None):
     tmp = _TARGETS_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(_targets, f, ensure_ascii=False, indent=2)
+        json.dump(_targets if snapshot is None else snapshot, f, ensure_ascii=False, indent=2)
     os.replace(tmp, _TARGETS_FILE)
+
+
+async def _persist_targets():
+    snapshot = {gid: dict(users) for gid, users in _targets.items()}
+    await asyncio.to_thread(_save_targets, snapshot)
 
 
 def _purge_expired():
@@ -75,8 +81,7 @@ def _purge_expired():
             changed = True
         if not group:
             del _targets[gid]
-    if changed:
-        _save_targets()
+    return changed
 
 
 async def _periodic_cleanup():
@@ -84,7 +89,8 @@ async def _periodic_cleanup():
     while True:
         await asyncio.sleep(60)
         try:
-            _purge_expired()
+            if _purge_expired():
+                await _persist_targets()
         except Exception as e:
             log.warning(f"定期清理异常: {e}")
 
@@ -92,9 +98,20 @@ async def _periodic_cleanup():
 @on_load
 async def _init():
     global _cleanup_task
-    _load_targets()
-    _cleanup_task = asyncio.create_task(_periodic_cleanup())
+    await asyncio.to_thread(_load_targets)
+    if _cleanup_task is None or _cleanup_task.done():
+        _cleanup_task = asyncio.create_task(_periodic_cleanup())
     log.info("针对撤回插件已加载")
+
+
+@on_unload
+async def _cleanup():
+    global _cleanup_task
+    task, _cleanup_task = _cleanup_task, None
+    if task is not None:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 # ==================== 工具函数 ====================
@@ -206,7 +223,7 @@ async def _auto_recall(event):
         del group_targets[uid]
         if not group_targets:
             _targets.pop(gid, None)
-        _save_targets()
+        await _persist_targets()
         return
 
     if not _is_full_access(event):
@@ -251,7 +268,7 @@ async def target_user(event, match):
         await event.reply("仅管理员或群主可使用")
         return
 
-    if not _is_bot_admin(event.group_id):
+    if not await asyncio.to_thread(_is_bot_admin, event.group_id):
         await event.reply(
             "机器人不是管理员，请先设置机器人为群管理员\n\n>如果已授权管理员，请艾特机器人发送任意消息验证管理员"
         )
@@ -290,7 +307,7 @@ async def target_user(event, match):
         else:
             _targets[gid][uid] = expire
             added.append(uid)
-    _save_targets()
+    await _persist_targets()
 
     if added:
         at_list = " ".join(f"<@{uid}>" for uid in added)
@@ -358,7 +375,7 @@ async def untarget_user(event, match):
 
     if not group_targets:
         _targets.pop(gid, None)
-    _save_targets()
+    await _persist_targets()
 
     if removed:
         at_list = " ".join(f"<@{uid}>" for uid in removed)
@@ -380,7 +397,8 @@ async def list_targets(event, match):
         return
 
     gid = event.group_id
-    _purge_expired()
+    if _purge_expired():
+        await _persist_targets()
     group_targets = _targets.get(gid, {})
     if not group_targets:
         await event.reply("当前无针对用户")

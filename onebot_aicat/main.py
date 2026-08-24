@@ -11,12 +11,12 @@ import asyncio
 import os
 import random
 
-from core.base.logger import PLUGIN, get_logger
-from core.plugin.decorators import handler, on_load, on_unload
-from core.plugin.web_pages import register_page, unregister_page
+from core.plugins import PLUGIN, get_logger, run_sync
+from core.plugins import handler, on_load, on_unload
+from core.plugins import register_page, unregister_page
 
-from .app import agent as agentmod
-from .app import (
+from .services import agent as agentmod
+from .services import (
     aiconfig,
     customcmd,
     modelmgr,
@@ -24,9 +24,9 @@ from .app import (
     safety,
     tasks,
     watchers,
-    webpanel,
 )
-from .app.context import ContextManager
+from .services.context import ContextManager
+from .web import routes as webpanel
 
 __plugin_meta__ = {
     "name": "猫娘 AI (aicat)",
@@ -38,7 +38,7 @@ __plugin_meta__ = {
 log = get_logger(PLUGIN, "aicat")
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-_PANEL_HTML = os.path.join(_PLUGIN_DIR, "panel.html")
+_PANEL_HTML = os.path.join(_PLUGIN_DIR, "assets", "panel.html")
 _PAGE_KEY = "aicat"
 
 _ICON = (
@@ -58,7 +58,7 @@ _SCHED_STOP_ATTR = "_aicat_sched_stop"
 
 def _start_poll():
     """启动模型可用性后台轮询 (热重载安全: 先停旧任务再起新的)。"""
-    from core.application import get_app
+    from core.plugins import get_app
 
     app = get_app()
     if app is None:
@@ -72,7 +72,7 @@ def _start_poll():
 
 def _stop_poll(app=None):
     if app is None:
-        from core.application import get_app
+        from core.plugins import get_app
 
         app = get_app()
     if app is None:
@@ -89,7 +89,7 @@ def _stop_poll(app=None):
 
 def _start_scheduler():
     """启动定时任务调度循环 (热重载安全)。"""
-    from core.application import get_app
+    from core.plugins import get_app
 
     app = get_app()
     if app is None:
@@ -103,7 +103,7 @@ def _start_scheduler():
 
 def _stop_scheduler(app=None):
     if app is None:
-        from core.application import get_app
+        from core.plugins import get_app
 
         app = get_app()
     if app is None:
@@ -119,7 +119,7 @@ def _stop_scheduler(app=None):
 
 
 def _context() -> ContextManager:
-    from core.application import get_app
+    from core.plugins import get_app
 
     app = get_app()
     if app is None:
@@ -134,6 +134,13 @@ def _context() -> ContextManager:
 @on_load
 async def init():
     """注册侧边栏页面 + /api/ext/aicat/* 路由 (热重载安全)。"""
+    await asyncio.gather(
+        run_sync(aiconfig.public_config),
+        run_sync(aiconfig.list_sites),
+        run_sync(customcmd._load),
+        run_sync(tasks._load),
+        run_sync(watchers._load),
+    )
     _context()  # 确保单例已创建
     register_page(
         key=_PAGE_KEY,

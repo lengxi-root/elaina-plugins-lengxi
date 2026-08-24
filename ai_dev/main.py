@@ -16,23 +16,24 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .app import aiconfig, central
-from .app import agent as agentmod
-from .app import webpanel
-from .app.store import AIStore
+from .services import agent as agentmod
+from .services import central
+from .services import config as aiconfig
+from .storage.repository import AIStore
+from .web import routes as webpanel
 
 __plugin_meta__ = {
     "name": "AI 开发助手",
     "author": "冷曦",
     "description": "通过中央 AI LLM 模块调用模型并自主编写/修改框架插件",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "github": "https://github.com/lengxi-root/elaina-plugins-lengxi",
 }
 
 log = get_logger(PLUGIN, "ai_dev")
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-_PANEL_HTML = os.path.join(_PLUGIN_DIR, "panel.html")
+_PANEL_HTML = os.path.join(_PLUGIN_DIR, "assets", "panel.html")
 _PAGE_KEY = "ai-dev"
 _capability_task: asyncio.Task | None = None
 
@@ -84,6 +85,7 @@ async def cleanup():
         with contextlib.suppress(asyncio.CancelledError):
             await _capability_task
         _capability_task = None
+    await webpanel.stop_jobs()
     central.unregister_capabilities()
     unregister_page(_PAGE_KEY)
 
@@ -118,9 +120,11 @@ async def handle_ai(event, match):
         await event.reply("AI 存储未初始化")
         return
     source = f"qq:{event.user_id}"
-    session = store.latest_session(source) if resume else None
+    session = await asyncio.to_thread(store.latest_session, source) if resume else None
     if session is None:
-        session = store.create_session(prompt[:24] or "QQ 开发任务", source=source)
+        session = await asyncio.to_thread(
+            store.create_session, prompt[:24] or "QQ 开发任务", source
+        )
     sid = session["id"]
     await event.reply("已收到, AI 正在处理...")
     try:

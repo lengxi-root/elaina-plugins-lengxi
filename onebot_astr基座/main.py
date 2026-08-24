@@ -11,13 +11,11 @@ import importlib
 import json
 import os
 
-from core.base.logger import PLUGIN, get_logger
-from core.plugin.context import ctx
-from core.plugin.decorators import on_load, on_unload
+from core.plugins import PLUGIN, current_plugin, get_logger, on_load, on_unload
 
-from .runtime import commands as _cmd
-from .runtime import deps, state
-from .runtime.shim import install as install_shim
+from .services import commands as _cmd
+from .services import deps, state
+from .services.shim import install as install_shim
 
 __plugin_meta__ = {
     "name": "AstrBot 基座",
@@ -27,6 +25,7 @@ __plugin_meta__ = {
 }
 
 log = get_logger(PLUGIN, "astrbot基座")
+ctx = current_plugin()
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 _APPS_DIR = os.path.join(_PLUGIN_DIR, "apps")
@@ -125,9 +124,9 @@ async def _on_load():
     """加载期: 实例化所有插件并调用 initialize(), 注册 Web 面板。"""
     await _cmd.instantiate_all()
     try:
-        from .webpanel import panel as _panel
+        from .web import routes as _panel
 
-        _panel.setup()
+        await _panel.setup()
     except Exception as e:
         log.warning(f"[astrbot基座] Web 面板注册失败 (不影响插件运行): {e}")
     log.info(f"[astrbot基座] 启动完成, 共 {len(state.PLUGIN_SPECS)} 个 AstrBot 插件")
@@ -136,7 +135,7 @@ async def _on_load():
 @on_unload
 async def _on_unload():
     try:
-        from .webpanel import panel as _panel
+        from .web import routes as _panel
 
         _panel.teardown()
     except Exception as e:

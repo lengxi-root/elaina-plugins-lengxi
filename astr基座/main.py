@@ -17,10 +17,10 @@ from core.plugin.decorators import on_load, on_unload
 # 热重载时旧的导入缓存可能仍认为 bridge 是单文件模块, 先刷新再导入
 importlib.invalidate_caches()
 
-from .runtime import bridge, deps  # noqa: E402 - 刷新旧导入缓存后再加载兼容层
-from .runtime.shim import install as install_shim  # noqa: E402
-from .runtime.shim import uninstall as uninstall_shim  # noqa: E402
-from .webpanel import panel as webpanel  # noqa: E402
+from .services import bridge, deps  # noqa: E402 - 刷新旧导入缓存后再加载兼容层
+from .services.shim import install as install_shim  # noqa: E402
+from .services.shim import uninstall as uninstall_shim  # noqa: E402
+from .web import routes as webpanel  # noqa: E402
 
 log = get_logger(PLUGIN, "astr基座")
 
@@ -28,7 +28,7 @@ __plugin_meta__ = {
     "name": "AstrBot 基座",
     "author": "冷曦",
     "description": "AstrBot 插件适配基座: 直接运行 AstrBot 框架插件 (可加载其插件与配置项)",
-    "version": "1.1.0",
+    "version": "2.0.1",
     "github": "https://github.com/lengxi-root/elaina-plugins-lengxi",
     "homepage": "https://github.com/AstrBotDevs/AstrBot",
     "license": "AGPL-3.0",

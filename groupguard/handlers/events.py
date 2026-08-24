@@ -1,0 +1,303 @@
+"""入群策略与验证事件。"""
+
+from core.plugin.decorators import handler
+
+from ..storage import api as db
+from ..services import state
+from ..services import verification as verify
+from ..services.permissions import get_group_member_role, is_group_admin
+from ..services.responses import _build, api_error
+from ..services.utils import api_pair
+from ..services.verification import handle_verify_answer, send_verify
+from ..storage.audit import record_received, record_result
+
+
+def _join_request_details(event, mode, request_id):
+    qa_list = getattr(event, "review_qa_list", None)
+    qa_list = qa_list if isinstance(qa_list, list) else []
+    normalized_qa = []
+    for item in qa_list[:20]:
+        if not isinstance(item, dict):
+            continue
+        normalized_qa.append(
+            {
+                "question": str(item.get("question") or "")[:1000],
+                "answer": str(item.get("answer") or "")[:2000],
+            }
+        )
+    return {
+        "mode": mode,
+        "request_id": request_id,
+        "operator": "join_policy",
+        "username": str(getattr(event, "username", "") or ""),
+        "apply_at": str(getattr(event, "apply_at", "") or ""),
+        "apply_source": str(getattr(event, "apply_source", "") or ""),
+        "verify_method": str(getattr(event, "verify_method", "") or ""),
+        "review_qa_list": normalized_qa,
+    }
+
+
+def _join_request_item(event):
+    verify_info = getattr(event, "verify_info", None)
+    verify_info = dict(verify_info) if isinstance(verify_info, dict) else {}
+    verify_info["review_qa_list"] = _join_request_details(
+        event, "display", str(event.join_request_id or "")
+    )["review_qa_list"]
+    return {
+        "username": str(getattr(event, "username", "") or ""),
+        "member_openid": str(getattr(event, "user_id", "") or ""),
+        "join_request_id": str(getattr(event, "join_request_id", "") or ""),
+        "verify_info": verify_info,
+    }
+
+
+def _has_join_verification(item):
+    verify_info = item.get("verify_info") or {}
+    return bool(
+        str(verify_info.get("verify_message") or "").strip()
+        or verify_info.get("review_qa_list")
+    )
+
+
+async def _show_join_verification(event, mode):
+    if not db.get_global_settings()["show_join_verification"]:
+        return
+    item = _join_request_item(event)
+    if not _has_join_verification(item):
+        return
+    try:
+        message = _build(
+            "join_request_notice",
+            {
+                "requests": [item],
+                "next_cursor": "",
+                "review_buttons": mode == "manual",
+                "show_verification": True,
+            },
+            event,
+        )
+        await event.sender.send_to_group(
+            event.group_id,
+            message.content,
+            skip_suffix=True,
+            **message.delivery_kwargs(),
+        )
+    except Exception:
+        # 通知失败不能阻断自动入群策略。
+        return
+
+
+@handler(
+    r"",
+    name="入群申请策略",
+    desc="按当前群策略自动审批入群申请",
+    event_types=["GROUP_JOIN_REQUEST"],
+)
+async def on_join_request(event, match):
+    group_id = str(event.group_id or "")
+    member_id = str(event.user_id or "")
+    request_id = str(event.join_request_id or "")
+    if not group_id or not member_id:
+        return
+    config = db.get_group_cfg(group_id)
+    policy = config.get("join_policy") or {}
+    mode = policy.get("mode", "manual")
+    if not config["enabled"] or mode == "manual":
+        if config["enabled"]:
+            await _show_join_verification(event, mode)
+        return
+    await _show_join_verification(event, mode)
+
+    decline = mode in ("auto_decline", "auto_blacklist")
+    blacklisted = mode == "auto_blacklist"
+    action = (
+        "blacklist_join"
+        if blacklisted
+        else ("decline_join" if decline else "approve_join")
+    )
+    if not request_id:
+        details = _join_request_details(event, mode, "")
+        details["reason"] = "request_id_missing"
+        record_received(event, action, source="automatic", details=details)
+        record_result(
+            event,
+            action,
+            False,
+            target_id=member_id,
+            details={**details, "error": "join_request_id_missing"},
+            source="automatic",
+        )
+        return
+    reason = str(policy.get("reject_reason") or "不符合入群要求")
+    details = _join_request_details(event, mode, request_id)
+    if decline:
+        details["reason"] = reason
+    record_received(event, action, source="automatic", details=details)
+    success, response = await api_pair(
+        event.sender.review_group_join_request(
+            group_id,
+            member_id,
+            "decline" if decline else "approve",
+            join_request_id=request_id,
+            reject_reason=reason if decline else "",
+            add_to_member_blacklist=blacklisted,
+        )
+    )
+    success = bool(success)
+    error = "" if success else api_error(response)
+    result_details = {**details, "error": error}
+    record_result(
+        event,
+        action,
+        success,
+        affected_count=1 if success else 0,
+        target_id=member_id,
+        details=result_details,
+        source="automatic",
+    )
+
+
+@handler(
+    r"",
+    name="入群验证触发",
+    desc="新成员入群时发送验证题",
+    event_types=["GROUP_MEMBER_ADD"],
+)
+async def on_member_add(event, match):
+    gid = event.group_id
+    if not gid:
+        return
+    gc = db.get_group_cfg(gid)
+    if not gc["enabled"] or not gc["features"]["join_verify"]:
+        return
+    member_id = event.user_id
+    if not member_id:
+        return
+    state.clear_verification(gid, member_id)
+    state.unverified.setdefault(gid, set()).add(member_id)
+    await send_verify(event, gid, member_id, retry_count=0)
+
+
+@handler(
+    r"",
+    name="入群验证状态清理",
+    desc="成员离群时释放验证状态",
+    event_types=["GROUP_MEMBER_REMOVE"],
+)
+async def on_member_remove(event, match):
+    member_id = event.user_id
+    if event.group_id and member_id:
+        state.clear_member(event.group_id, member_id)
+
+
+@handler(
+    r"^verify\|",
+    name="验证答案回调",
+    desc="处理入群验证按钮点击",
+    event_types=["INTERACTION_CREATE"],
+)
+async def on_verify_click(event, match):
+    event.set_callback_code(0)
+    parts = (event.content or "").split("|")
+    if len(parts) not in (3, 4, 5):
+        return
+    gid = event.group_id
+    if not gid or parts[1] != gid:
+        return
+    member_id = event.user_id
+    if not member_id:
+        return
+    gc = db.get_group_cfg(gid)
+    if not gc["enabled"] or not gc["features"]["join_verify"]:
+        await verify.release_verification_mute(event, gid, member_id)
+        state.clear_verification(gid, member_id)
+        return
+    try:
+        chosen = int(parts[-1])
+    except (TypeError, ValueError):
+        return
+    if len(parts) == 5:
+        if parts[2] != str(member_id):
+            return
+        verify_id = parts[3]
+    else:
+        verify_id = parts[2] if len(parts) == 4 else None
+    await handle_verify_answer(event, gid, member_id, chosen, verify_id=verify_id)
+
+
+@handler(
+    r"^verify_skip\|",
+    name="跳过入群验证回调",
+    desc="群管理员通过验证题按钮跳过指定成员验证",
+    event_types=["INTERACTION_CREATE"],
+)
+async def on_verify_skip(event, match):
+    parts = (event.content or "").split("|")
+    if len(parts) != 4:
+        event.set_callback_code(1)
+        return
+    gid, target_id, verify_id = parts[1:]
+    if not gid or event.group_id != gid or not target_id or not verify_id:
+        event.set_callback_code(1)
+        return
+    member_role = await get_group_member_role(event)
+    if not is_group_admin(event, member_role):
+        event.set_callback_code(1)
+        record_received(
+            event,
+            "verify_pass",
+            source="verification",
+            details={"target_id": target_id, "reason": "operator_denied"},
+        )
+        record_result(
+            event,
+            "verify_pass",
+            False,
+            target_id=target_id,
+            details={"reason": "operator_denied"},
+            source="verification",
+        )
+        return
+    config = db.get_group_cfg(gid)
+    if not config["enabled"] or not config["features"]["join_verify"]:
+        event.set_callback_code(1)
+        return
+    record_received(
+        event,
+        "verify_pass",
+        source="verification",
+        details={"target_id": target_id, "method": "skip_button"},
+    )
+    if not verify.pass_verify(gid, target_id, verify_id=verify_id):
+        event.set_callback_code(1)
+        record_result(
+            event,
+            "verify_pass",
+            False,
+            target_id=target_id,
+            details={"reason": "stale_or_not_pending", "method": "skip_button"},
+            source="verification",
+        )
+        return
+    unmuted = await verify.release_verification_mute(event, gid, target_id)
+    event.set_callback_code(0)
+    record_result(
+        event,
+        "verify_pass",
+        True,
+        affected_count=1,
+        target_id=target_id,
+        details={"method": "skip_button", "unmuted": unmuted},
+        source="verification",
+    )
+    message = _build(
+        "verify_passed_by_admin",
+        {"target_id": target_id},
+        event,
+    )
+    await event.sender.send_to_group(
+        gid,
+        message.content,
+        skip_suffix=True,
+        **message.delivery_kwargs(),
+    )

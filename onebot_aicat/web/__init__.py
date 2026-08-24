@@ -1,0 +1,1 @@
+"""AICat web routes."""

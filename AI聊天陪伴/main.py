@@ -13,13 +13,15 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .app import central, config, safety, store, webpanel
+from .services import central, config, safety
+from .storage import repository as store
+from .web import routes as webpanel
 
 __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
     "description": "支持多人格、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "1.2.3",
+    "version": "2.0.1",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -246,7 +248,7 @@ async def initialize() -> None:
         source="plugin",
         source_name="AI聊天陪伴",
         icon=_ICON,
-        html_file=os.path.join(BASE_DIR, "panel.html"),
+        html_file=os.path.join(BASE_DIR, "assets", "panel.html"),
     )
     injected = central.register_capabilities()
     if injected:

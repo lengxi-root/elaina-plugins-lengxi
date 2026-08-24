@@ -38,7 +38,7 @@ astr基座/
 
 ## Web 面板
 
-面板通过框架的 `core.plugin.web_pages`（`register_page` / `register_route`）挂载，接口前缀 `/api/ext/astrbot_base`。功能：
+面板通过框架公共入口 `core.plugins` 的 `register_page` / `register_route` 挂载，接口前缀 `/api/ext/astrbot_base`。功能：
 
 - **已安装**：列出各插件（版本、指令数、启用开关），可启停、设指令前缀、编辑配置、卸载；
 - **安装插件**：GitHub 仓库 URL / `.zip` 直链下载安装，或上传本地 zip；安装后自动补装 `requirements.txt` 并热重载；
