@@ -13,7 +13,8 @@ PREFIX = '/api/ext/red-packet'
 def _plugin():
     # Large plugins load main.py as the package itself. Importing .main here
     # would execute the entrypoint again and duplicate its registrations.
-    return sys.modules[__package__]
+    plugin_package = __package__.rsplit('.', 1)[0]
+    return sys.modules[plugin_package]
 
 
 def _routes():

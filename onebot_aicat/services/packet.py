@@ -118,13 +118,33 @@ async def send_packet(event, cmd: str, content) -> dict:
                     "success": False,
                     "error": str(message or f"OneBot 发包失败 ({retcode})"),
                 }
+            native_data = result.get("data")
+            if isinstance(native_data, dict):
+                native_code = native_data.get("result")
+                native_error = (
+                    native_data.get("errMsg")
+                    or native_data.get("retMsg")
+                    or native_data.get("error")
+                )
+                try:
+                    native_failed = int(native_code or 0) != 0
+                except (TypeError, ValueError):
+                    native_failed = bool(native_error)
+                if native_failed or native_error:
+                    return {
+                        "success": False,
+                        "error": str(native_error or f"QQ 原始发包失败 ({native_code})"),
+                    }
             hex_data = _extract_hex_data(result)
             if hex_data:
                 decoded = _try_decode_hex(hex_data)
                 if decoded is not None:
                     return {"success": True, "data": decoded}
             data = result.get("data") if result.get("status") == "ok" else result
-            return {"success": True, "data": _decode_response_data(data)}
+            decoded_data = _decode_response_data(data)
+            if decoded_data in (None, "", {}, []):
+                return {"success": False, "error": "QQ 原始发包响应为空"}
+            return {"success": True, "data": decoded_data}
         if isinstance(result, str):
             decoded = _try_decode_hex(result)
             if decoded is not None:
@@ -346,7 +366,8 @@ async def handle_get_by_seq(event, target_seq: str, group_id: str):
     try:
         result = await get_message_pb(event, group_id, "", target_seq)
         if not result.get("success") or result.get("data") is None:
-            await event.reply(f"❌ 未找到 Real Seq {target_seq} 的消息")
+            detail = result.get("error") or f"未找到 Real Seq {target_seq} 的消息"
+            await event.reply(f"❌ 获取原始 PB 失败: {detail}")
             return
         pb_data = result["data"]
         sender_qq, sender_name = extract_sender_info(pb_data)
@@ -371,8 +392,15 @@ async def handle_get_reply(event, group_id: str):
         pb_data = None
         if real_seq:
             result = await get_message_pb(event, group_id, reply_id, real_seq)
-            if result.get("success"):
-                pb_data = result.get("data")
+            if not result.get("success") or result.get("data") is None:
+                await event.reply(
+                    f"❌ 获取原始 PB 失败: {result.get('error') or '响应为空'}"
+                )
+                return
+            pb_data = result.get("data")
+        else:
+            await event.reply("❌ 获取原始 PB 失败: 未找到 real_seq")
+            return
 
         sender = msg_data.get("sender") if isinstance(msg_data, dict) else None
         sender_qq = (
@@ -419,7 +447,9 @@ async def handle_get_previous(event, group_id: str):
         previous_seq = target_real_seq - 1
         result = await get_message_pb(event, group_id, "", str(previous_seq))
         if not result.get("success") or result.get("data") is None:
-            await event.reply("❌ 未找到上一条消息")
+            await event.reply(
+                f"❌ 获取上一条消息的原始 PB 失败: {result.get('error') or '响应为空'}"
+            )
             return
 
         pb_data = result["data"]
