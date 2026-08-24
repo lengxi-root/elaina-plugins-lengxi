@@ -22,7 +22,7 @@ __plugin_meta__ = {
     "name": "娱乐插件 (play)",
     "author": "冷曦",
     "description": "表情包(meme)/点歌/AI绘画一体的娱乐插件, 附哈基米语音与自闭禁言, 支持 Web 面板配置",
-    "version": "1.1.0",
+    "version": "1.1.1",
 }
 
 log = get_logger(PLUGIN, "play")

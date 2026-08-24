@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import html
+import json
 import os
 import random
 import re
@@ -58,6 +59,37 @@ CALLBACK_KEYBOARD = {
 }
 
 
+def _preview(value, limit=2500):
+    def compact(item):
+        if isinstance(item, dict):
+            return {key: compact(child) for key, child in item.items()}
+        if isinstance(item, list):
+            return [compact(child) for child in item]
+        if isinstance(item, str) and len(item) > 600:
+            return f'<string:{len(item)} chars>'
+        return item
+
+    try:
+        text = json.dumps(compact(value), ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        text = str(value)
+    return text if len(text) <= limit else text[:limit] + '...<truncated>'
+
+
+def _trace(stage, *, level='debug', **details):
+    suffix = ', '.join(f'{key}={_preview(value)}' for key, value in details.items())
+    runtime.add_log(level, f'官机链路[{stage}]' + (f': {suffix}' if suffix else ''))
+
+
+def _onebot_ok(response):
+    if not isinstance(response, dict):
+        return False
+    try:
+        return response.get('status') == 'ok' and int(response.get('retcode', -1)) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 def synthetic_success():
     return {
         'status': 'ok',
@@ -76,19 +108,41 @@ def unwrap_response(response):
 
 
 async def raw_call(action, params, self_id):
-    with bypass_api_interceptors():
-        return await get_api().call_api(action, params, self_id=str(self_id or ''))
+    route_id = str(self_id or '')
+    _trace('OneBot 请求', action=action, self_id=route_id or '-', params=params)
+    try:
+        with bypass_api_interceptors():
+            response = await get_api().call_api(action, params, self_id=route_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        _trace('OneBot 异常', level='error', action=action, self_id=route_id or '-', error=str(exc))
+        raise
+    _trace('OneBot 响应', action=action, self_id=route_id or '-', response=response)
+    return response
 
 
 async def raw_inline_keyboards(event, bot_appid=''):
-    with bypass_api_interceptors():
-        return await get_api().get_inline_keyboard_buttons(
-            event.group_id,
-            event.message_id,
-            real_seq=event.raw_data.get('real_seq'),
-            bot_appid=bot_appid,
-            self_id=str(event.self_id or ''),
-        )
+    _trace(
+        'PB 按钮读取请求', group_id=event.group_id, message_id=event.message_id,
+        real_seq=event.raw_data.get('real_seq'), self_id=event.self_id,
+    )
+    try:
+        with bypass_api_interceptors():
+            keyboards = await get_api().get_inline_keyboard_buttons(
+                event.group_id,
+                event.message_id,
+                real_seq=event.raw_data.get('real_seq'),
+                bot_appid=bot_appid,
+                self_id=str(event.self_id or ''),
+            )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        _trace('PB 按钮读取异常', level='error', group_id=event.group_id, error=str(exc))
+        raise
+    _trace('PB 按钮读取响应', group_id=event.group_id, keyboards=keyboards)
+    return keyboards
 
 
 async def restart_bridge():
@@ -100,6 +154,10 @@ async def restart_bridge():
     if not config.get('appid') or not config.get('secret'):
         runtime.add_log('info', '官方机器人未配置，网关保持关闭')
         return
+    _trace(
+        '网关启动', appid=config.get('appid'), qq_number=config.get('qq_number'),
+        intents=config.get('intents') or [],
+    )
     bridge = OfficialBotBridge(config, handle_gateway_event, runtime.add_log)
     runtime.bridge = bridge
     await bridge.start()
@@ -107,29 +165,58 @@ async def restart_bridge():
 
 
 async def handle_gateway_event(event_type, payload, event_id):
+    _trace(
+        '网关事件', event_type=event_type, event_id=event_id or '-',
+        payload=payload,
+    )
     gateway_identity = str(event_id or payload.get('id') or '')
     if gateway_identity and not runtime.remember_gateway_event(
         f'{event_type}:{gateway_identity}',
     ):
+        _trace('网关事件去重', event_type=event_type, identity=gateway_identity)
         return
     if event_type == 'GROUP_AT_MESSAGE_CREATE':
         content = re.sub(r'<@![^>]+>\s*', '', str(payload.get('content') or '')).strip()
-        pending = runtime.pending_codes.get(content)
+        code_match = re.search(r'(?<![A-Z0-9_])VERIFY_[A-Z0-9]{8}(?![A-Z0-9_])', content.upper())
+        code = code_match.group(0) if code_match else ''
+        pending = runtime.pending_codes.get(code)
+        _trace('验证码识别', content=content, code=code or '-', matched=bool(pending))
         if pending is not None:
             group_openid = str(payload.get('group_id') or '')
             message_id = str(payload.get('id') or '')
             if not group_openid or not message_id or runtime.bridge is None:
+                _trace(
+                    '验证码响应缺少字段', level='error', group_openid=group_openid or '-',
+                    message_id=message_id or '-', bridge=runtime.bridge is not None,
+                )
                 return
             group_id = str(pending['group_id'])
+            _trace(
+                'Markdown 按钮发送', group_id=group_id, group_openid=group_openid,
+                reply_message_id=message_id, code=code,
+            )
+            try:
+                response = await runtime.bridge.send_group_markdown(
+                    group_openid, '1', msg_id=message_id, keyboard=CALLBACK_KEYBOARD,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _trace(
+                    'Markdown 按钮发送失败', level='error', group_id=group_id,
+                    group_openid=group_openid, error=str(exc),
+                )
+                return
+            result = send_result(response)
+            _trace('Markdown 按钮响应', group_id=group_id, response=response, result=result)
+            if not result['success']:
+                return
             pending['group_openid'] = group_openid
             runtime.bootstraps[group_id] = {
-                'code': content,
+                'code': code,
                 'group_openid': group_openid,
                 'created_at': time.time(),
             }
-            await runtime.bridge.send_group_markdown(
-                group_openid, '1', msg_id=message_id, keyboard=CALLBACK_KEYBOARD,
-            )
             runtime.add_log(
                 'info', f'已向群 {group_id} 发送映射回调按钮，等待提取按钮参数',
             )
@@ -144,9 +231,14 @@ async def handle_gateway_event(event_type, payload, event_id):
     group_openid = str(payload.get('group_openid') or payload.get('group_id') or '')
     interaction_id = str(event_id or payload.get('id') or '')
     if not group_openid or not interaction_id:
+        _trace(
+            '交互事件缺少字段', level='warning', group_openid=group_openid or '-',
+            interaction_id=interaction_id or '-',
+        )
         return
     group_id = _group_id_by_openid(group_openid)
     if not group_id:
+        _trace('交互事件无群映射', level='warning', group_openid=group_openid)
         return
     runtime.event_ids[group_id] = {
         'event_id': interaction_id,
@@ -240,15 +332,18 @@ async def wake_event(group_id, self_id, *, force=False):
         runtime.event_ids.pop(group_id, None)
     cached = valid_event(group_id)
     if cached:
+        _trace('event_id 缓存命中', group_id=group_id, event_id=cached.get('event_id'))
         return cached
     mapping = store.mappings().get(group_id)
     if not mapping or not mapping.get('callback_data'):
+        _trace('按钮映射缺失', level='warning', group_id=group_id)
         return None
 
     lock = runtime.event_locks.setdefault(group_id, asyncio.Lock())
     async with lock:
         cached = valid_event(group_id)
         if cached:
+            _trace('event_id 锁内缓存命中', group_id=group_id, event_id=cached.get('event_id'))
             return cached
         waiter = asyncio.get_running_loop().create_future()
         runtime.event_waiters[group_id] = waiter
@@ -261,6 +356,13 @@ async def wake_event(group_id, self_id, *, force=False):
         response = await raw_call(
             'click_inline_keyboard_button', payload, available_self_id(self_id),
         )
+        _trace('按钮点击响应', group_id=group_id, response=response)
+        if not _onebot_ok(response):
+            runtime.event_waiters.pop(group_id, None)
+            if not waiter.done():
+                waiter.cancel()
+            _trace('按钮点击失败', level='error', group_id=group_id, response=response)
+            return None
         data = unwrap_response(response)
         if isinstance(data, dict) and data.get('ok') is False:
             runtime.event_waiters.pop(group_id, None)
@@ -271,10 +373,18 @@ async def wake_event(group_id, self_id, *, force=False):
             await asyncio.wait_for(
                 waiter, timeout=config.get('wake_timeout_seconds', 15),
             )
-        except (TimeoutError, asyncio.CancelledError):
+        except TimeoutError:
             runtime.event_waiters.pop(group_id, None)
+            _trace('等待 event_id 超时', level='warning', group_id=group_id)
             return None
-        return valid_event(group_id)
+        except asyncio.CancelledError:
+            runtime.event_waiters.pop(group_id, None)
+            if not waiter.done():
+                waiter.cancel()
+            raise
+        result = valid_event(group_id)
+        _trace('event_id 获取完成', group_id=group_id, event=result)
+        return result
 
 
 async def handle_keyboard_event(event):
@@ -288,6 +398,10 @@ async def handle_keyboard_event(event):
     bootstrap = runtime.bootstraps.get(group_id)
     if not bootstrap:
         return
+    _trace(
+        '官机按钮消息收到', group_id=group_id, message_id=event.message_id,
+        real_seq=event.raw_data.get('real_seq'), embedded=event.raw_data.get('_elaina_inline_keyboard'),
+    )
     configured_appid = config['qqbot'].get('appid')
     keyboards = event.raw_data.get('_elaina_inline_keyboard')
     keyboards = [
@@ -328,6 +442,7 @@ async def handle_keyboard_event(event):
         'callback_data': selected.get('callback_data'),
         'updated_at': int(time.time()),
     })
+    _trace('按钮映射保存', group_id=group_id, selected=selected)
     runtime.add_log(
         'info',
         f'已建立 QQ 群 {group_id} 的官方机器人按钮映射，正在点击换取 event_id',
@@ -339,22 +454,35 @@ async def official_in_group(group_id, self_id):
     config = store.config()
     qq_number = config.get('qqbot', {}).get('qq_number')
     if not qq_number:
+        _trace('群成员检测失败', level='warning', group_id=group_id, reason='未配置官机 QQ 号')
         return False
     cached = runtime.membership_cache.get(str(group_id))
     if cached:
         ttl = MEMBER_TRUE_TTL if cached['present'] else MEMBER_FALSE_TTL
         if time.time() - cached['checked_at'] < ttl:
+            _trace(
+                '群成员检测缓存', group_id=group_id, qq_number=qq_number,
+                present=cached['present'], ttl=ttl,
+            )
             return cached['present']
-    response = await raw_call('get_group_member_info', {
-        'group_id': int(group_id),
-        'user_id': int(qq_number),
-        'no_cache': True,
-    }, self_id)
+    _trace('群成员检测开始', group_id=group_id, qq_number=qq_number, self_id=self_id)
+    try:
+        response = await raw_call('get_group_member_info', {
+            'group_id': int(group_id),
+            'user_id': int(qq_number),
+            'no_cache': True,
+        }, self_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        _trace('群成员检测异常', level='error', group_id=group_id, error=str(exc))
+        return False
     data = unwrap_response(response)
-    present = isinstance(data, dict) and str(data.get('user_id') or '') == qq_number
+    present = _onebot_ok(response) and isinstance(data, dict) and str(data.get('user_id') or '') == qq_number
     runtime.membership_cache[str(group_id)] = {
         'present': present, 'checked_at': time.time(),
     }
+    _trace('群成员检测完成', group_id=group_id, qq_number=qq_number, present=present, response=response)
     return present
 
 
@@ -491,16 +619,23 @@ async def _upload_media(bridge, group_openid, payload, file_type, media_type, is
 async def _send_with_event(group_id, self_id, message, event):
     bridge = runtime.bridge
     if bridge is None or not bridge.connected:
+        _trace('最终发送失败', level='warning', group_id=group_id, reason='官方机器人网关未连接')
         return {'success': False, 'content_violation': False}
     mapping = store.mappings().get(str(group_id))
     if not mapping:
+        _trace('最终发送失败', level='warning', group_id=group_id, reason='群映射不存在')
         return {'success': False, 'content_violation': False}
     group_openid = mapping.get('group_openid')
     event_id = str(event.get('event_id') or '')
     if not event_id:
+        _trace('最终发送失败', level='warning', group_id=group_id, reason='event_id 为空')
         return {'success': False, 'content_violation': False}
     text = extract_text(message)
     media = extract_media(message)
+    _trace(
+        '最终发送开始', group_id=group_id, group_openid=group_openid,
+        event_id=event_id, text=text, media=media,
+    )
     try:
         if media:
             payload, is_url = await _media_payload(
@@ -541,6 +676,7 @@ async def _send_with_event(group_id, self_id, message, event):
         runtime.event_ids.pop(str(group_id), None)
         return {'success': False, 'content_violation': False}
     result = send_result(response)
+    _trace('最终发送响应', group_id=group_id, response=response, result=result)
     if result['success']:
         record_event_use(group_id, event_id)
     elif not result['content_violation']:
@@ -549,24 +685,33 @@ async def _send_with_event(group_id, self_id, message, event):
 
 
 async def send_official(group_id, self_id, message):
+    _trace('官机代发开始', group_id=group_id, self_id=self_id, message=message)
     event = await wake_event(group_id, self_id)
     if not event:
+        _trace('官机代发结束', level='warning', group_id=group_id, result='无法获取 event_id')
         return {'success': False, 'content_violation': False}
     result = await _send_with_event(group_id, self_id, message, event)
     if result['success'] or result['content_violation']:
+        _trace('官机代发结束', group_id=group_id, result=result)
         return result
     refreshed = await wake_event(group_id, self_id)
     if not refreshed:
+        _trace('官机代发重试失败', level='warning', group_id=group_id, result=result)
         return result
-    return await _send_with_event(group_id, self_id, message, refreshed)
+    retried = await _send_with_event(group_id, self_id, message, refreshed)
+    _trace('官机代发重试结束', group_id=group_id, result=retried)
+    return retried
 
 
 async def send_dm(group_id, self_id, text):
     """执行主人 dm 指令；无群映射时沿用自动建链流程。"""
     text = html.unescape(str(text or '').strip())
+    _trace('dm 指令开始', group_id=group_id, self_id=self_id, text=text)
     if not text or runtime.bridge is None or not runtime.bridge.connected:
+        _trace('dm 指令失败', level='warning', group_id=group_id, reason='内容为空或网关未连接')
         return 'failed'
     if not await official_in_group(group_id, self_id):
+        _trace('dm 指令失败', level='warning', group_id=group_id, reason='官机不在群内')
         return 'failed'
     group_id = str(group_id)
     if not (store.mappings().get(group_id) or {}).get('callback_data'):
@@ -576,11 +721,15 @@ async def send_dm(group_id, self_id, text):
             self_id=str(self_id or ''),
             source_plugin=PLUGIN_NAME,
         )
-        return 'queued' if await queue_bootstrap(request, text) else 'failed'
+        result = 'queued' if await queue_bootstrap(request, text) else 'failed'
+        _trace('dm 指令结束', group_id=group_id, result=result)
+        return result
     result = await send_official(group_id, self_id, text)
     if result['content_violation']:
         await violation_notice(group_id, self_id)
-    return 'sent' if result['success'] else 'failed'
+    outcome = 'sent' if result['success'] else 'failed'
+    _trace('dm 指令结束', group_id=group_id, result=outcome, response=result)
+    return outcome
 
 
 async def violation_notice(group_id, self_id):
@@ -606,10 +755,12 @@ def _pending_for_group(group_id):
 async def queue_bootstrap(request, message):
     group_id = group_target(request.action, request.params)
     if _pending_for_group(group_id):
+        _trace('自动建链跳过', level='warning', group_id=group_id, reason='已有待处理验证码')
         return False
     config = store.config()
     qq_number = config.get('qqbot', {}).get('qq_number')
     if not qq_number:
+        _trace('自动建链失败', level='error', group_id=group_id, reason='未配置官机 QQ 号')
         return False
     code = 'VERIFY_' + uuid.uuid4().hex[:8].upper()
     runtime.pending_codes[code] = {
@@ -624,6 +775,10 @@ async def queue_bootstrap(request, message):
     runtime.spawn(
         _bootstrap_timeout(code), name=f'official-relay-timeout-{group_id}',
     )
+    _trace(
+        '自动建链验证码发送', group_id=group_id, self_id=request.self_id,
+        qq_number=qq_number, code=code, source=request.source_plugin,
+    )
     response = await raw_call('send_group_msg', {
         'group_id': int(group_id),
         'message': [
@@ -631,9 +786,11 @@ async def queue_bootstrap(request, message):
             {'type': 'text', 'data': {'text': ' ' + code}},
         ],
     }, request.self_id)
-    if not isinstance(response, dict) or response.get('status') == 'failed':
+    if not _onebot_ok(response):
         runtime.pending_codes.pop(code, None)
+        _trace('自动建链验证码失败', level='error', group_id=group_id, code=code, response=response)
         return False
+    _trace('自动建链验证码响应', group_id=group_id, code=code, response=response)
     runtime.add_log('info', f'群 {group_id} 尚无映射，已启动自动建链')
     return True
 
@@ -647,10 +804,12 @@ async def _bootstrap_timeout(code):
     runtime.add_log('warning', f'群 {item["group_id"]} 自动建链超时，回退原始发送')
     params = dict(item['params'])
     params['message'] = item['message']
-    await raw_call(item['action'], params, item['self_id'])
+    response = await raw_call(item['action'], params, item['self_id'])
+    _trace('自动建链超时回退响应', group_id=item['group_id'], response=response)
 
 
 async def flush_pending(group_id):
+    _trace('待发送队列开始', group_id=group_id, count=len(_pending_for_group(group_id)))
     for code, item in _pending_for_group(group_id):
         result = await send_official(group_id, item['self_id'], item['message'])
         if result['content_violation']:
@@ -661,6 +820,7 @@ async def flush_pending(group_id):
             await raw_call(item['action'], params, item['self_id'])
         runtime.pending_codes.pop(code, None)
     runtime.bootstraps.pop(str(group_id), None)
+    _trace('待发送队列结束', group_id=group_id)
 
 
 async def intercept_api(request, call_next):
@@ -677,16 +837,25 @@ async def intercept_api(request, call_next):
     group_id = group_target(request.action, request.params)
     replace_enabled = bool(config.get('global_replace') or (rule and rule.get('replace')))
     bridge = runtime.bridge
-    if (
-        not group_id or not replace_enabled or not official_message_supported(message)
-        or bridge is None or not bridge.connected
-        or not await official_in_group(group_id, request.self_id)
-    ):
+    supported = official_message_supported(message)
+    connected = bridge is not None and bridge.connected
+    _trace(
+        '拦截判定', action=request.action, group_id=group_id or '-',
+        self_id=request.self_id or '-', source=caller_name(request.source_plugin),
+        replace=replace_enabled, supported=supported, connected=connected,
+    )
+    if not group_id or not replace_enabled or not supported or not connected:
+        _trace('原路发送', group_id=group_id or '-', reason='代发条件不满足')
+        return await call_next()
+    if not await official_in_group(group_id, request.self_id):
+        _trace('原路发送', group_id=group_id, reason='官机不在群内或成员查询失败')
         return await call_next()
 
     if not (store.mappings().get(group_id) or {}).get('callback_data'):
         if await queue_bootstrap(request, message):
+            _trace('拦截结果', group_id=group_id, result='等待自动建链')
             return synthetic_success()
+        _trace('原路发送', group_id=group_id, reason='自动建链未启动')
         return await call_next()
 
     result = await send_official(group_id, request.self_id, message)
@@ -698,4 +867,5 @@ async def intercept_api(request, call_next):
     if result['content_violation']:
         await violation_notice(group_id, request.self_id)
         return synthetic_success()
+    _trace('原路发送', group_id=group_id, reason='官机最终发送失败', response=result)
     return await call_next()

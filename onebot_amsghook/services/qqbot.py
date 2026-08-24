@@ -39,9 +39,34 @@ EventCallback = Callable[[str, dict, str], Awaitable[None]]
 LogCallback = Callable[[str, str], None]
 
 
+def _preview(value, limit=3000):
+    def scrub(item):
+        if isinstance(item, dict):
+            result = {}
+            for key, child in item.items():
+                lowered = str(key).lower()
+                if lowered in {'secret', 'clientsecret', 'access_token', 'authorization'}:
+                    result[key] = '<redacted>'
+                elif lowered == 'file_data' and isinstance(child, str):
+                    result[key] = f'<base64:{len(child)} chars>'
+                else:
+                    result[key] = scrub(child)
+            return result
+        if isinstance(item, list):
+            return [scrub(child) for child in item]
+        return item
+
+    try:
+        text = json.dumps(scrub(value), ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        text = str(value)
+    return text if len(text) <= limit else text[:limit] + '...<truncated>'
+
+
 class OfficialBotApiError(RuntimeError):
-    def __init__(self, data):
+    def __init__(self, data, status=None):
         self.data = data if isinstance(data, dict) else {}
+        self.status = status
         super().__init__(str(self.data.get('message') or self.data.get('code') or '官方机器人 API 请求失败'))
 
 
@@ -97,6 +122,7 @@ class OfficialBotBridge:
             return self.access_token
         if self.session is None:
             raise RuntimeError('官方机器人 HTTP 会话未启动')
+        self.log('debug', f'官机链路[鉴权请求]: appid={self.config.get("appid") or "-"}')
         async with self.session.post(
             TOKEN_URL,
             json={
@@ -110,6 +136,7 @@ class OfficialBotBridge:
             raise RuntimeError(f'官方机器人鉴权失败: {data}')
         self.access_token = token
         self.token_expires_at = time.time() + int(data.get('expires_in') or 7200)
+        self.log('debug', f'官机链路[鉴权响应]: success=true, expires_in={data.get("expires_in") or 7200}')
         return token
 
     async def _headers(self):
@@ -143,6 +170,7 @@ class OfficialBotBridge:
         url = str(data.get('url') or '')
         if not url:
             raise RuntimeError(f'官方机器人网关地址为空: {data}')
+        self.log('debug', '官机链路[网关地址]: 获取成功')
         return url
 
     def _intent_mask(self):
@@ -238,7 +266,16 @@ class OfficialBotBridge:
         if event_type in {
             'GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE', 'INTERACTION_CREATE',
         }:
-            await self.on_event(event_type, payload, event_id)
+            try:
+                await self.on_event(event_type, payload, event_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.log(
+                    'error',
+                    f'官机链路[网关事件处理失败]: type={event_type}, id={event_id or "-"}, '
+                    f'error={exc}, payload={_preview(payload)}',
+                )
 
     @staticmethod
     async def _response_json(response):
@@ -248,16 +285,43 @@ class OfficialBotBridge:
         except json.JSONDecodeError:
             data = {'message': text or f'HTTP {response.status}'}
         if response.status >= 400:
-            raise OfficialBotApiError(data)
+            raise OfficialBotApiError(data, response.status)
         return data
 
     async def _post(self, path, body):
         if self.session is None:
             raise RuntimeError('官方机器人 HTTP 会话未启动')
-        async with self.session.post(
-            API_BASE + path, json=body, headers=await self._headers(),
-        ) as response:
-            return await self._response_json(response)
+        self.log('debug', f'官机链路[官方 API 请求]: POST {path}, body={_preview(body)}')
+        try:
+            async with self.session.post(
+                API_BASE + path, json=body, headers=await self._headers(),
+            ) as response:
+                status = response.status
+                data = await self._response_json(response)
+        except asyncio.CancelledError:
+            raise
+        except OfficialBotApiError as exc:
+            self.log(
+                'error',
+                f'官机链路[官方 API 响应失败]: POST {path}, http={exc.status or "-"}, '
+                f'body={_preview(exc.data)}',
+            )
+            raise
+        except Exception as exc:
+            self.log('error', f'官机链路[官方 API 异常]: POST {path}, error={exc}')
+            raise
+        self.log(
+            'debug',
+            f'官机链路[官方 API 响应]: POST {path}, http={status}, body={_preview(data)}',
+        )
+        try:
+            code = int(data.get('code') or data.get('err_code') or 0)
+        except (TypeError, ValueError):
+            code = -1
+        if code != 0:
+            self.log('error', f'官机链路[官方 API 业务失败]: POST {path}, code={code}')
+            raise OfficialBotApiError(data, status)
+        return data
 
     @staticmethod
     def _message_source(body, *, event_id='', msg_id=''):
@@ -325,7 +389,10 @@ class OfficialBotBridge:
 
 
 def send_result(result):
-    code = int((result or {}).get('code') or (result or {}).get('err_code') or 0)
+    try:
+        code = int((result or {}).get('code') or (result or {}).get('err_code') or 0)
+    except (TypeError, ValueError):
+        code = -1
     return {
         'success': bool(result) and code == 0,
         'content_violation': code == CONTENT_VIOLATION_CODE,

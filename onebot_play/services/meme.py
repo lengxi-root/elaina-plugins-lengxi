@@ -284,11 +284,8 @@ def _apply_master_protection(imgs: list, sender_id: str, at_users: list) -> list
 async def handle(event) -> bool:
     """处理 meme 相关指令; 返回 True 表示已消费。"""
     await run_sync(_load)
-    raw = event.raw_message or ""
-    cleaned = re.sub(r"\[CQ:at,qq=\d+\]", "", raw)
-    cleaned = re.sub(r"\[CQ:reply,id=-?\d+\]", "", cleaned).strip()
-    if not cleaned:
-        cleaned = (event.content or "").strip()
+    # OneBot 数组消息是唯一解析来源；at/reply 等非文本段不能成为 meme 参数。
+    cleaned = (event.content or "").strip()
     user_id = str(event.user_id)
 
     # 管理命令 (无需前缀)

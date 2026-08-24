@@ -32,7 +32,7 @@ __plugin_meta__ = {
     "name": "猫娘 AI (aicat)",
     "author": "冷曦",
     "description": "接入 OpenAI 兼容接口的 AI 对话助手, 支持人设/上下文/工具调用与 Web 面板配置",
-    "version": "1.3.0",
+    "version": "1.3.1",
 }
 
 log = get_logger(PLUGIN, "aicat")
@@ -374,7 +374,6 @@ async def handle_packet(event, match=None):
     desc="猫娘 AI 对话: /<内容> 或 @机器人 <内容>",
     priority=-50,
     event_types=["message"],
-    fallback=True,
 )
 async def handle_message(event, match=None):
     if not aiconfig.enabled():
