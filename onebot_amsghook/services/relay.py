@@ -491,9 +491,8 @@ async def official_in_group(group_id, self_id):
             return cached
         _trace('群成员检测开始', group_id=group_id, qq_number=qq_number, self_id=self_id)
         try:
-            response = await raw_call('get_group_member_info', {
+            response = await raw_call('get_group_member_list', {
                 'group_id': int(group_id),
-                'user_id': int(qq_number),
                 'no_cache': True,
             }, self_id)
         except asyncio.CancelledError:
@@ -504,8 +503,12 @@ async def official_in_group(group_id, self_id):
         data = unwrap_response(response)
         present = (
             _onebot_ok(response)
-            and isinstance(data, dict)
-            and str(data.get('user_id') or '') == qq_number
+            and isinstance(data, list)
+            and any(
+                isinstance(member, dict)
+                and str(member.get('user_id') or '') == qq_number
+                for member in data
+            )
         )
         runtime.membership_cache[group_id] = {
             'present': present, 'checked_at': time.time(),
