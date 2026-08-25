@@ -26,7 +26,7 @@ def _raw_service():
 
 def get_service():
     service = _raw_service()
-    from . import aiconfig
+    from . import config as aiconfig
 
     if (
         service is not None
@@ -204,7 +204,7 @@ def _register_on(service) -> list[dict]:
 
 
 def register_capabilities() -> list[dict]:
-    from . import aiconfig
+    from . import config as aiconfig
 
     if not aiconfig.enabled():
         return []

@@ -48,7 +48,7 @@ def _save():
         log.error(f"用户检测器保存失败: {e}")
 
 
-def add_watcher(args: dict) -> dict:
+def add_watcher(args: dict, self_id: str = "") -> dict:
     _load()
     watcher_id = str(args.get("watcher_id") or "").strip()
     action_type = str(args.get("action_type") or "")
@@ -70,6 +70,7 @@ def add_watcher(args: dict) -> dict:
         "group_id": str(args.get("group_id") or ""),
         "keyword_filter": keyword_filter,
         "description": str(args.get("description") or ""),
+        "self_id": str(self_id or ""),
         "cooldown_seconds": int(args.get("cooldown_seconds") or 0),
         "enabled": True,
         "created_at": int(time.time()),
@@ -116,6 +117,7 @@ def list_watchers() -> dict:
                 "target_user": "全部用户" if target in ("", "*", "all") else target,
                 "action": w.get("action_type"),
                 "group": w.get("group_id") or "全部",
+                "self_id": w.get("self_id") or "全部账号",
                 "keyword": w.get("keyword_filter") or "全部消息",
                 "enabled": w.get("enabled"),
                 "trigger_count": w.get("trigger_count"),
@@ -137,7 +139,12 @@ def _substitute(
 
 
 async def _execute_action(
-    watcher: dict, user_id: str, group_id: str, content: str, message_id: str
+    watcher: dict,
+    self_id: str,
+    user_id: str,
+    group_id: str,
+    content: str,
+    message_id: str,
 ) -> dict:
     action_content = _substitute(
         watcher.get("action_content") or "", user_id, group_id, content, message_id
@@ -156,18 +163,22 @@ async def _execute_action(
                             {"type": "text", "data": {"text": " " + action_content}},
                         ],
                     },
+                    self_id=self_id or None,
                 )
             else:
                 res = await api.call_api(
                     "send_private_msg",
                     {"user_id": int(user_id), "message": action_content},
+                    self_id=self_id or None,
                 )
             return {"ok": True, "result": res}
         if action_type == "recall":
             return {
                 "ok": True,
                 "result": await api.call_api(
-                    "delete_msg", {"message_id": int(message_id)}
+                    "delete_msg",
+                    {"message_id": int(message_id)},
+                    self_id=self_id or None,
                 ),
             }
         if action_type == "ban":
@@ -186,6 +197,7 @@ async def _execute_action(
                         "user_id": int(user_id),
                         "duration": duration,
                     },
+                    self_id=self_id or None,
                 ),
             }
         if action_type == "kick":
@@ -196,6 +208,7 @@ async def _execute_action(
                 "result": await api.call_api(
                     "set_group_kick",
                     {"group_id": int(group_id), "user_id": int(user_id)},
+                    self_id=self_id or None,
                 ),
             }
         if action_type == "api_call":
@@ -206,7 +219,9 @@ async def _execute_action(
             return {
                 "ok": True,
                 "result": await api.call_api(
-                    str(api_data.get("action") or ""), api_data.get("params") or {}
+                    str(api_data.get("action") or ""),
+                    api_data.get("params") or {},
+                    self_id=self_id or None,
                 ),
             }
         return {"ok": False, "error": f"未知操作类型: {action_type}"}
@@ -214,13 +229,18 @@ async def _execute_action(
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
-async def check_and_execute(user_id, group_id, content: str, message_id) -> dict | None:
+async def check_and_execute(
+    self_id, user_id, group_id, content: str, message_id
+) -> dict | None:
     """消息到达时检查所有检测器, 命中则执行并返回结果, 否则返回 None。"""
     await run_sync(_load)
     uid = str(user_id)
     gid = str(group_id or "")
+    sid = str(self_id or "")
     for watcher_id, watcher in list(_watchers.items()):
         if not watcher.get("enabled"):
+            continue
+        if watcher.get("self_id") and str(watcher["self_id"]) != sid:
             continue
         target = watcher.get("target_user_id") or ""
         if target not in ("", "*", "all") and target != uid:
@@ -239,7 +259,7 @@ async def check_and_execute(user_id, group_id, content: str, message_id) -> dict
         if cooldown > 0 and last and (time.time() - last) < cooldown:
             continue
         result = await _execute_action(
-            watcher, uid, gid, content or "", str(message_id)
+            watcher, sid, uid, gid, content or "", str(message_id)
         )
         watcher["last_triggered"] = int(time.time())
         watcher["trigger_count"] = int(watcher.get("trigger_count") or 0) + 1

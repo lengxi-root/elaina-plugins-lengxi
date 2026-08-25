@@ -72,6 +72,7 @@ async def _get_sessions(request: web.Request):
     rt = get_runtime()
     sessions = [
         {
+            "selfId": s.get("selfId", ""),
             "groupId": s["groupId"],
             "userId": s["userId"],
             "expression": s["expression"],

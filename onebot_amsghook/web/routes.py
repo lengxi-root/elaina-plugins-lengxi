@@ -352,6 +352,7 @@ async def delete_mapping(request):
         removed = await store.delete_mapping(group_id)
         runtime.event_ids.pop(group_id, None)
         runtime.membership_cache.pop(group_id, None)
+        runtime.proactive_cache.pop(group_id, None)
         return success(removed=removed)
     except ValueError as exc:
         return failure(exc)

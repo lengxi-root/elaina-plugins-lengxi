@@ -5,14 +5,12 @@ import asyncio
 
 class RuntimeState:
     def __init__(self):
-        self.bot_id = ""
         self.sessions: dict = {}
         self.pending_comments: dict = {}
         self.msg_cache: dict = {}
         self.spam_cache: dict = {}
         self.last_cache_cleanup = 0
         self.save_task = None
-        self.probe_task = None
         self.background_tasks: set[asyncio.Task] = set()
 
 

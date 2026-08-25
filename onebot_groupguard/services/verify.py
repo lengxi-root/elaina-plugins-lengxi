@@ -39,8 +39,8 @@ class _SafeDict(dict):
         return "{" + key + "}"
 
 
-def _session_key(group_id, user_id) -> str:
-    return f"{group_id}:{user_id}"
+def _session_key(self_id, group_id, user_id) -> str:
+    return f"{self_id}:{group_id}:{user_id}"
 
 
 def _gen_question(min_v: int, max_v: int):
@@ -56,13 +56,13 @@ def _gen_question(min_v: int, max_v: int):
     return f"{x} × {y}", x * y
 
 
-async def _timeout_kick(group_id, user_id, timeout: int):
+async def _timeout_kick(self_id, group_id, user_id, timeout: int):
     try:
         await asyncio.sleep(timeout)
     except asyncio.CancelledError:
         return
     rt = get_runtime()
-    key = _session_key(group_id, user_id)
+    key = _session_key(self_id, group_id, user_id)
     if key not in rt.sessions:
         return
     rt.sessions.pop(key, None)
@@ -73,6 +73,7 @@ async def _timeout_kick(group_id, user_id, timeout: int):
             {"type": "at", "data": {"qq": user_id}},
             {"type": "text", "data": {"text": " 验证超时，你已被移出群聊。"}},
         ],
+        self_id=self_id,
     )
     await asyncio.sleep(1.5)
     await call_api(
@@ -82,14 +83,15 @@ async def _timeout_kick(group_id, user_id, timeout: int):
             "user_id": int(user_id),
             "reject_add_request": False,
         },
+        self_id=self_id,
     )
 
 
 def create_verify_session(
-    group_id, user_id, comment: str = "", welcome_text: str = ""
+    self_id, group_id, user_id, comment: str = "", welcome_text: str = ""
 ) -> None:
     rt = get_runtime()
-    key = _session_key(group_id, user_id)
+    key = _session_key(self_id, group_id, user_id)
     existing = rt.sessions.get(key)
     if existing and existing.get("task"):
         existing["task"].cancel()
@@ -101,8 +103,9 @@ def create_verify_session(
     timeout = int(settings.get("verifyTimeout", 300))
     max_attempts = int(settings.get("maxAttempts", 5))
 
-    task = asyncio.create_task(_timeout_kick(group_id, user_id, timeout))
+    task = asyncio.create_task(_timeout_kick(self_id, group_id, user_id, timeout))
     rt.sessions[key] = {
+        "selfId": str(self_id),
         "userId": str(user_id),
         "groupId": str(group_id),
         "answer": answer,
@@ -139,20 +142,25 @@ def create_verify_session(
                 {"type": "at", "data": {"qq": user_id}},
                 {"type": "text", "data": {"text": f" {text}"}},
             ],
+            self_id=self_id,
         )
     )
 
 
-async def handle_verify_answer(group_id, user_id, raw_message: str, message_id) -> bool:
+async def handle_verify_answer(
+    self_id, group_id, user_id, raw_message: str, message_id
+) -> bool:
     rt = get_runtime()
-    key = _session_key(group_id, user_id)
+    key = _session_key(self_id, group_id, user_id)
     session = rt.sessions.get(key)
     if not session:
         return False
 
     trimmed = (raw_message or "").strip()
     if not _NUM_RE.match(trimmed):
-        await call_api("delete_msg", {"message_id": message_id})
+        await call_api(
+            "delete_msg", {"message_id": message_id}, self_id=self_id
+        )
         await send_group_msg(
             group_id,
             [
@@ -164,6 +172,7 @@ async def handle_verify_answer(group_id, user_id, raw_message: str, message_id) 
                     },
                 },
             ],
+            self_id=self_id,
         )
         return True
 
@@ -178,11 +187,12 @@ async def handle_verify_answer(group_id, user_id, raw_message: str, message_id) 
                 {"type": "at", "data": {"qq": user_id}},
                 {"type": "text", "data": {"text": " 验证通过，欢迎加入！"}},
             ],
+            self_id=self_id,
         )
         return True
 
     session["attempts"] += 1
-    await call_api("delete_msg", {"message_id": message_id})
+    await call_api("delete_msg", {"message_id": message_id}, self_id=self_id)
     if session["attempts"] >= session["maxAttempts"]:
         if session.get("task"):
             session["task"].cancel()
@@ -198,6 +208,7 @@ async def handle_verify_answer(group_id, user_id, raw_message: str, message_id) 
                     },
                 },
             ],
+            self_id=self_id,
         )
         await asyncio.sleep(1.5)
         await call_api(
@@ -207,6 +218,7 @@ async def handle_verify_answer(group_id, user_id, raw_message: str, message_id) 
                 "user_id": int(user_id),
                 "reject_add_request": False,
             },
+            self_id=self_id,
         )
     else:
         remaining = session["maxAttempts"] - session["attempts"]
@@ -221,22 +233,23 @@ async def handle_verify_answer(group_id, user_id, raw_message: str, message_id) 
                     },
                 },
             ],
+            self_id=self_id,
         )
     return True
 
 
-def cancel_session(group_id, user_id) -> None:
+def cancel_session(self_id, group_id, user_id) -> None:
     """静默取消验证会话 (成员退群/被踢时调用, 避免超时任务误发提示)."""
     rt = get_runtime()
-    session = rt.sessions.pop(_session_key(group_id, user_id), None)
+    session = rt.sessions.pop(_session_key(self_id, group_id, user_id), None)
     if session and session.get("task"):
         session["task"].cancel()
 
 
-def skip_verify_session(group_id, user_id) -> bool:
+def skip_verify_session(self_id, group_id, user_id) -> bool:
     """管理员主动跳过某用户的入群验证, 返回该用户是否处于验证中。"""
     rt = get_runtime()
-    key = _session_key(group_id, user_id)
+    key = _session_key(self_id, group_id, user_id)
     session = rt.sessions.get(key)
     if not session:
         return False

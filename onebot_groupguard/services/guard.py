@@ -196,7 +196,9 @@ def _is_contact_share(segments) -> bool:
     return False
 
 
-async def handle_spam_detect(group_id, user_id, settings=None) -> bool:
+async def handle_spam_detect(
+    group_id, user_id, settings=None, *, self_id: str = ""
+) -> bool:
     conf = store.config()
     settings = settings or store.get_group_settings(group_id)
     spam_on = (
@@ -226,7 +228,7 @@ async def handle_spam_detect(group_id, user_id, settings=None) -> bool:
         or 10
     )
     rt = get_runtime()
-    key = f"{group_id}:{user_id}"
+    key = f"{self_id}:{group_id}:{user_id}"
     now = int(time.time() * 1000)
     stamps = [t for t in rt.spam_cache.get(key, []) if now - t < window]
     stamps.append(now)
@@ -252,9 +254,12 @@ async def handle_spam_detect(group_id, user_id, settings=None) -> bool:
                 "user_id": int(user_id),
                 "duration": ban_min * 60,
             },
+            self_id=self_id,
         )
         await send_group_text(
-            group_id, f"⚠️ {user_id} 刷屏检测触发，已禁言 {ban_min} 分钟"
+            group_id,
+            f"⚠️ {user_id} 刷屏检测触发，已禁言 {ban_min} 分钟",
+            self_id=self_id,
         )
         rt.spam_cache.pop(key, None)
         log.info(
@@ -264,14 +269,17 @@ async def handle_spam_detect(group_id, user_id, settings=None) -> bool:
     return False
 
 
-def cache_message(message_id, user_id, group_id, raw, segments=None) -> None:
+def cache_message(
+    message_id, user_id, group_id, raw, segments=None, *, self_id: str = ""
+) -> None:
     conf = store.config()
     if str(group_id) not in (conf.get("antiRecallGroups") or []) and not conf.get(
         "globalAntiRecall"
     ):
         return
     rt = get_runtime()
-    rt.msg_cache[str(message_id)] = {
+    rt.msg_cache[f"{self_id}:{message_id}"] = {
+        "selfId": str(self_id),
         "userId": str(user_id),
         "groupId": str(group_id),
         "raw": raw,
@@ -287,14 +295,16 @@ def cache_message(message_id, user_id, group_id, raw, segments=None) -> None:
             rt.msg_cache.pop(key, None)
 
 
-async def handle_anti_recall(group_id, message_id, user_id) -> None:
+async def handle_anti_recall(
+    group_id, message_id, user_id, *, self_id: str = ""
+) -> None:
     conf = store.config()
     is_group = str(group_id) in (conf.get("antiRecallGroups") or [])
     is_global = conf.get("globalAntiRecall")
     if not is_group and not is_global:
         return
     rt = get_runtime()
-    cached = rt.msg_cache.pop(str(message_id), None)
+    cached = rt.msg_cache.pop(f"{self_id}:{message_id}", None)
     if not cached:
         return
     segments = (
@@ -316,6 +326,7 @@ async def handle_anti_recall(group_id, message_id, user_id) -> None:
                     *segments,
                 ],
             },
+            self_id=self_id,
         )
     if is_global:
         time_str = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -334,6 +345,7 @@ async def handle_anti_recall(group_id, message_id, user_id) -> None:
                         *segments,
                     ],
                 },
+                self_id=self_id,
             )
 
 

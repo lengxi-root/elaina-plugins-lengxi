@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import random
 import time
@@ -10,9 +12,14 @@ from collections.abc import Awaitable, Callable
 
 import aiohttp
 
-TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
-API_BASE = 'https://api.sgroup.qq.com'
+TOKEN_URL = 'https://api.bot.qq.com/app/getAppAccessToken'
+API_BASE = 'https://api.bot.qq.com'
 CONTENT_VIOLATION_CODE = 40034006
+TOKEN_EXPIRED_CODE = 11244
+CHUNK_THRESHOLD = 5 * 1024 * 1024
+MAX_MEDIA_DOWNLOAD = 100 * 1024 * 1024
+NET_MAX_RETRIES = 2
+NET_RETRY_DELAY = 0.5
 
 OP_DISPATCH = 0
 OP_HEARTBEAT = 1
@@ -37,6 +44,10 @@ INTENT_VALUES = {
 
 EventCallback = Callable[[str, dict, str], Awaitable[None]]
 LogCallback = Callable[[str, str], None]
+
+
+def _msg_seq():
+    return random.randint(1_000_000, 9_999_999)
 
 
 def _preview(value, limit=3000):
@@ -82,6 +93,7 @@ class OfficialBotBridge:
         self.closed = False
         self.access_token = ''
         self.token_expires_at = 0.0
+        self.token_lock = asyncio.Lock()
         self.session_id = ''
         self.sequence: int | None = None
         self.nickname = ''
@@ -98,8 +110,14 @@ class OfficialBotBridge:
         timeout = aiohttp.ClientTimeout(total=35, connect=12, sock_read=30)
         self.session = aiohttp.ClientSession(
             timeout=timeout,
-            connector=aiohttp.TCPConnector(limit=16, ttl_dns_cache=300),
-            headers={'User-Agent': 'ElainaQQ-OfficialRelay/1.0'},
+            connector=aiohttp.TCPConnector(
+                limit=0,
+                limit_per_host=0,
+                ttl_dns_cache=300,
+                keepalive_timeout=20,
+                enable_cleanup_closed=True,
+            ),
+            headers={'User-Agent': 'ElainaQQ-OfficialRelay/2.0'},
         )
         self.task = asyncio.create_task(self._run(), name='official-bot-gateway')
 
@@ -117,33 +135,50 @@ class OfficialBotBridge:
             await self.session.close()
         self.session = None
 
+    def _debug(self, message):
+        if self.config.get('_debug'):
+            self.log('debug', message)
+
     async def _token(self):
         if self.access_token and time.time() < self.token_expires_at - 60:
             return self.access_token
-        if self.session is None:
-            raise RuntimeError('官方机器人 HTTP 会话未启动')
-        self.log('debug', f'官机链路[鉴权请求]: appid={self.config.get("appid") or "-"}')
-        async with self.session.post(
-            TOKEN_URL,
-            json={
-                'appId': self.config.get('appid', ''),
-                'clientSecret': self.config.get('secret', ''),
-            },
-        ) as response:
-            data = await self._response_json(response)
-        token = str(data.get('access_token') or '')
-        if not token:
-            raise RuntimeError(f'官方机器人鉴权失败: {data}')
-        self.access_token = token
-        self.token_expires_at = time.time() + int(data.get('expires_in') or 7200)
-        self.log('debug', f'官机链路[鉴权响应]: success=true, expires_in={data.get("expires_in") or 7200}')
-        return token
+        async with self.token_lock:
+            if self.access_token and time.time() < self.token_expires_at - 60:
+                return self.access_token
+            if self.session is None:
+                raise RuntimeError('官方机器人 HTTP 会话未启动')
+            self._debug(
+                f'官机链路[鉴权请求]: appid={self.config.get("appid") or "-"}',
+            )
+            async with self.session.post(
+                TOKEN_URL,
+                json={
+                    'appId': self.config.get('appid', ''),
+                    'clientSecret': self.config.get('secret', ''),
+                },
+                timeout=aiohttp.ClientTimeout(total=10, connect=10),
+            ) as response:
+                data = await self._response_json(response)
+            token = str(data.get('access_token') or '')
+            if not token:
+                raise RuntimeError(f'官方机器人鉴权失败: {data}')
+            expires_in = int(data.get('expires_in') or 7200)
+            self.access_token = token
+            self.token_expires_at = time.time() + expires_in
+            self._debug(
+                f'官机链路[鉴权响应]: success=true, expires_in={expires_in}',
+            )
+            return token
+
+    async def _refresh_expired_token(self, stale_token):
+        async with self.token_lock:
+            if self.access_token == stale_token:
+                self.access_token = ''
+                self.token_expires_at = 0.0
+        return await self._token()
 
     async def _headers(self):
-        return {
-            'Authorization': 'QQBot ' + await self._token(),
-            'X-Union-Appid': str(self.config.get('appid') or ''),
-        }
+        return {'Authorization': 'QQBot ' + await self._token()}
 
     async def _run(self):
         delay = 2
@@ -170,7 +205,7 @@ class OfficialBotBridge:
         url = str(data.get('url') or '')
         if not url:
             raise RuntimeError(f'官方机器人网关地址为空: {data}')
-        self.log('debug', '官机链路[网关地址]: 获取成功')
+        self._debug('官机链路[网关地址]: 获取成功')
         return url
 
     def _intent_mask(self):
@@ -291,37 +326,61 @@ class OfficialBotBridge:
     async def _post(self, path, body):
         if self.session is None:
             raise RuntimeError('官方机器人 HTTP 会话未启动')
-        self.log('debug', f'官机链路[官方 API 请求]: POST {path}, body={_preview(body)}')
-        try:
-            async with self.session.post(
-                API_BASE + path, json=body, headers=await self._headers(),
-            ) as response:
-                status = response.status
-                data = await self._response_json(response)
-        except asyncio.CancelledError:
-            raise
-        except OfficialBotApiError as exc:
-            self.log(
-                'error',
-                f'官机链路[官方 API 响应失败]: POST {path}, http={exc.status or "-"}, '
-                f'body={_preview(exc.data)}',
+        self._debug(f'官机链路[官方 API 请求]: POST {path}, body={_preview(body)}')
+        token_retried = False
+        net_retries = 0
+        while True:
+            try:
+                request_token = await self._token()
+                async with self.session.post(
+                    API_BASE + path,
+                    json=body,
+                    headers={'Authorization': 'QQBot ' + request_token},
+                ) as response:
+                    status = response.status
+                    data = await self._response_json(response)
+            except asyncio.CancelledError:
+                raise
+            except OfficialBotApiError as exc:
+                code = _error_code(exc.data)
+                if code == TOKEN_EXPIRED_CODE and not token_retried:
+                    token_retried = True
+                    await self._refresh_expired_token(request_token)
+                    continue
+                self.log(
+                    'error',
+                    f'官机链路[官方 API 响应失败]: POST {path}, http={exc.status or "-"}, '
+                    f'body={_preview(exc.data)}',
+                )
+                raise
+            except (TimeoutError, aiohttp.ClientConnectionError) as exc:
+                if net_retries < NET_MAX_RETRIES:
+                    net_retries += 1
+                    self.log(
+                        'warning',
+                        f'官机链路[网络重试]: POST {path}, '
+                        f'{net_retries}/{NET_MAX_RETRIES}, error={exc}',
+                    )
+                    await asyncio.sleep(NET_RETRY_DELAY * net_retries)
+                    continue
+                self.log('error', f'官机链路[官方 API 异常]: POST {path}, error={exc}')
+                raise
+            except Exception as exc:
+                self.log('error', f'官机链路[官方 API 异常]: POST {path}, error={exc}')
+                raise
+            self._debug(
+                f'官机链路[官方 API 响应]: POST {path}, http={status}, '
+                f'body={_preview(data)}',
             )
-            raise
-        except Exception as exc:
-            self.log('error', f'官机链路[官方 API 异常]: POST {path}, error={exc}')
-            raise
-        self.log(
-            'debug',
-            f'官机链路[官方 API 响应]: POST {path}, http={status}, body={_preview(data)}',
-        )
-        try:
-            code = int(data.get('code') or data.get('err_code') or 0)
-        except (TypeError, ValueError):
-            code = -1
-        if code != 0:
-            self.log('error', f'官机链路[官方 API 业务失败]: POST {path}, code={code}')
-            raise OfficialBotApiError(data, status)
-        return data
+            code = _error_code(data)
+            if code == TOKEN_EXPIRED_CODE and not token_retried:
+                token_retried = True
+                await self._refresh_expired_token(request_token)
+                continue
+            if code != 0:
+                self.log('error', f'官机链路[官方 API 业务失败]: POST {path}, code={code}')
+                raise OfficialBotApiError(data, status)
+            return data
 
     @staticmethod
     def _message_source(body, *, event_id='', msg_id=''):
@@ -334,7 +393,7 @@ class OfficialBotBridge:
     async def send_group_text(self, group_openid, content, *, event_id='', msg_id=''):
         body = {
             'msg_type': 0,
-            'msg_seq': random.randint(1, 999_999),
+            'msg_seq': _msg_seq(),
             'content': str(content or ''),
         }
         self._message_source(body, event_id=event_id, msg_id=msg_id)
@@ -343,7 +402,7 @@ class OfficialBotBridge:
     async def send_private_text(self, user_openid, content, *, event_id='', msg_id=''):
         body = {
             'msg_type': 0,
-            'msg_seq': random.randint(1, 999_999),
+            'msg_seq': _msg_seq(),
             'content': str(content or ''),
         }
         self._message_source(body, event_id=event_id, msg_id=msg_id)
@@ -352,7 +411,7 @@ class OfficialBotBridge:
     async def send_group_markdown(self, group_openid, content, *, event_id='', msg_id='', keyboard=None):
         body = {
             'msg_type': 2,
-            'msg_seq': random.randint(1, 999_999),
+            'msg_seq': _msg_seq(),
             'markdown': {'content': content or '1'},
         }
         if keyboard:
@@ -363,7 +422,7 @@ class OfficialBotBridge:
     async def send_private_markdown(self, user_openid, content, *, event_id='', msg_id='', keyboard=None):
         body = {
             'msg_type': 2,
-            'msg_seq': random.randint(1, 999_999),
+            'msg_seq': _msg_seq(),
             'markdown': {'content': content or '1'},
         }
         if keyboard:
@@ -372,15 +431,97 @@ class OfficialBotBridge:
         return await self._post(f'/v2/users/{user_openid}/messages', body)
 
     async def upload_group_media(self, group_openid, source, file_type, *, is_url=False):
+        if isinstance(source, (bytes, bytearray)):
+            source = bytes(source)
+            if len(source) > CHUNK_THRESHOLD:
+                return await self._upload_group_media_chunked(
+                    group_openid, source, int(file_type),
+                )
         body = {'srv_send_msg': False, 'file_type': int(file_type)}
-        body['url' if is_url else 'file_data'] = source
+        if is_url:
+            body['url'] = source
+        elif isinstance(source, bytes):
+            body['file_data'] = await asyncio.to_thread(
+                lambda: base64.b64encode(source).decode('ascii'),
+            )
+        else:
+            body['file_data'] = source
         result = await self._post(f'/v2/groups/{group_openid}/files', body)
         return str(result.get('file_info') or '')
+
+    async def _upload_group_media_chunked(self, group_openid, source, file_type):
+        md5, sha1, md5_10m = await asyncio.to_thread(_media_hashes, source)
+        extension = {1: 'png', 2: 'mp4', 3: 'silk', 4: 'dat'}.get(file_type, 'dat')
+        scope = f'/v2/groups/{group_openid}'
+        prepared = await self._post(f'{scope}/upload_prepare', {
+            'file_type': file_type,
+            'file_name': f'relay.{extension}',
+            'file_size': len(source),
+            'md5': md5,
+            'sha1': sha1,
+            'md5_10m': md5_10m,
+        })
+        upload_id = str(prepared.get('upload_id') or '')
+        block_size = int(prepared.get('block_size') or 0)
+        parts = prepared.get('parts') or []
+        if not upload_id or block_size <= 0 or not parts:
+            raise OfficialBotApiError({'message': '分片上传初始化响应无效'})
+        for part in parts:
+            index = int(part.get('index') or 0)
+            url = str(part.get('presigned_url') or '')
+            if index <= 0 or not url:
+                raise OfficialBotApiError({'message': '分片上传地址无效'})
+            offset = (index - 1) * block_size
+            chunk = source[offset:offset + block_size]
+            await self._put_upload_part(url, chunk)
+            await self._post(f'{scope}/upload_part_finish', {
+                'upload_id': upload_id,
+                'part_index': index,
+                'block_size': len(chunk),
+                'md5': hashlib.md5(chunk).hexdigest(),
+            })
+        result = await self._post(f'{scope}/files', {'upload_id': upload_id})
+        return str(result.get('file_info') or '')
+
+    async def _put_upload_part(self, url, chunk):
+        if self.session is None:
+            raise RuntimeError('官方机器人 HTTP 会话未启动')
+        for retry in range(3):
+            try:
+                async with self.session.put(
+                    url,
+                    data=chunk,
+                    headers={'Content-Length': str(len(chunk))},
+                    timeout=aiohttp.ClientTimeout(total=300, connect=15),
+                ) as response:
+                    if response.status >= 400:
+                        raise RuntimeError(f'PUT {response.status}')
+                    await response.read()
+                    return
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                if retry >= 2:
+                    raise
+                await asyncio.sleep(2 ** retry)
+
+    async def download_media(self, url, *, limit=MAX_MEDIA_DOWNLOAD):
+        if self.session is None:
+            raise RuntimeError('官方机器人 HTTP 会话未启动')
+        async with self.session.get(
+            url, timeout=aiohttp.ClientTimeout(total=30, connect=10),
+        ) as response:
+            response.raise_for_status()
+            length = int(response.headers.get('Content-Length') or 0)
+            if length > limit:
+                return b''
+            data = await response.content.read(limit + 1)
+            return data if len(data) <= limit else b''
 
     async def send_group_media(self, group_openid, file_info, content='', *, event_id='', msg_id=''):
         body = {
             'msg_type': 7,
-            'msg_seq': random.randint(1, 999_999),
+            'msg_seq': _msg_seq(),
             'content': content or '',
             'media': {'file_info': file_info},
         }
@@ -389,12 +530,22 @@ class OfficialBotBridge:
 
 
 def send_result(result):
-    try:
-        code = int((result or {}).get('code') or (result or {}).get('err_code') or 0)
-    except (TypeError, ValueError):
-        code = -1
+    code = _error_code(result)
     return {
         'success': bool(result) and code == 0,
         'content_violation': code == CONTENT_VIOLATION_CODE,
         'code': code,
     }
+
+
+def _error_code(result):
+    try:
+        return int((result or {}).get('code') or (result or {}).get('err_code') or 0)
+    except (AttributeError, TypeError, ValueError):
+        return -1
+
+
+def _media_hashes(data):
+    md5 = hashlib.md5(data).hexdigest()
+    first_10m = data[:10_002_432] if len(data) > 10_002_432 else data
+    return md5, hashlib.sha1(data).hexdigest(), hashlib.md5(first_10m).hexdigest()

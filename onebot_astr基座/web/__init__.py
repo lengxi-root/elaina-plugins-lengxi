@@ -1,1 +1,0 @@
-"""AstrBot base web routes."""

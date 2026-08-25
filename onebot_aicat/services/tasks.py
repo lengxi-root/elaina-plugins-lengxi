@@ -122,11 +122,13 @@ async def _execute(task_id: str):
                 await get_api().call_api(
                     "send_group_msg",
                     {"group_id": int(task["target_id"]), "message": message},
+                    self_id=str(task.get("self_id") or "") or None,
                 )
             else:
                 await get_api().call_api(
                     "send_private_msg",
                     {"user_id": int(task["target_id"]), "message": message},
+                    self_id=str(task.get("self_id") or "") or None,
                 )
         elif task.get("task_type") == "api_call":
             timeout = aiohttp.ClientTimeout(total=30)
@@ -183,8 +185,8 @@ async def scheduler_loop(stop: asyncio.Event):
             log.error(f"定时任务检查失败: {e}")
 
 
-def add_task(args: dict) -> dict:
-    _load()
+async def add_task(args: dict, self_id: str = "") -> dict:
+    await run_sync(_load)
     task_id = str(args.get("task_id") or "").strip()
     task_type = str(args.get("task_type") or "")
     target_type = str(args.get("target_type") or "")
@@ -211,12 +213,13 @@ def add_task(args: dict) -> dict:
         "daily_time": daily,
         "repeat": bool(args.get("repeat")),
         "description": str(args.get("description") or ""),
+        "self_id": str(self_id or ""),
         "enabled": True,
         "created_at": int(time.time()),
         "last_run": 0,
         "run_count": 0,
     }
-    _save()
+    await run_sync(_save)
     msg = f"定时任务 '{task_id}' 已添加"
     if daily:
         msg += f", 每天 {daily} 执行"
@@ -269,6 +272,7 @@ def list_tasks() -> dict:
                 "id": task_id,
                 "type": task.get("task_type"),
                 "target": f"{task.get('target_type')}:{task.get('target_id')}",
+                "self_id": task.get("self_id") or "默认账号",
                 "schedule": schedule,
                 "repeat": task.get("repeat"),
                 "enabled": task.get("enabled"),

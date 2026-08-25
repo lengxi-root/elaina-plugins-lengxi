@@ -10,10 +10,25 @@ log = get_logger(PLUGIN, "groupguard")
 _QQ_RE = re.compile(r"(\d{5,12})")
 
 
-async def call_api(action: str, params: dict | None = None):
+def is_valid_qq(value) -> bool:
+    """判断 OneBot 事件中的 QQ 号是否为有效正整数。"""
+    text = str(value or "").strip()
+    return text.isdigit() and int(text) > 0
+
+
+async def call_api(
+    action: str,
+    params: dict | None = None,
+    *,
+    self_id: str | None = None,
+):
     """调用 OneBot API, 返回 data 段 (失败返回 None)。"""
     try:
-        resp = await get_api().call_api(action, params or {})
+        resp = await get_api().call_api(
+            action,
+            params or {},
+            self_id=str(self_id) if self_id else None,
+        )
     except Exception as e:  # noqa: BLE001
         log.error(f"API 调用失败 {action}: {e}")
         return None
@@ -22,12 +37,22 @@ async def call_api(action: str, params: dict | None = None):
     return resp
 
 
-async def send_group_msg(group_id, message) -> None:
-    await call_api("send_group_msg", {"group_id": int(group_id), "message": message})
+async def send_group_msg(group_id, message, *, self_id: str | None = None) -> None:
+    await call_api(
+        "send_group_msg",
+        {"group_id": int(group_id), "message": message},
+        self_id=self_id,
+    )
 
 
-async def send_group_text(group_id, text: str) -> None:
-    await send_group_msg(group_id, [{"type": "text", "data": {"text": text}}])
+async def send_group_text(
+    group_id, text: str, *, self_id: str | None = None
+) -> None:
+    await send_group_msg(
+        group_id,
+        [{"type": "text", "data": {"text": text}}],
+        self_id=self_id,
+    )
 
 
 async def send_private_msg(user_id, message) -> None:

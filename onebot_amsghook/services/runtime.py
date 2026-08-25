@@ -20,12 +20,17 @@ class RuntimeState:
         self.event_waiters = {}
         self.event_locks = {}
         self.membership_cache = {}
+        self.membership_locks = {}
+        self.proactive_cache = {}
         self.gateway_events = {}
         self.tasks = set()
         self.logs = deque(maxlen=500)
         self.log_cursor = 0
+        self.debug_enabled = False
 
     def add_log(self, level, message):
+        if str(level) == 'debug' and not self.debug_enabled:
+            return
         self.log_cursor += 1
         entry = {
             'id': self.log_cursor,
@@ -74,6 +79,8 @@ class RuntimeState:
         self.event_ids.clear()
         self.event_locks.clear()
         self.membership_cache.clear()
+        self.membership_locks.clear()
+        self.proactive_cache.clear()
         self.gateway_events.clear()
 
 

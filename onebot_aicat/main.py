@@ -32,7 +32,7 @@ __plugin_meta__ = {
     "name": "猫娘 AI (aicat)",
     "author": "冷曦",
     "description": "接入 OpenAI 兼容接口的 AI 对话助手, 支持人设/上下文/工具调用与 Web 面板配置",
-    "version": "1.3.1",
+    "version": "1.3.2",
 }
 
 log = get_logger(PLUGIN, "aicat")
@@ -381,7 +381,11 @@ async def handle_message(event, match=None):
     # 用户检测器 (命中时自动执行操作, 不阻断后续处理)
     try:
         watch_result = await watchers.check_and_execute(
-            event.user_id, event.group_id, event.content or "", event.message_id
+            event.self_id,
+            event.user_id,
+            event.group_id,
+            event.content or "",
+            event.message_id,
         )
         if watch_result:
             log.info(f"用户检测器触发: {watch_result['watcher_id']}")

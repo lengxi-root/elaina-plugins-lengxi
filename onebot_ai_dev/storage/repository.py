@@ -142,7 +142,7 @@ class AIStore:
     def _history_limit(self) -> int:
         """单会话保留的最大对话轮数 (面板「设置」可改, 默认 50); <=0 不限制。"""
         try:
-            from . import aiconfig
+            from ..services import aiconfig
 
             return int(aiconfig.history_limit())
         except Exception:

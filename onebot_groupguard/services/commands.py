@@ -94,7 +94,7 @@ async def handle_command(event) -> bool:
                 group_id, "请指定目标：跳过验证@某人 或 跳过验证+QQ号"
             )
             return True
-        if verify.skip_verify_session(group_id, target):
+        if verify.skip_verify_session(str(event.self_id or ""), group_id, target):
             await send_group_text(group_id, f"已跳过 {target} 的入群验证")
         else:
             await send_group_text(group_id, f"{target} 当前不在验证中")

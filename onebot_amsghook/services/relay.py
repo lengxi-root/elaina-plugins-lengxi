@@ -38,6 +38,7 @@ EVENT_ID_TTL = 270
 EVENT_ID_MAX_USES = 5
 MEMBER_TRUE_TTL = 1800
 MEMBER_FALSE_TTL = 60
+PROACTIVE_FAILURE_TTL = 300
 
 CALLBACK_KEYBOARD = {
     'content': {
@@ -77,6 +78,8 @@ def _preview(value, limit=2500):
 
 
 def _trace(stage, *, level='debug', **details):
+    if level == 'debug' and not runtime.debug_enabled:
+        return
     suffix = ', '.join(f'{key}={_preview(value)}' for key, value in details.items())
     runtime.add_log(level, f'官机链路[{stage}]' + (f': {suffix}' if suffix else ''))
 
@@ -150,7 +153,10 @@ async def restart_bridge():
     runtime.bridge = None
     if bridge is not None:
         await bridge.stop()
-    config = store.config().get('qqbot') or {}
+    root_config = store.config()
+    runtime.debug_enabled = bool(root_config.get('debug'))
+    runtime.proactive_cache.clear()
+    config = root_config.get('qqbot') or {}
     if not config.get('appid') or not config.get('secret'):
         runtime.add_log('info', '官方机器人未配置，网关保持关闭')
         return
@@ -158,7 +164,11 @@ async def restart_bridge():
         '网关启动', appid=config.get('appid'), qq_number=config.get('qq_number'),
         intents=config.get('intents') or [],
     )
-    bridge = OfficialBotBridge(config, handle_gateway_event, runtime.add_log)
+    bridge = OfficialBotBridge(
+        {**config, '_debug': runtime.debug_enabled},
+        handle_gateway_event,
+        runtime.add_log,
+    )
     runtime.bridge = bridge
     await bridge.start()
     runtime.add_log('info', '官方机器人网关正在连接')
@@ -456,45 +466,69 @@ async def official_in_group(group_id, self_id):
     if not qq_number:
         _trace('群成员检测失败', level='warning', group_id=group_id, reason='未配置官机 QQ 号')
         return False
-    cached = runtime.membership_cache.get(str(group_id))
-    if cached:
+    group_id = str(group_id)
+
+    def cached_membership():
+        cached = runtime.membership_cache.get(group_id)
+        if not cached:
+            return None
         ttl = MEMBER_TRUE_TTL if cached['present'] else MEMBER_FALSE_TTL
-        if time.time() - cached['checked_at'] < ttl:
-            _trace(
-                '群成员检测缓存', group_id=group_id, qq_number=qq_number,
-                present=cached['present'], ttl=ttl,
-            )
-            return cached['present']
-    _trace('群成员检测开始', group_id=group_id, qq_number=qq_number, self_id=self_id)
-    try:
-        response = await raw_call('get_group_member_info', {
-            'group_id': int(group_id),
-            'user_id': int(qq_number),
-            'no_cache': True,
-        }, self_id)
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        _trace('群成员检测异常', level='error', group_id=group_id, error=str(exc))
-        return False
-    data = unwrap_response(response)
-    present = _onebot_ok(response) and isinstance(data, dict) and str(data.get('user_id') or '') == qq_number
-    runtime.membership_cache[str(group_id)] = {
-        'present': present, 'checked_at': time.time(),
-    }
-    _trace('群成员检测完成', group_id=group_id, qq_number=qq_number, present=present, response=response)
-    return present
+        if time.time() - cached['checked_at'] >= ttl:
+            return None
+        _trace(
+            '群成员检测缓存', group_id=group_id, qq_number=qq_number,
+            present=cached['present'], ttl=ttl,
+        )
+        return cached['present']
+
+    cached = cached_membership()
+    if cached is not None:
+        return cached
+    lock = runtime.membership_locks.setdefault(group_id, asyncio.Lock())
+    async with lock:
+        cached = cached_membership()
+        if cached is not None:
+            return cached
+        _trace('群成员检测开始', group_id=group_id, qq_number=qq_number, self_id=self_id)
+        try:
+            response = await raw_call('get_group_member_info', {
+                'group_id': int(group_id),
+                'user_id': int(qq_number),
+                'no_cache': True,
+            }, self_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _trace('群成员检测异常', level='error', group_id=group_id, error=str(exc))
+            return False
+        data = unwrap_response(response)
+        present = (
+            _onebot_ok(response)
+            and isinstance(data, dict)
+            and str(data.get('user_id') or '') == qq_number
+        )
+        runtime.membership_cache[group_id] = {
+            'present': present, 'checked_at': time.time(),
+        }
+        _trace(
+            '群成员检测完成', group_id=group_id, qq_number=qq_number,
+            present=present, response=response,
+        )
+        return present
 
 
 async def _source_bytes(source):
     source = str(source or '')
     if source.startswith(('http://', 'https://')):
+        bridge = runtime.bridge
+        if bridge is not None:
+            return await bridge.download_media(source)
         timeout = aiohttp.ClientTimeout(total=30, connect=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(source) as response:
                 response.raise_for_status()
-                data = await response.read()
-                return data if len(data) <= 64 * 1024 * 1024 else b''
+                data = await response.content.read(100 * 1024 * 1024 + 1)
+                return data if len(data) <= 100 * 1024 * 1024 else b''
     if source.startswith('base64://'):
         source = source[9:]
     elif source.startswith('data:') and ',' in source:
@@ -506,7 +540,7 @@ async def _source_bytes(source):
             if os.name == 'nt' and source.startswith('/'):
                 source = source[1:]
         path = Path(source)
-        if not path.is_file() or path.stat().st_size > 64 * 1024 * 1024:
+        if not path.is_file() or path.stat().st_size > 100 * 1024 * 1024:
             return b''
         return await asyncio.to_thread(path.read_bytes)
     try:
@@ -560,10 +594,7 @@ async def _media_payload(
     if media_type == 'record':
         data = await _source_bytes(source)
         converted = await convert_to_silk(data)
-        return (base64.b64encode(converted).decode('ascii'), False) if converted else ('', False)
-    if media_type == 'video':
-        data = await _source_bytes(source)
-        return (base64.b64encode(data).decode('ascii'), False) if data else ('', False)
+        return (converted, False) if converted else ('', False)
     if media_type == 'image' and force_image_rehost and source.startswith(('http://', 'https://')):
         rehosted = await _rehost_image_url(source, self_id)
         if rehosted:
@@ -573,9 +604,15 @@ async def _media_payload(
     if source.startswith(('http://', 'https://')):
         return source, True
     if source.startswith('base64://'):
-        return source[9:], False
+        try:
+            return base64.b64decode(source[9:]), False
+        except (ValueError, TypeError):
+            return '', False
     if source.startswith('data:') and ',' in source:
-        return source.split(',', 1)[1], False
+        try:
+            return base64.b64decode(source.split(',', 1)[1]), False
+        except (ValueError, TypeError):
+            return '', False
     if source.startswith('file://'):
         parsed = urlparse(source)
         source = unquote(parsed.path)
@@ -584,8 +621,7 @@ async def _media_payload(
     path = Path(source)
     if not path.is_file():
         return '', False
-    data = await asyncio.to_thread(path.read_bytes)
-    return base64.b64encode(data).decode('ascii'), False
+    return await asyncio.to_thread(path.read_bytes), False
 
 
 async def _upload_media(bridge, group_openid, payload, file_type, media_type, is_url):
@@ -594,19 +630,18 @@ async def _upload_media(bridge, group_openid, payload, file_type, media_type, is
         file_info = await bridge.upload_group_media(
             group_openid, payload, file_type, is_url=is_url,
         )
-        if file_info or media_type != 'image' or not is_url:
+        if file_info or not is_url:
             return file_info
     except OfficialBotApiError as exc:
-        if media_type != 'image' or not is_url:
+        if not is_url:
             raise
         first_error = exc
 
     data = await _source_bytes(payload)
     if data:
-        encoded = base64.b64encode(data).decode('ascii')
         try:
             return await bridge.upload_group_media(
-                group_openid, encoded, file_type, is_url=False,
+                group_openid, data, file_type, is_url=False,
             )
         except OfficialBotApiError:
             if first_error is None:
@@ -616,7 +651,7 @@ async def _upload_media(bridge, group_openid, payload, file_type, media_type, is
     return ''
 
 
-async def _send_with_event(group_id, self_id, message, event):
+async def _send_with_event(group_id, self_id, message, event=None):
     bridge = runtime.bridge
     if bridge is None or not bridge.connected:
         _trace('最终发送失败', level='warning', group_id=group_id, reason='官方机器人网关未连接')
@@ -626,10 +661,7 @@ async def _send_with_event(group_id, self_id, message, event):
         _trace('最终发送失败', level='warning', group_id=group_id, reason='群映射不存在')
         return {'success': False, 'content_violation': False}
     group_openid = mapping.get('group_openid')
-    event_id = str(event.get('event_id') or '')
-    if not event_id:
-        _trace('最终发送失败', level='warning', group_id=group_id, reason='event_id 为空')
-        return {'success': False, 'content_violation': False}
+    event_id = str((event or {}).get('event_id') or '')
     text = extract_text(message)
     media = extract_media(message)
     _trace(
@@ -668,39 +700,83 @@ async def _send_with_event(group_id, self_id, message, event):
             'warning',
             f'群 {group_id} 官机代发被拒绝: code={result["code"]}, {exc}',
         )
-        if not result['content_violation']:
+        if event_id and not result['content_violation']:
             runtime.event_ids.pop(str(group_id), None)
         return result
     except Exception as exc:
         runtime.add_log('warning', f'群 {group_id} 官机代发异常: {exc}')
-        runtime.event_ids.pop(str(group_id), None)
+        if event_id:
+            runtime.event_ids.pop(str(group_id), None)
         return {'success': False, 'content_violation': False}
     result = send_result(response)
     _trace('最终发送响应', group_id=group_id, response=response, result=result)
     if result['success']:
         record_event_use(group_id, event_id)
-    elif not result['content_violation']:
+    elif event_id and not result['content_violation']:
         runtime.event_ids.pop(str(group_id), None)
     return result
 
 
 async def send_official(group_id, self_id, message):
     _trace('官机代发开始', group_id=group_id, self_id=self_id, message=message)
+    group_id = str(group_id)
+    callback_result = {'success': False, 'content_violation': False}
     event = await wake_event(group_id, self_id)
-    if not event:
-        _trace('官机代发结束', level='warning', group_id=group_id, result='无法获取 event_id')
-        return {'success': False, 'content_violation': False}
-    result = await _send_with_event(group_id, self_id, message, event)
-    if result['success'] or result['content_violation']:
-        _trace('官机代发结束', group_id=group_id, result=result)
-        return result
-    refreshed = await wake_event(group_id, self_id)
-    if not refreshed:
-        _trace('官机代发重试失败', level='warning', group_id=group_id, result=result)
-        return result
-    retried = await _send_with_event(group_id, self_id, message, refreshed)
-    _trace('官机代发重试结束', group_id=group_id, result=retried)
-    return retried
+    if event:
+        callback_result = await _send_with_event(group_id, self_id, message, event)
+        if callback_result['success'] or callback_result['content_violation']:
+            _trace('官机回调发送结束', group_id=group_id, result=callback_result)
+            return callback_result
+
+        refreshed = await wake_event(group_id, self_id)
+        if (
+            refreshed
+            and refreshed.get('event_id') != event.get('event_id')
+        ):
+            callback_result = await _send_with_event(
+                group_id, self_id, message, refreshed,
+            )
+            if callback_result['success'] or callback_result['content_violation']:
+                _trace(
+                    '官机回调刷新发送结束',
+                    group_id=group_id,
+                    result=callback_result,
+                )
+                return callback_result
+    else:
+        _trace(
+            '官机回调不可用', level='warning', group_id=group_id,
+            fallback='主动发送',
+        )
+
+    proactive = runtime.proactive_cache.get(group_id)
+    proactive_blocked = bool(
+        proactive
+        and not proactive.get('allowed')
+        and time.time() - proactive.get('checked_at', 0) < PROACTIVE_FAILURE_TTL
+    )
+    if proactive_blocked:
+        _trace(
+            '官机主动回退缓存跳过', group_id=group_id,
+            result=callback_result,
+        )
+        return callback_result
+
+    _trace(
+        '官机回调发送失败', level='warning', group_id=group_id,
+        result=callback_result, fallback='主动发送',
+    )
+    proactive_result = await _send_with_event(group_id, self_id, message)
+    if proactive_result['success']:
+        runtime.proactive_cache[group_id] = {
+            'allowed': True, 'checked_at': time.time(),
+        }
+    elif proactive_result.get('code') not in (None, 0):
+        runtime.proactive_cache[group_id] = {
+            'allowed': False, 'checked_at': time.time(),
+        }
+    _trace('官机主动回退结束', group_id=group_id, result=proactive_result)
+    return proactive_result
 
 
 async def send_dm(group_id, self_id, text):
@@ -710,11 +786,12 @@ async def send_dm(group_id, self_id, text):
     if not text or runtime.bridge is None or not runtime.bridge.connected:
         _trace('dm 指令失败', level='warning', group_id=group_id, reason='内容为空或网关未连接')
         return 'failed'
-    if not await official_in_group(group_id, self_id):
+    mapping = store.mappings().get(str(group_id)) or {}
+    if not mapping and not await official_in_group(group_id, self_id):
         _trace('dm 指令失败', level='warning', group_id=group_id, reason='官机不在群内')
         return 'failed'
     group_id = str(group_id)
-    if not (store.mappings().get(group_id) or {}).get('callback_data'):
+    if not mapping.get('callback_data'):
         request = ApiCallRequest(
             action='send_group_msg',
             params={'group_id': group_id, 'message': text},
@@ -847,11 +924,12 @@ async def intercept_api(request, call_next):
     if not group_id or not replace_enabled or not supported or not connected:
         _trace('原路发送', group_id=group_id or '-', reason='代发条件不满足')
         return await call_next()
-    if not await official_in_group(group_id, request.self_id):
+    mapping = store.mappings().get(group_id) or {}
+    if not mapping and not await official_in_group(group_id, request.self_id):
         _trace('原路发送', group_id=group_id, reason='官机不在群内或成员查询失败')
         return await call_next()
 
-    if not (store.mappings().get(group_id) or {}).get('callback_data'):
+    if not mapping.get('callback_data'):
         if await queue_bootstrap(request, message):
             _trace('拦截结果', group_id=group_id, result='等待自动建链')
             return synthetic_success()

@@ -10,7 +10,7 @@ from core.plugins import register_page, unregister_page
 
 from .services import commands, guard, logbuf, verify
 from .services.runtime import get_runtime, stop_background
-from .services.utils import call_api, is_bot_admin
+from .services.utils import call_api, is_bot_admin, is_valid_qq
 from .storage import repository as store
 from .web import routes as webpanel
 
@@ -18,7 +18,7 @@ __plugin_meta__ = {
     "name": "群管 (groupguard)",
     "author": "冷曦",
     "description": "全功能群管理: 入群验证/违禁词/防撤回/刷屏检测/问答/黑白名单/名片锁定/活跃统计, 支持 Web 面板配置",
-    "version": "1.0.0",
+    "version": "1.0.1",
 }
 
 log = get_logger(PLUGIN, "groupguard")
@@ -45,18 +45,6 @@ async def _activity_saver():
             log.error(f"活跃统计保存失败: {e}")
 
 
-async def _probe_bot_id(rt):
-    try:
-        info = await call_api("get_login_info")
-        rt.bot_id = (
-            str((info or {}).get("user_id") or "") if isinstance(info, dict) else ""
-        )
-        if rt.bot_id:
-            log.info(f"机器人 QQ: {rt.bot_id}")
-    except Exception:  # noqa: BLE001
-        pass
-
-
 @on_load
 async def init():
     await asyncio.to_thread(store.load)
@@ -75,8 +63,6 @@ async def init():
     webpanel.register_routes()
     if rt.save_task is None or rt.save_task.done():
         rt.save_task = asyncio.create_task(_activity_saver())
-    if rt.probe_task is None or rt.probe_task.done():
-        rt.probe_task = asyncio.create_task(_probe_bot_id(rt))
     log.info("群管插件已加载")
 
 
@@ -88,10 +74,6 @@ async def cleanup():
         rt.save_task.cancel()
         await asyncio.gather(rt.save_task, return_exceptions=True)
     rt.save_task = None
-    if rt.probe_task and not rt.probe_task.done():
-        rt.probe_task.cancel()
-        await asyncio.gather(rt.probe_task, return_exceptions=True)
-    rt.probe_task = None
     await verify.clear_all_sessions()
     await stop_background()
     await asyncio.to_thread(store.save_activity, force=True)
@@ -108,6 +90,9 @@ async def cleanup():
 async def on_group_message(event, match):
     group_id = str(event.group_id)
     user_id = str(event.user_id)
+    if not is_valid_qq(user_id):
+        log.warning(f"忽略无效群消息成员号: {user_id or '(空)'}@{group_id}")
+        return
     message_id = event.message_id
     text = event.content or ""
     segments = getattr(event, "message", []) or []
@@ -127,7 +112,14 @@ async def on_group_message(event, match):
 
     if await guard.handle_qa(group_id, user_id, text, settings):
         store.record_activity(group_id, user_id)
-        guard.cache_message(message_id, user_id, group_id, text, segments)
+        guard.cache_message(
+            message_id,
+            user_id,
+            group_id,
+            text,
+            segments,
+            self_id=self_id,
+        )
         return
 
     if not is_white and await guard.handle_auto_recall(
@@ -146,15 +138,24 @@ async def on_group_message(event, match):
         return
 
     if not is_white:
-        await guard.handle_spam_detect(group_id, user_id, settings)
+        await guard.handle_spam_detect(
+            group_id, user_id, settings, self_id=self_id
+        )
 
     store.record_activity(group_id, user_id)
 
-    guard.cache_message(message_id, user_id, group_id, text, segments)
+    guard.cache_message(
+        message_id,
+        user_id,
+        group_id,
+        text,
+        segments,
+        self_id=self_id,
+    )
 
     await guard.handle_emoji_react(group_id, user_id, message_id, self_id)
 
-    await verify.handle_verify_answer(group_id, user_id, text, message_id)
+    await verify.handle_verify_answer(self_id, group_id, user_id, text, message_id)
 
 
 @handler(
@@ -165,6 +166,9 @@ async def on_group_request(event, match):
         return
     group_id = str(event.group_id)
     user_id = str(event.user_id)
+    if not is_valid_qq(user_id):
+        log.warning(f"忽略无效入群申请成员号: {user_id or '(空)'}@{group_id}")
+        return
     flag = event.flag
 
     if not store.is_owner(user_id) and store.is_blacklisted(user_id):
@@ -227,7 +231,7 @@ async def on_group_request(event, match):
 
     rt = get_runtime()
     if comment:
-        rt.pending_comments[f"{group_id}:{user_id}"] = comment
+        rt.pending_comments[f"{event.self_id}:{group_id}:{user_id}"] = comment
     log.info(f"自动通过入群申请: 用户 {user_id}@{group_id}")
     if flag:
         await call_api(
@@ -244,18 +248,19 @@ async def on_group_request(event, match):
 async def on_group_increase(event, match):
     group_id = str(event.group_id)
     user_id = str(event.user_id)
-    rt = get_runtime()
-
     self_id = str(getattr(event, "self_id", "") or "")
-    if self_id and not rt.bot_id:
-        rt.bot_id = self_id
-    bot_id = rt.bot_id or self_id
-
-    if user_id == bot_id:
+    if not is_valid_qq(user_id):
+        log.warning(f"忽略无效进群成员号: {user_id or '(空)'}@{group_id}")
         return
-    if not await is_bot_admin(group_id, bot_id):
+    if not is_valid_qq(self_id):
+        log.warning(f"无法确定处理群 {group_id} 入群事件的机器人账号")
+        return
+
+    if user_id == self_id:
+        return
+    if not await is_bot_admin(group_id, self_id):
         log.warning(
-            f"新成员 {user_id}@{group_id}: 机器人 {bot_id or '(未知QQ)'} 非管理员, 跳过入群验证/欢迎"
+            f"新成员 {user_id}@{group_id}: 机器人 {self_id} 非管理员, 跳过入群验证/欢迎"
         )
         return
     if await guard.handle_rejoin_ban(group_id, user_id):
@@ -266,7 +271,8 @@ async def on_group_increase(event, match):
         await guard.send_welcome_message(group_id, user_id)
         return
 
-    key = f"{group_id}:{user_id}"
+    rt = get_runtime()
+    key = f"{self_id}:{group_id}:{user_id}"
     comment = rt.pending_comments.pop(key, "")
 
     if settings.get("skipBotVerify") and verify.is_bot_qq(user_id):
@@ -281,7 +287,7 @@ async def on_group_increase(event, match):
         tpl.replace("{user}", user_id).replace("{group}", group_id) if tpl else ""
     )
     log.info(f"新成员进群: 用户 {user_id}@{group_id}, 发起验证")
-    verify.create_verify_session(group_id, user_id, comment, welcome_text)
+    verify.create_verify_session(self_id, group_id, user_id, comment, welcome_text)
 
 
 @handler(
@@ -289,16 +295,25 @@ async def on_group_increase(event, match):
 )
 async def on_group_recall(event, match):
     message_id = event.raw_data.get("message_id")
-    await guard.handle_anti_recall(str(event.group_id), message_id, str(event.user_id))
+    await guard.handle_anti_recall(
+        str(event.group_id),
+        message_id,
+        str(event.user_id),
+        self_id=str(getattr(event, "self_id", "") or ""),
+    )
 
 
 @handler(r".*", name="groupguard_card", event_types=["notice.group_card"], priority=50)
 async def on_group_card(event, match):
+    if not is_valid_qq(event.user_id):
+        return
     await guard.handle_card_lock_check(str(event.group_id), str(event.user_id))
 
 
 @handler(r".*", name="groupguard_ban", event_types=["notice.group_ban"], priority=50)
 async def on_group_ban(event, match):
+    if not is_valid_qq(event.user_id):
+        return
     duration = event.raw_data.get("duration", 0) if event.sub_type == "ban" else 0
     await asyncio.to_thread(
         store.record_group_ban,
@@ -317,9 +332,13 @@ async def on_group_ban(event, match):
 async def on_group_decrease(event, match):
     group_id = str(event.group_id)
     user_id = str(event.user_id)
+    self_id = str(getattr(event, "self_id", "") or "")
+    if not is_valid_qq(user_id):
+        log.warning(f"忽略无效退群成员号: {user_id or '(空)'}@{group_id}")
+        return
     rt = get_runtime()
-    rt.pending_comments.pop(f"{group_id}:{user_id}", None)
-    verify.cancel_session(group_id, user_id)
+    rt.pending_comments.pop(f"{self_id}:{group_id}:{user_id}", None)
+    verify.cancel_session(self_id, group_id, user_id)
     if event.sub_type != "leave":
         return
     remaining = await asyncio.to_thread(

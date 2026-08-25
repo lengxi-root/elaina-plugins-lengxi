@@ -65,11 +65,13 @@ ADMIN_REQUIRED_APIS = frozenset(
 )
 
 
-async def _is_group_admin(group_id, user_id) -> bool:
+async def _is_group_admin(group_id, user_id, self_id="") -> bool:
     if not group_id:
         return False
     try:
-        info = await get_api().get_group_member_info(group_id, user_id)
+        info = await get_api().get_group_member_info(
+            group_id, user_id, self_id=str(self_id or "") or None
+        )
     except Exception:  # noqa: BLE001
         return False
     role = (
@@ -103,7 +105,7 @@ async def call_api(args: dict, meta: dict) -> dict:
     if (
         action in ADMIN_REQUIRED_APIS
         and not is_owner
-        and not await _is_group_admin(group_id, user_id)
+        and not await _is_group_admin(group_id, user_id, meta.get("self_id"))
     ):
         return {"ok": False, "error": f"接口 {action} 需要群管理员权限"}
 
@@ -117,7 +119,11 @@ async def call_api(args: dict, meta: dict) -> dict:
         return {"ok": False, "error": "不允许跨群操作"}
 
     try:
-        result = await get_api().call_api(action, params)
+        result = await get_api().call_api(
+            action,
+            params,
+            self_id=str(meta.get("self_id") or "") or None,
+        )
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     return {"ok": True, "result": result}
@@ -912,7 +918,7 @@ async def run_tool(name: str, args: dict, meta: dict) -> dict:
             str(args.get("url") or ""), args.get("max_length") or 2000
         )
     if name == "add_scheduled_task":
-        return await run_sync(tasks.add_task, args)
+        return await tasks.add_task(args, str(meta.get("self_id") or ""))
     if name == "remove_scheduled_task":
         return await run_sync(tasks.remove_task, str(args.get("task_id") or ""))
     if name == "list_scheduled_tasks":
@@ -925,7 +931,11 @@ async def run_tool(name: str, args: dict, meta: dict) -> dict:
     if name == "run_scheduled_task_now":
         return await tasks.run_task_now(str(args.get("task_id") or ""))
     if name == "add_user_watcher":
-        return await run_sync(watchers.add_watcher, args)
+        return await run_sync(
+            watchers.add_watcher,
+            args,
+            str(meta.get("self_id") or ""),
+        )
     if name == "remove_user_watcher":
         return await run_sync(watchers.remove_watcher, str(args.get("watcher_id") or ""))
     if name == "list_user_watchers":
