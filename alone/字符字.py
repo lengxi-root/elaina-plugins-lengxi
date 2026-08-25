@@ -1,6 +1,7 @@
 """字符字: 将汉字转为字符画"""
 
 import json
+import urllib.parse
 
 from core.network.http_compat import AsyncHttpClient
 from core.plugin.decorators import handler, on_unload
@@ -9,7 +10,7 @@ __plugin_meta__ = {
     "name": "字符字",
     "author": "lengxi",
     "description": "将汉字转换为字符画",
-    "version": "1.0.0",
+    "version": "1.0.2",
 }
 
 
@@ -54,8 +55,15 @@ async def char_art(event, match):
 
     try:
         c = await _http()
+        params = urllib.parse.urlencode(
+            {
+                "data": text,
+                "type": "font2char",
+                "arg": f"s=10_b=_f={text}_t=6_d=v",
+            }
+        )
         resp = await c.get(
-            f"{_API}?data={text}&type=font2char&arg=s%3D10_b%3D_f%3D{text}_t%3D6_d%3Dv",
+            f"{_API}?{params}",
             headers=_HDR,
         )
         if resp.status_code != 200:

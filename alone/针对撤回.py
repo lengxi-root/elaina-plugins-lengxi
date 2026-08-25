@@ -17,7 +17,7 @@ __plugin_meta__ = {
     "name": "针对撤回",
     "author": "ElainaBot",
     "description": "针对指定用户自动撤回消息",
-    "version": "2.0.2",
+    "version": "2.0.4",
 }
 
 # ==================== 数据持久化 ====================
@@ -30,6 +30,7 @@ _TARGETS_FILE = os.path.join(_DATA_DIR, "targets.json")
 # 数据结构：{群号: {用户号: 到期时间戳或零}}
 # 到期时间戳为零表示永久，大于零表示具体到期时间
 _targets: dict[str, dict[str, float]] = {}
+_targets_lock = asyncio.Lock()
 
 _cleanup_task = None
 
@@ -65,6 +66,12 @@ def _save_targets(snapshot=None):
 
 
 async def _persist_targets():
+    async with _targets_lock:
+        await _persist_targets_locked()
+
+
+async def _persist_targets_locked():
+    """调用方持有 _targets_lock 时保存当前快照。"""
     snapshot = {gid: dict(users) for gid, users in _targets.items()}
     await asyncio.to_thread(_save_targets, snapshot)
 
@@ -89,8 +96,9 @@ async def _periodic_cleanup():
     while True:
         await asyncio.sleep(60)
         try:
-            if _purge_expired():
-                await _persist_targets()
+            async with _targets_lock:
+                if _purge_expired():
+                    await _persist_targets_locked()
         except Exception as e:
             log.warning(f"定期清理异常: {e}")
 
@@ -193,12 +201,12 @@ def _format_remaining(expire):
     if remain <= 0:
         return "已过期"
     if remain >= 86400:
-        return f"{remain / 86400:.1f}"
+        return f"{remain / 86400:.1f}天"
     if remain >= 3600:
-        return f"{remain / 3600:.1f}"
+        return f"{remain / 3600:.1f}小时"
     if remain >= 60:
-        return f"{remain / 60:.0f}"
-    return f"{remain:.0f}"
+        return f"{remain / 60:.0f}分钟"
+    return f"{remain:.0f}秒"
 
 
 # ==================== 拦截器: 自动撤回 ====================
@@ -213,18 +221,19 @@ async def _auto_recall(event):
     if not gid or not uid:
         return
 
-    group_targets = _targets.get(gid)
-    if not group_targets or uid not in group_targets:
-        return
+    async with _targets_lock:
+        group_targets = _targets.get(gid)
+        if not group_targets or uid not in group_targets:
+            return
 
-    # 检查是否过期
-    expire = group_targets[uid]
-    if expire and expire <= time.time():
-        del group_targets[uid]
-        if not group_targets:
-            _targets.pop(gid, None)
-        await _persist_targets()
-        return
+        # 检查是否过期；网络撤回不持有状态锁。
+        expire = group_targets[uid]
+        if expire and expire <= time.time():
+            del group_targets[uid]
+            if not group_targets:
+                _targets.pop(gid, None)
+            await _persist_targets_locked()
+            return
 
     if not _is_full_access(event):
         return
@@ -296,18 +305,12 @@ async def target_user(event, match):
     expire = 0 if duration == 0 else time.time() + duration
 
     gid = event.group_id
-    if gid not in _targets:
-        _targets[gid] = {}
-
-    added = []
-    for uid in user_ids:
-        if uid not in _targets[gid]:
-            _targets[gid][uid] = expire
-            added.append(uid)
-        else:
-            _targets[gid][uid] = expire
-            added.append(uid)
-    await _persist_targets()
+    async with _targets_lock:
+        group_targets = _targets.setdefault(gid, {})
+        for uid in user_ids:
+            group_targets[uid] = expire
+        await _persist_targets_locked()
+    added = user_ids
 
     if added:
         at_list = " ".join(f"<@{uid}>" for uid in added)
@@ -365,17 +368,18 @@ async def untarget_user(event, match):
         return
 
     gid = event.group_id
-    group_targets = _targets.get(gid, {})
+    async with _targets_lock:
+        group_targets = _targets.get(gid, {})
+        removed = []
+        for uid in user_ids:
+            if uid in group_targets:
+                del group_targets[uid]
+                removed.append(uid)
 
-    removed = []
-    for uid in user_ids:
-        if uid in group_targets:
-            del group_targets[uid]
-            removed.append(uid)
-
-    if not group_targets:
-        _targets.pop(gid, None)
-    await _persist_targets()
+        if not group_targets:
+            _targets.pop(gid, None)
+        if removed:
+            await _persist_targets_locked()
 
     if removed:
         at_list = " ".join(f"<@{uid}>" for uid in removed)
@@ -397,9 +401,10 @@ async def list_targets(event, match):
         return
 
     gid = event.group_id
-    if _purge_expired():
-        await _persist_targets()
-    group_targets = _targets.get(gid, {})
+    async with _targets_lock:
+        if _purge_expired():
+            await _persist_targets_locked()
+        group_targets = dict(_targets.get(gid, {}))
     if not group_targets:
         await event.reply("当前无针对用户")
         return

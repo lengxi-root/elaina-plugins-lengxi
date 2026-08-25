@@ -4,13 +4,13 @@ __plugin_meta__ = {
     "name": "恶臭生成器",
     "author": "lengxi",
     "description": "将数字转换为 114514 表达式（本地计算）",
-    "version": "1.0.0",
+    "version": "1.0.2",
 }
 
 
 import re
-import math
 import bisect
+from decimal import Decimal, InvalidOperation
 
 from core.plugin.decorators import handler
 
@@ -160,7 +160,9 @@ _NUMS = {
 # fmt: on
 
 _KEYS = sorted(k for k in _NUMS if isinstance(k, int) and k > 0)
-_DOT_RE = re.compile(r"\.(\d+?)0*$")
+_NUMBER_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
+_MAX_INTEGER_DIGITS = 18
+_MAX_DECIMAL_PLACES = 16
 
 
 def _get_min_div(num):
@@ -169,17 +171,10 @@ def _get_min_div(num):
 
 
 def _demolish(num):
-    if not isinstance(num, (int, float)):
+    if not isinstance(num, int):
         return ""
-    if math.isinf(num) or math.isnan(num):
-        return f"这么恶臭的{num}有必要论证吗"
     if num < 0:
         return re.sub(r"\*\(1\)", "", f"(⑨)*({_demolish(-num)})")
-    if isinstance(num, float) and not num.is_integer():
-        m = _DOT_RE.search(f"{num:.16f}")
-        n = len(m.group(1)) if m else 0
-        return f"({_demolish(round(num * 10**n))})/({10})^({n})"
-    num = int(num)
     if num in _NUMS:
         return str(num)
     div = _get_min_div(num)
@@ -208,8 +203,46 @@ def _finisher(expr):
     return expr.replace("+-", "-")
 
 
+def _parse_number(value):
+    text = str(value).strip()
+    if not _NUMBER_RE.fullmatch(text):
+        raise ValueError("invalid number")
+    try:
+        number = Decimal(text)
+    except InvalidOperation as exc:
+        raise ValueError("invalid number") from exc
+    if not number.is_finite():
+        raise ValueError("number must be finite")
+
+    if not number:
+        return Decimal(0), 0
+
+    sign, digits, exponent = number.as_tuple()
+    digits = list(digits)
+    while digits and digits[-1] == 0:
+        digits.pop()
+        exponent += 1
+    normalized = Decimal((sign, tuple(digits), exponent))
+    integer_digits = max(len(digits) + exponent, 1)
+    decimal_places = max(-exponent, 0)
+    if integer_digits > _MAX_INTEGER_DIGITS:
+        raise OverflowError("integer part is too long")
+    if decimal_places > _MAX_DECIMAL_PLACES:
+        raise OverflowError("decimal part is too long")
+    return normalized, decimal_places
+
+
 def homo(num):
-    return _finisher(_demolish(num))
+    number, decimal_places = _parse_number(num)
+    sign, digits, exponent = number.as_tuple()
+    coefficient = int("".join(map(str, digits))) if digits else 0
+    scaled = coefficient * 10 ** max(exponent, 0)
+    if sign:
+        scaled = -scaled
+    expr = _demolish(scaled)
+    if decimal_places:
+        expr = f"({expr})/(10)^({decimal_places})"
+    return _finisher(expr)
 
 
 @handler(r"^恶臭(.*)$", name="恶臭生成器", desc="将数字转化为恶臭表达式")
@@ -221,12 +254,12 @@ async def handle_homo(event, match):
             f"<@{uid}> 指令用法:<qqbot-cmd-input text='恶臭' show='恶臭+数字' />\n>例如:恶臭520"
         )
 
-    integer_part = num_str.split(".")[0] if "." in num_str else num_str
-    if len(integer_part.lstrip("-")) > 18:
-        return await event.reply(f"<@{uid}> 数字位数过大，最大支持18位整数")
-
     try:
-        num = float(num_str)
+        num, _ = _parse_number(num_str)
+    except OverflowError:
+        return await event.reply(
+            f"<@{uid}> 数字位数过大，最大支持18位整数和16位小数"
+        )
     except ValueError:
         return await event.reply(
             f"<@{uid}>\n```python\n请在恶臭后面输入有效的数字\n```"

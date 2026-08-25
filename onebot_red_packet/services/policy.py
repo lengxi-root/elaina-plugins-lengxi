@@ -11,7 +11,7 @@ DEFAULT_SETTINGS = {
     'delay_min_ms': 0,
     'delay_max_ms': 0,
     'auto_send_password': True,
-    'password_wait_ms': 500,
+    'password_wait_ms': 0,
     'grab_normal': True,
     'grab_exclusive': True,
     'grab_password': True,
@@ -70,13 +70,10 @@ def normalize_settings(raw=None):
     ):
         result[key] = bool(result[key])
 
-    result['delay_min_ms'] = _bounded_int(result['delay_min_ms'], 0, 0, 300_000)
-    result['delay_max_ms'] = _bounded_int(result['delay_max_ms'], 0, 0, 300_000)
-    if result['delay_min_ms'] > result['delay_max_ms']:
-        result['delay_min_ms'], result['delay_max_ms'] = (
-            result['delay_max_ms'], result['delay_min_ms']
-        )
-    result['password_wait_ms'] = _bounded_int(result['password_wait_ms'], 500, 0, 30_000)
+    # Grabbing is always in fast mode; persisted legacy waits cannot slow it down.
+    result['delay_min_ms'] = 0
+    result['delay_max_ms'] = 0
+    result['password_wait_ms'] = 0
     result['thanks_delay_ms'] = _bounded_int(result['thanks_delay_ms'], 0, 0, 300_000)
     result['pause_group_minutes'] = _bounded_int(result['pause_group_minutes'], 0, 0, 1440)
     result['history_limit'] = _bounded_int(result['history_limit'], 300, 20, 5000)
@@ -127,6 +124,24 @@ def in_stop_window(settings, now=None):
     return minute >= start or minute < end
 
 
+def red_packet_type_name(packet):
+    """返回用于历史记录和管理界面展示的红包类型。"""
+    try:
+        red_channel = int(packet.get('red_channel') or 0)
+    except (TypeError, ValueError):
+        red_channel = 0
+    try:
+        red_type = int(packet.get('red_packet_type', -1))
+    except (TypeError, ValueError):
+        red_type = -1
+    if red_channel == 32:
+        return '口令红包'
+    if red_type == 3 or str(packet.get('exclusive_uin') or ''):
+        return '专属红包'
+    # 能进入此插件的 wallet 事件本身就是红包；旧协议缺少类型字段时按普通红包处理。
+    return '普通红包'
+
+
 def rejection_reason(settings, packet, self_id, *, group_paused=False, now=None):
     """返回可读的跳过原因；允许领取时返回空字符串。"""
     group_id = str(packet.get('group_id') or '')
@@ -138,8 +153,8 @@ def rejection_reason(settings, packet, self_id, *, group_paused=False, now=None)
     mode = settings.get('group_mode')
     wishing = str(packet.get('wishing') or '')
     if mode == 'whitelist':
-        groups = set(settings.get('whitelist_groups') or [])
-        users = set(settings.get('whitelist_users') or [])
+        groups = settings.get('whitelist_groups') or ()
+        users = settings.get('whitelist_users') or ()
         keywords = settings.get('whitelist_keywords') or []
         if groups and group_id not in groups:
             return '群不在白名单'
@@ -148,9 +163,9 @@ def rejection_reason(settings, packet, self_id, *, group_paused=False, now=None)
         if keywords and not any(keyword in wishing for keyword in keywords):
             return '未命中白名单关键词'
     elif mode == 'blacklist':
-        if group_id in set(settings.get('blacklist_groups') or []):
+        if group_id in (settings.get('blacklist_groups') or ()):
             return '群在黑名单'
-        if sender_id in set(settings.get('blacklist_users') or []):
+        if sender_id in (settings.get('blacklist_users') or ()):
             return '用户在黑名单'
         if any(keyword in wishing for keyword in settings.get('blacklist_keywords') or []):
             return '命中黑名单关键词'
@@ -173,8 +188,10 @@ def rejection_reason(settings, packet, self_id, *, group_paused=False, now=None)
     elif red_type == 3:
         if not settings.get('grab_exclusive'):
             return '专属红包已关闭'
-        if exclusive_uin and exclusive_uin != str(self_id):
-            return '专属红包目标不是当前账号'
+        if not exclusive_uin:
+            return '无法确认专属红包接收人'
+        if exclusive_uin != str(self_id):
+            return f'专属红包接收人为 {exclusive_uin}，不是当前账号'
     elif not settings.get('grab_normal'):
         return '普通红包已关闭'
     return ''

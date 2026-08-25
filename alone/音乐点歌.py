@@ -4,10 +4,11 @@ __plugin_meta__ = {
     "name": "音乐点歌",
     "author": "lengxi",
     "description": "QQ音乐搜索与播放",
-    "version": "1.0.0",
+    "version": "1.0.2",
 }
 
 
+import time
 import urllib.parse
 from collections import OrderedDict
 
@@ -19,8 +20,9 @@ _BTN = [[{"text": "再点一首", "data": "点歌", "enter": False, "style": 1}]
 _STRIP_TBL = str.maketrans("", "", "\"'<>&*_~`[](){}\\/:")
 
 _client: AsyncHttpClient | None = None
-_cache: OrderedDict = OrderedDict()  # 用户号对应关键词和计数
+_cache: OrderedDict = OrderedDict()  # (机器人、会话、用户) 对应关键词和计数
 _CACHE_CAP = 100
+_CACHE_TTL = 10 * 60
 
 
 async def _http():
@@ -36,6 +38,7 @@ async def _cleanup():
     if _client and not _client.is_closed:
         await _client.aclose()
     _client = None
+    _cache.clear()
 
 
 async def _api(params: str):
@@ -46,12 +49,33 @@ async def _api(params: str):
     return (body or {}).get("data")
 
 
-def _cache_put(uid, val):
-    if uid in _cache:
-        _cache.move_to_end(uid)
-    _cache[uid] = val
+def _cache_key(event):
+    appid = str(getattr(event, "appid", "") or "")
+    conversation = str(
+        getattr(event, "group_openid", "")
+        or getattr(event, "group_id", "")
+        or "c2c"
+    )
+    return appid, conversation, str(event.user_id)
+
+
+def _cache_put(key, val):
+    if key in _cache:
+        _cache.move_to_end(key)
+    _cache[key] = {**val, "expires_at": time.monotonic() + _CACHE_TTL}
     if len(_cache) > _CACHE_CAP:
         _cache.popitem(last=False)
+
+
+def _cache_get(key):
+    info = _cache.get(key)
+    if not info:
+        return None
+    if info["expires_at"] <= time.monotonic():
+        del _cache[key]
+        return None
+    _cache.move_to_end(key)
+    return info
 
 
 @handler(r"^点歌(.*)$", name="点歌", desc="搜索QQ音乐")
@@ -72,7 +96,7 @@ async def search_music(event, match):
         )
 
     count = min(len(songs), 10)
-    _cache_put(uid, {"keyword": keyword, "count": count})
+    _cache_put(_cache_key(event), {"keyword": keyword, "count": count})
 
     lines = []
     for i, song in enumerate(songs[:count]):
@@ -88,11 +112,10 @@ async def search_music(event, match):
 @handler(r"^听([0-9]+)$", name="听歌", desc="播放搜索结果中的歌曲")
 async def play_music(event, match):
     uid = str(event.user_id)
-    info = _cache.get(uid)
+    key = _cache_key(event)
+    info = _cache_get(key)
     if not info:
         return
-    if uid in _cache:
-        _cache.move_to_end(uid)
 
     idx = int(match.group(1))
     if idx < 1 or idx > info["count"]:
