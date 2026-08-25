@@ -787,7 +787,7 @@ async def send_dm(group_id, self_id, text):
         _trace('dm 指令失败', level='warning', group_id=group_id, reason='内容为空或网关未连接')
         return 'failed'
     mapping = store.mappings().get(str(group_id)) or {}
-    if not mapping and not await official_in_group(group_id, self_id):
+    if not await official_in_group(group_id, self_id):
         _trace('dm 指令失败', level='warning', group_id=group_id, reason='官机不在群内')
         return 'failed'
     group_id = str(group_id)
@@ -925,7 +925,7 @@ async def intercept_api(request, call_next):
         _trace('原路发送', group_id=group_id or '-', reason='代发条件不满足')
         return await call_next()
     mapping = store.mappings().get(group_id) or {}
-    if not mapping and not await official_in_group(group_id, request.self_id):
+    if not await official_in_group(group_id, request.self_id):
         _trace('原路发送', group_id=group_id, reason='官机不在群内或成员查询失败')
         return await call_next()
 
