@@ -456,12 +456,28 @@ async def handle_red_packet(self_id, packet):
         log.warning('红包领取失败 [%s]: %s', bill_no, response_error)
         return
     if not result.get('ok'):
-        error = str(result.get('err_msg') or f'错误码{result.get("err_code")}')
+        try:
+            err_code = int(result.get('err_code') or 0)
+        except (TypeError, ValueError):
+            err_code = 0
+        error = (
+            '红包已经抢光'
+            if err_code == 2
+            else str(result.get('err_msg') or f'错误码{result.get("err_code")}')
+        )
         await _append_history(
             self_id, packet, success=False, error=error,
             delay_ms=delay_ms, elapsed_ms=elapsed_ms,
         )
-        log.info('红包未领取 [%s]: %s', bill_no, error)
+        try:
+            dispatch_ms = max(0, int(result.get('dispatch_delay_ms') or 0))
+            native_ms = max(0, int(result.get('native_elapsed_ms') or 0))
+        except (TypeError, ValueError):
+            dispatch_ms = native_ms = 0
+        log.info(
+            '红包未领取 [%s]: %s，总耗时 %dms（到原生调用 %dms，原生响应 %dms）',
+            bill_no, error, elapsed_ms, dispatch_ms, native_ms,
+        )
         return
 
     amount = float(result.get('amount') or 0)
@@ -469,7 +485,15 @@ async def handle_red_packet(self_id, packet):
         self_id, packet, success=True, amount=amount,
         delay_ms=delay_ms, elapsed_ms=elapsed_ms,
     )
-    log.info('红包领取成功 [%s] ¥%.2f，耗时 %dms', bill_no, amount, elapsed_ms)
+    try:
+        dispatch_ms = max(0, int(result.get('dispatch_delay_ms') or 0))
+        native_ms = max(0, int(result.get('native_elapsed_ms') or 0))
+    except (TypeError, ValueError):
+        dispatch_ms = native_ms = 0
+    log.info(
+        '红包领取成功 [%s] ¥%.2f，总耗时 %dms（到原生调用 %dms，原生响应 %dms）',
+        bill_no, amount, elapsed_ms, dispatch_ms, native_ms,
+    )
     if group_id and settings['pause_group_minutes']:
         _GROUP_PAUSED_UNTIL[(self_id, group_id)] = (
             time.monotonic() + settings['pause_group_minutes'] * 60
