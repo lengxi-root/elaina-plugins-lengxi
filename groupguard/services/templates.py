@@ -28,6 +28,7 @@ _formatter = string.Formatter()
 
 _LEGACY_BOT_NAME_TEXT = "授权后无需@伊蕾娜也可以处理指令"
 _DYNAMIC_BOT_NAME_TEXT = "授权后无需@{bot_name}也可以处理指令"
+_LEGACY_VERIFY_PASSED_CONTENT = "管理员已跳过用户 {target_id} 的入群验证。"
 _ALLOWED_BUTTON_MODES = {"", "join_requests", "verify_options"}
 _STRING_FIELDS = {
     "label",
@@ -438,6 +439,21 @@ def initialize_reply_templates():
             and legacy_template.get("content") == legacy_content
         ):
             legacy_template["content"] = default_content
+            changed = True
+        verify_passed_template = payload["templates"].get(
+            "verify_passed_by_admin"
+        )
+        default_verify_passed = defaults["templates"].get(
+            "verify_passed_by_admin", {}
+        )
+        if (
+            isinstance(verify_passed_template, dict)
+            and verify_passed_template.get("content")
+            == _LEGACY_VERIFY_PASSED_CONTENT
+        ):
+            verify_passed_template["content"] = default_verify_passed.get(
+                "content", _LEGACY_VERIFY_PASSED_CONTENT
+            )
             changed = True
         join_requests_template = payload["templates"].get("join_requests")
         if (

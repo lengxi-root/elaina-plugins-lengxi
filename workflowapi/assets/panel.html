@@ -250,42 +250,20 @@ function icon(t){ return ICONS[t]||''; }
 // 节点主题色：统一引用框架主题变量，不再使用各自写死的颜色
 const NODE_COLOR={trigger:'var(--ok)',api:'var(--pri)',condition:'var(--warning)',reply:'var(--accent-light)',set_var:'var(--info)',delay:'var(--mut)'};
 function nodeColor(t){ return NODE_COLOR[t]||'var(--pri)'; }
-// 同步框架主题：面板以 iframe 形式嵌入后台，读取父级（同源）已应用的主题变量并映射到本面板
-function applyFrameworkTheme(){
-  let ps=null;
-  try{ if(window.parent && window.parent!==window && window.parent.document) ps=getComputedStyle(window.parent.document.documentElement); }
-  catch(e){ ps=null; } // 跨源或独立打开时保留内置默认配色
-  if(!ps) return;
-  const g=n=>ps.getPropertyValue(n).trim();
-  const accent=g('--accent'), bg=g('--bg');
-  if(!accent && !bg) return; // 父级未提供框架主题变量
-  const r=document.documentElement.style, set=(k,v)=>{ if(v) r.setProperty(k,v); };
-  set('--bg', bg);
-  set('--card', g('--bg-float')||g('--bg2'));
-  set('--bd', g('--border'));
-  set('--tx', g('--text'));
-  set('--mut', g('--text3'));
-  set('--pri', accent);
-  set('--pri2', g('--accent-hover'));
-  set('--ok', g('--success'));
-  set('--dl', g('--danger'));
-  set('--warning', g('--warning'));
-  set('--info', g('--info'));
-  set('--accent-light', g('--accent-light'));
-  set('--code', g('--bg3')||g('--bg2'));
-  set('--canvas', g('--bg2'));
-  set('--dotc', g('--border'));
-  if(accent) set('--grad', 'linear-gradient(135deg,'+accent+','+(g('--accent-light')||accent)+')');
-}
-function initTheme(){
-  applyFrameworkTheme();
-  // 用户在后台切换主题会写入 localStorage，同源 iframe 会收到 storage 事件
-  window.addEventListener('storage', e=>{ if(!e || e.key===null || e.key==='elaina_theme') applyFrameworkTheme(); });
-  window.addEventListener('focus', applyFrameworkTheme);
-  // 兜底：iframe 可能早于父级应用主题，稍后重试
-  setTimeout(applyFrameworkTheme, 300);
-  setTimeout(applyFrameworkTheme, 1200);
-}
+(function(){
+  try{
+    const theme=window.parent!==window&&window.parent.ElainaWebPanelTheme;
+    if(theme){
+      theme.bind(document.documentElement,{variables:[],map:{
+        '--bg':'--bg','--card':['--bg-float','--bg2'],'--bd':'--border','--tx':'--text',
+        '--mut':'--text3','--pri':'--accent','--pri2':'--accent-hover','--ok':'--success',
+        '--dl':'--danger','--warning':'--warning','--info':'--info','--accent-light':'--accent-light',
+        '--code':['--bg3','--bg2'],'--canvas':'--bg2','--dotc':'--border'
+      }});
+      document.documentElement.style.setProperty('--grad','linear-gradient(135deg,var(--pri),var(--accent-light))');
+    }
+  }catch(e){}
+})();
 
 async function boot(){
   const [cfg, meta] = await Promise.all([api('/config','GET'), api('/meta','GET')]);
@@ -296,7 +274,6 @@ async function boot(){
   renderPalette();
   renderWfList();
   if(DATA.workflows.length){ selectWf(0); }
-  applyFrameworkTheme();
 }
 
 /* ================= 左侧列表 ================= */
@@ -862,7 +839,6 @@ document.getElementById('modalOv').addEventListener('mousedown',e=>{ if(e.target
 window.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!document.getElementById('modalOv').classList.contains('hide')) closeModal(); });
 document.getElementById('canvasWrap').addEventListener('scroll',renderConnections);
 document.getElementById('canvas').addEventListener('click',e=>{ if(e.target.id==='canvas'||e.target.tagName==='svg'){ if(connecting){connecting=null;document.querySelectorAll('.port.waiting').forEach(p=>p.classList.remove('waiting'));} } });
-initTheme();
 boot();
 </script>
 </body>

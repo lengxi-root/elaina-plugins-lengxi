@@ -293,18 +293,16 @@ async function clearRecords(){
     if(result.success)await load();
   }finally{setBusy(button,false,'删除已推送记录')}
 }
-function applyTheme(){
+(function(){
   try{
-    const style=getComputedStyle(window.parent.document.documentElement),root=document.documentElement.style;
-    const map={
-      '--bg':['--bg','--background'],'--card':['--bg2','--card'],'--card2':['--bg3','--bg2'],
-      '--text':['--text','--fg'],'--text2':['--text2','--text','--fg'],'--muted':['--text3','--muted'],
-      '--border':['--border','--bd'],'--border-strong':['--border2','--border','--bd']
-    };
-    Object.entries(map).forEach(([target,sources])=>{for(const source of sources){const value=style.getPropertyValue(source).trim();if(value){root.setProperty(target,value);break}}});
+    const theme=window.parent!==window&&window.parent.ElainaWebPanelTheme;
+    if(theme)theme.bind(document.documentElement,{variables:[],map:{
+      '--bg':'--bg','--card':'--bg2','--card2':['--bg3','--bg2'],'--text':'--text',
+      '--text2':['--text2','--text'],'--muted':'--text3','--border':'--border','--border-strong':'--border'
+    }});
   }catch(error){}
-}
-applyTheme();load().then(pollBroadcastStatus);
+})();
+load().then(pollBroadcastStatus);
 </script>
 </body>
 </html>

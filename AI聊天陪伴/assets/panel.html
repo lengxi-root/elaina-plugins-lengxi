@@ -26,6 +26,7 @@
 </div></main></div><div class="module-missing-overlay"><div class="module-missing-card"><h2>缺少 AI LLM 模块</h2><p id="module-missing-text"></p></div></div><div class="toast" id="toast"></div>
 <script>
 const API='/api/ext/ai-companion',$=id=>document.getElementById(id);let state={},skills=[],modelTools=[];
+(function(){try{const theme=window.parent!==window&&window.parent.ElainaWebPanelTheme;if(theme)theme.bind(document.documentElement,{map:{'--float':'--bg-float'}})}catch(_){}})();
 function ensureDirectStreamControl(){if($('direct_stream_enabled'))return;const direct=$('direct_enabled');if(!direct||!direct.parentElement)return;const label=document.createElement('label');label.className='switch';label.innerHTML='<span><b>私聊流式消息</b><small>使用 QQ 私聊流式接口发送 AI 答复</small></span><input id="direct_stream_enabled" type="checkbox">';direct.parentElement.after(label)}
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(message,error=false){const n=$('toast');n.textContent=message;n.className='toast show'+(error?' error':'');clearTimeout(toast.timer);toast.timer=setTimeout(()=>n.className='toast',2800)}

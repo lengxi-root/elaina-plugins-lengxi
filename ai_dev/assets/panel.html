@@ -6,7 +6,7 @@
 <title>AI 开发助手 · ElainaBot</title>
 <style>
 :root{
-  /* 默认回退值; 运行时由 syncTheme() 从框架主题覆盖, 实现"跟随系统主题色" */
+  /* 默认回退值; 嵌入后台时由框架公共主题 API 覆盖 */
   --bg:#f4f6fb; --bg2:#f0f1f3; --bg3:#eef1f9; --card:#ffffff; --ink:#1f2733; --ink2:#5b6675;
   --muted:#97a1b0; --line:#eef1f6; --line2:#eef1f6;
   --brand:#3b7bf7; --brand2:#2f6ae0; --brand-soft:color-mix(in srgb,var(--brand) 12%,transparent);
@@ -695,22 +695,17 @@ function render(md){
   return out;
 }
 
-/* ---- 跟随框架系统主题色 ---- */
-// 面板作为同源 iframe 嵌入框架, 读取父页 :root 的主题变量并映射到本面板,
-// 框架在 亮/暗/各主题 间切换时本面板实时跟随。独立打开时回退到默认调色板。
-const THEME_MAP={'--bg':'--bg','--bg2':'--card','--bg3':'--bg2','--text':'--ink','--text2':'--ink2','--text3':'--muted','--border':'--line','--accent':'--brand','--accent-hover':'--brand2','--success':'--green','--danger':'--red','--warning':'--amber','--info':'--blue'};
-let _themeSig='';
-function syncTheme(){
+(function(){
   try{
-    const pw=window.parent;if(!pw||pw===window)return;
-    const cs=pw.getComputedStyle(pw.document.documentElement);
-    const root=document.documentElement;let sig='';
-    for(const fw in THEME_MAP){const v=cs.getPropertyValue(fw).trim();if(v){root.style.setProperty(THEME_MAP[fw],v);sig+=v;}}
-    const b3=cs.getPropertyValue('--bg3').trim();if(b3){root.style.setProperty('--bg3',b3);}
-    const bd=cs.getPropertyValue('--border').trim();if(bd){root.style.setProperty('--line2',bd);}
-    _themeSig=sig;
-  }catch(e){/* 跨源或独立打开: 用默认调色板 */}
-}
+    const theme=window.parent!==window&&window.parent.ElainaWebPanelTheme;
+    if(theme)theme.bind(document.documentElement,{variables:[],map:{
+      '--bg':'--bg','--card':'--bg2','--bg2':'--bg3','--bg3':'--bg3',
+      '--ink':'--text','--ink2':'--text2','--muted':'--text3','--line':'--border','--line2':'--border',
+      '--brand':'--accent','--brand2':'--accent-hover','--green':'--success','--red':'--danger',
+      '--amber':'--warning','--blue':'--info'
+    }});
+  }catch(e){}
+})();
 
 /* ---- 启动 ---- */
 async function start(){
@@ -1438,7 +1433,6 @@ window.addEventListener('online',()=>{connectSSE();restoreTaskState();});
 window.addEventListener('offline',()=>{if(sending)setSendingState(true,'网络已断开，任务仍在后台');});
 
 /* ---- 初始化 ---- */
-syncTheme();setInterval(syncTheme,1200); // 登录页与面板都跟随框架主题, 并实时跟随切换
 start().catch(error=>toast(error.message||'面板加载失败'));
 </script>
 </body>

@@ -178,18 +178,10 @@
 </style>
 <script>
   (function(){
-    var VARS=['--bg','--bg2','--bg3','--bg-float','--text','--text2','--text3',
-      '--border','--accent','--accent-hover','--accent-light','--sidebar-bg',
-      '--success','--danger','--warning','--info','--radius','--radius-sm','--radius-lg'];
-    function sync(){
-      try{
-        if(!window.parent||window.parent===window)return;
-        var pcs=getComputedStyle(window.parent.document.documentElement);
-        var st=document.documentElement.style;
-        VARS.forEach(function(v){var val=pcs.getPropertyValue(v).trim();if(val)st.setProperty(v,val);});
-      }catch(e){}
-    }
-    sync(); setInterval(sync,1200);
+    try{
+      var theme=window.parent!==window&&window.parent.ElainaWebPanelTheme;
+      if(theme)theme.bind(document.documentElement,{map:{'--sidebar-bg':'--bg2','--radius-lg':'--radius'}});
+    }catch(e){}
   })();
 </script>
 </head>

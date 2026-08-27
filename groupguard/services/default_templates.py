@@ -709,7 +709,7 @@ DEFAULT_PAYLOAD["templates"]["global_forbidden_apply_changed"] = {
 DEFAULT_PAYLOAD["templates"]["verify_passed_by_admin"] = {
     "label": "管理员跳过验证",
     "category": "入群验证",
-    "content": "管理员已跳过用户 {target_id} 的入群验证。",
+    "content": "管理员已跳过 <@{target_id}> 的入群验证。",
     "buttons": None,
     "at_user": False,
     "small_buttons": False,
@@ -722,4 +722,4 @@ DEFAULT_PAYLOAD["templates"]["full_message_required"]["buttons"] = [
         "style": 1,
     }
 ]
-DEFAULT_PAYLOAD["version"] = max(int(DEFAULT_PAYLOAD.get("version", 1)), 7)
+DEFAULT_PAYLOAD["version"] = max(int(DEFAULT_PAYLOAD.get("version", 1)), 8)

@@ -1,6 +1,5 @@
 const BASE = '/api/ext/groupguard';
 const $ = id => document.getElementById(id);
-const THEME_MAP = {'--bg':'--host-bg','--bg2':'--host-bg2','--bg3':'--host-bg3','--bg-float':'--host-float','--text':'--host-text','--text2':'--host-text2','--text3':'--host-text3','--border':'--host-border','--accent':'--host-accent','--accent-hover':'--host-accent-hover','--accent-light':'--host-accent-light','--accent-soft':'--host-accent-soft','--success':'--host-success','--danger':'--host-danger','--warning':'--host-warning','--info':'--host-info'};
 const PAGE_TITLES = {overview:'概览',config:'功能设置',forbidden:'违禁词',templates:'消息模板',audit:'管理记录',developer:'开发者工具'};
 const ACTION_LABELS = {mute:'禁言',unmute:'解禁',recall:'撤回消息',speak_recall:'发言撤回',cancel_recall:'取消撤回',approve_join:'通过入群',decline_join:'拒绝入群',blacklist_join:'拒绝并拉黑',verify_pass:'通过验证',verify_failure_mute:'验证失败禁言',spam_punish:'刷屏处罚',config_change:'配置变更',forbidden_add:'添加违禁词',forbidden_delete:'删除违禁词',forbidden_clear:'清空违禁词',cache_clear:'清除缓存',template_test:'测试模板'};
 const SOURCE_LABELS = {command:'群命令',automatic:'自动监管',verification:'入群验证',web:'Web 面板'};
@@ -75,16 +74,16 @@ let templateVariablesOpen = false;
 let developerLoadedFor = '';
 const sidebarMedia = window.matchMedia('(max-width:700px)');
 
-function syncHostTheme(){
-  try{
-    if(window.parent===window)return;
-    const style=window.parent.getComputedStyle(window.parent.document.documentElement);
-    Object.entries(THEME_MAP).forEach(([source,target])=>{const value=style.getPropertyValue(source).trim();if(value)document.documentElement.style.setProperty(target,value)});
-    document.documentElement.style.colorScheme=style.colorScheme||'normal';
-  }catch(_){}
-}
-syncHostTheme();
-try{if(window.parent!==window)new MutationObserver(syncHostTheme).observe(window.parent.document.documentElement,{attributes:true,attributeFilter:['style','class']})}catch(_){}
+try{
+  const theme=window.parent!==window&&window.parent.ElainaWebPanelTheme;
+  if(theme)theme.bind(document.documentElement,{variables:[],schemeAttributes:['data-theme'],map:{
+    '--host-bg':'--bg','--host-bg2':'--bg2','--host-bg3':'--bg3','--host-float':'--bg-float',
+    '--host-text':'--text','--host-text2':'--text2','--host-text3':'--text3','--host-border':'--border',
+    '--host-accent':'--accent','--host-accent-hover':'--accent-hover','--host-accent-light':'--accent-light',
+    '--host-accent-soft':'--accent-soft','--host-success':'--success','--host-danger':'--danger',
+    '--host-warning':'--warning','--host-info':'--info'
+  }});
+}catch(_){}
 
 function esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
 function toast(message,error=false){const node=$('toast');node.textContent=message;node.className='toast show'+(error?' error':'');clearTimeout(toast.timer);toast.timer=setTimeout(()=>node.className='toast',2600)}
