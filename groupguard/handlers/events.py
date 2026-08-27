@@ -5,7 +5,7 @@ from core.plugin.decorators import handler
 from ..storage import api as db
 from ..services import state
 from ..services import verification as verify
-from ..services.permissions import get_group_member_role, is_group_admin
+from ..services.permissions import get_event_member_role, is_group_admin
 from ..services.responses import _build, api_error
 from ..services.utils import api_pair
 from ..services.verification import handle_verify_answer, send_verify
@@ -240,7 +240,7 @@ async def on_verify_skip(event, match):
     if not gid or event.group_id != gid or not target_id or not verify_id:
         event.set_callback_code(1)
         return
-    member_role = await get_group_member_role(event)
+    member_role = await get_event_member_role(event)
     if not is_group_admin(event, member_role):
         event.set_callback_code(1)
         record_received(

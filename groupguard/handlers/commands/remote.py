@@ -6,8 +6,8 @@ from ...services import remote
 from ...services.permissions import (
     check_bot_is_admin,
     check_has_full_msg,
+    get_event_member_role,
     get_bot_group_state,
-    get_group_member_role,
 )
 from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
 
@@ -33,9 +33,7 @@ _REFRESH_PERMISSION_BUTTONS = [
 )
 async def cmd_bind_groupguard(event, match):
     begin_action(event, "remote_bind")
-    role = str(getattr(event, "member_role", "") or "")
-    if role not in {"admin", "owner"}:
-        role = await get_group_member_role(event)
+    role = await get_event_member_role(event)
     if role not in {"admin", "owner"}:
         trace_phase(
             event,

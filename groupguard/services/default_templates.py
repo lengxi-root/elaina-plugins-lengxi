@@ -645,6 +645,28 @@ DEFAULT_PAYLOAD = json.loads(base64.b64decode(_DEFAULT_JSON_B64).decode("utf-8")
 
 # 审批令牌仅保留在按钮数据中，不在消息正文内公开。
 _join_requests_template = DEFAULT_PAYLOAD["templates"]["join_requests"]
+LEGACY_JOIN_REVIEW_BUTTONS = json.loads(
+    json.dumps(_join_requests_template["buttons"], ensure_ascii=False)
+)
+JOIN_REVIEW_BUTTONS = [
+    {
+        "text": "通过 {index}",
+        "data": "join_review|approve|{member_id}|{request_id}",
+        "type": 1,
+        "admin": True,
+        "style": 4,
+        "tips": "当前客户端不支持",
+    },
+    {
+        "text": "拒绝 {index}",
+        "data": "join_review|decline|{member_id}|{request_id}",
+        "type": 1,
+        "admin": True,
+        "style": 3,
+        "tips": "当前客户端不支持",
+    },
+]
+_join_requests_template["buttons"] = JOIN_REVIEW_BUTTONS
 LEGACY_JOIN_REQUEST_ITEM_CONTENT = _join_requests_template["item_content"]
 _join_request_lines = [
     line
@@ -664,7 +686,7 @@ DEFAULT_PAYLOAD["templates"]["join_request_notice"] = {
     "unknown_user_text": "未知用户",
     "empty_text": "无",
     "button_mode": "join_requests",
-    "buttons": _join_requests_template["buttons"],
+    "buttons": JOIN_REVIEW_BUTTONS,
     "small_buttons": True,
     "at_user": False,
 }
@@ -700,4 +722,4 @@ DEFAULT_PAYLOAD["templates"]["full_message_required"]["buttons"] = [
         "style": 1,
     }
 ]
-DEFAULT_PAYLOAD["version"] = max(int(DEFAULT_PAYLOAD.get("version", 1)), 6)
+DEFAULT_PAYLOAD["version"] = max(int(DEFAULT_PAYLOAD.get("version", 1)), 7)

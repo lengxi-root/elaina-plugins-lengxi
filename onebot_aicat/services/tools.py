@@ -82,6 +82,20 @@ async def _is_group_admin(group_id, user_id, self_id="") -> bool:
     return role in ("admin", "owner")
 
 
+async def _is_meta_group_admin(meta: dict) -> bool:
+    role = str(meta.get("member_role") or "").strip().lower()
+    if role in ("admin", "owner"):
+        return True
+    if role == "member":
+        return False
+    cache_key = "_group_admin_allowed"
+    if cache_key not in meta:
+        meta[cache_key] = await _is_group_admin(
+            meta.get("group_id"), meta.get("user_id"), meta.get("self_id")
+        )
+    return bool(meta[cache_key])
+
+
 def _normalize_call_args(args: dict):
     action = str(args.get("action") or "")
     params = args.get("params")
@@ -91,13 +105,12 @@ def _normalize_call_args(args: dict):
 
 
 async def call_api(args: dict, meta: dict) -> dict:
-    """执行一次 OneBot API 调用 (含权限校验)。meta: {user_id, group_id, is_owner}"""
+    """执行一次 OneBot API 调用（含权限校验）。"""
     action, params = _normalize_call_args(args)
     if not action:
         return {"ok": False, "error": "缺少 action"}
 
     is_owner = bool(meta.get("is_owner"))
-    user_id = meta.get("user_id")
     group_id = meta.get("group_id")
 
     if action in OWNER_ONLY_APIS and not is_owner:
@@ -105,7 +118,7 @@ async def call_api(args: dict, meta: dict) -> dict:
     if (
         action in ADMIN_REQUIRED_APIS
         and not is_owner
-        and not await _is_group_admin(group_id, user_id, meta.get("self_id"))
+        and not await _is_meta_group_admin(meta)
     ):
         return {"ok": False, "error": f"接口 {action} 需要群管理员权限"}
 

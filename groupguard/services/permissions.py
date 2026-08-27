@@ -52,6 +52,14 @@ async def get_group_member_role(event, member_id=None):
     return ""
 
 
+async def get_event_member_role(event):
+    """优先使用事件中的操作者角色，缺失时才读取群成员记录。"""
+    role = str(getattr(event, "member_role", "") or "").strip().lower()
+    if role in ("admin", "owner", "member"):
+        return role
+    return await get_group_member_role(event)
+
+
 _state_locks = weakref.WeakValueDictionary()
 _state_last_request = OrderedDict()
 _STATE_REQUEST_INTERVAL = 60

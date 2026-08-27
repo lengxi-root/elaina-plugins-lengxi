@@ -7,6 +7,7 @@ from . import menus, verify
 from ..storage import repository as store
 from .utils import (
     call_api,
+    get_event_member_role,
     get_member_role,
     get_target,
     is_admin_or_owner,
@@ -43,6 +44,7 @@ async def handle_command(event) -> bool:
     group_id = str(event.group_id)
     user_id = str(event.user_id)
     self_id = str(getattr(event, "self_id", "") or "")
+    member_role = get_event_member_role(event)
     conf = store.config()
 
     # ===== 帮助 =====
@@ -65,7 +67,7 @@ async def handle_command(event) -> bool:
 
     # ===== 踢出 =====
     if text.startswith("踢出"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         target = get_target(event, text[2:].strip())
@@ -85,7 +87,7 @@ async def handle_command(event) -> bool:
 
     # ===== 跳过验证 =====
     if text.startswith("跳过验证"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         target = get_target(event, text[4:].strip())
@@ -102,7 +104,7 @@ async def handle_command(event) -> bool:
 
     # ===== 禁言 =====
     if text.startswith("禁言") and not text.startswith("禁言列表"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         rest = text[2:].strip()
@@ -128,7 +130,7 @@ async def handle_command(event) -> bool:
 
     # ===== 解禁 =====
     if text.startswith("解禁"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         target = get_target(event, text[2:].strip())
@@ -144,7 +146,7 @@ async def handle_command(event) -> bool:
 
     # ===== 全体禁言/解禁 =====
     if text == "全体禁言":
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         await call_api(
@@ -153,7 +155,7 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, "已开启全体禁言")
         return True
     if text == "全体解禁":
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         await call_api(
@@ -164,7 +166,7 @@ async def handle_command(event) -> bool:
 
     # ===== 头衔 =====
     if text.startswith("授予头衔"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要群主权限")
             return True
         rest = text[4:].strip()
@@ -180,7 +182,7 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, f"已为 {target} 设置头衔：{title or '(空)'}")
         return True
     if text.startswith("清除头衔"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要群主权限")
             return True
         target = get_target(event, text[4:].strip())
@@ -196,7 +198,7 @@ async def handle_command(event) -> bool:
 
     # ===== 名片锁定 =====
     if text.startswith("锁定名片"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         target = get_target(event, text[4:].strip())
@@ -216,7 +218,7 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, f"已锁定 {target} 的名片为：{card or '(空)'}")
         return True
     if text.startswith("解锁名片"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         target = get_target(event, text[4:].strip())
@@ -242,7 +244,7 @@ async def handle_command(event) -> bool:
 
     # ===== 防撤回 =====
     if text == "开启防撤回":
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         if group_id not in conf.setdefault("antiRecallGroups", []):
@@ -251,7 +253,7 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, "已开启防撤回")
         return True
     if text == "关闭防撤回":
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         conf["antiRecallGroups"] = [
@@ -270,7 +272,7 @@ async def handle_command(event) -> bool:
 
     # ===== 回应表情 =====
     if text == "开启回应表情":
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         conf.setdefault("emojiReactGroups", {}).setdefault(group_id, [])
@@ -278,7 +280,7 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, "已开启回应表情")
         return True
     if text == "关闭回应表情":
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         conf.get("emojiReactGroups", {}).pop(group_id, None)
@@ -288,7 +290,7 @@ async def handle_command(event) -> bool:
 
     # ===== 针对 =====
     if text.startswith("针对") and text != "针对列表":
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         target = get_target(event, text[2:].strip())
@@ -303,7 +305,7 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, f"已针对 {target}，其消息将被自动撤回")
         return True
     if text.startswith("取消针对"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         target = get_target(event, text[4:].strip())
@@ -323,7 +325,7 @@ async def handle_command(event) -> bool:
         )
         return True
     if text == "清除针对":
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         _group_editable(group_id)["targetUsers"] = []
@@ -334,7 +336,9 @@ async def handle_command(event) -> bool:
     # 黑名单
     if text.startswith(("拉黑", "加黑")):
         actor_is_owner = store.is_owner(user_id)
-        if not actor_is_owner and not await is_admin_or_owner(group_id, user_id):
+        if not actor_is_owner and not await is_admin_or_owner(
+            group_id, user_id, member_role
+        ):
             await send_group_text(group_id, "需要主人或本群二级管理员权限")
             return True
         target = get_target(event, text[2:].strip())
@@ -360,7 +364,7 @@ async def handle_command(event) -> bool:
         return True
     if text.startswith(("取消拉黑", "取消加黑")):
         owner = store.is_owner(user_id)
-        if not owner and not await is_admin_or_owner(group_id, user_id):
+        if not owner and not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要主人或本群二级管理员权限")
             return True
         target = get_target(event, text[4:].strip())
@@ -379,7 +383,7 @@ async def handle_command(event) -> bool:
         return True
     if text == "黑名单列表":
         owner = store.is_owner(user_id)
-        if not owner and not await is_admin_or_owner(group_id, user_id):
+        if not owner and not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要主人或本群二级管理员权限")
             return True
         lst = (
@@ -396,7 +400,7 @@ async def handle_command(event) -> bool:
 
     # ===== 群独立黑名单 =====
     if text.startswith("群拉黑"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         target = get_target(event, text[3:].strip())
@@ -415,7 +419,7 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, f"已将 {target} 加入本群黑名单")
         return True
     if text.startswith("群取消拉黑"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         target = get_target(event, text[5:].strip())
@@ -470,7 +474,7 @@ async def handle_command(event) -> bool:
 
     # 违禁词
     if text.startswith("添加违禁词"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         word = text[5:].strip()
@@ -485,7 +489,7 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, f"已添加违禁词：{word}")
         return True
     if text.startswith("删除违禁词"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         word = text[5:].strip()
@@ -510,7 +514,7 @@ async def handle_command(event) -> bool:
 
     # 入群拒绝词
     if text.startswith("添加拒绝词"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         word = text[5:].strip()
@@ -525,7 +529,7 @@ async def handle_command(event) -> bool:
         await send_group_text(group_id, f"已添加入群拒绝关键词：{word}")
         return True
     if text.startswith("删除拒绝词"):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         word = text[5:].strip()
@@ -569,7 +573,7 @@ async def handle_command(event) -> bool:
         or text.startswith("添加模糊问答 ")
         or text.startswith("添加正则问答 ")
     ):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         if text.startswith("添加正则问答 "):
@@ -596,7 +600,7 @@ async def handle_command(event) -> bool:
         )
         return True
     if text.startswith("删除问答 "):
-        if not await is_admin_or_owner(group_id, user_id):
+        if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
         keyword = text[5:].strip()

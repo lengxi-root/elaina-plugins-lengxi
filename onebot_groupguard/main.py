@@ -307,6 +307,17 @@ async def on_group_recall(event, match):
 async def on_group_card(event, match):
     if not is_valid_qq(event.user_id):
         return
+    raw_data = getattr(event, "raw_data", None)
+    card_known = isinstance(raw_data, dict) and "card_new" in raw_data
+    current_card = raw_data.get("card_new") if card_known else None
+    if not card_known:
+        current_card = getattr(event, "card_new", None)
+        card_known = current_card is not None
+    if card_known:
+        await guard.handle_card_lock_on_message(
+            str(event.group_id), str(event.user_id), str(current_card or "")
+        )
+        return
     await guard.handle_card_lock_check(str(event.group_id), str(event.user_id))
 
 

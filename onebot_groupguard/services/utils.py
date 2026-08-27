@@ -92,11 +92,32 @@ async def is_bot_admin(group_id, bot_id) -> bool:
     return role in ("admin", "owner")
 
 
-async def is_admin_or_owner(group_id, user_id) -> bool:
+def get_event_member_role(event) -> str:
+    """优先从当前事件读取操作者角色，避免重复查询成员信息。"""
+    role = getattr(event, "member_role", "") or getattr(event, "sender_role", "")
+    sender = getattr(event, "sender", None)
+    if not role and isinstance(sender, dict):
+        role = sender.get("role", "")
+    elif not role and sender is not None:
+        role = getattr(sender, "role", "")
+    raw_data = getattr(event, "raw_data", None)
+    if not role and isinstance(raw_data, dict):
+        raw_sender = raw_data.get("sender")
+        if isinstance(raw_sender, dict):
+            role = raw_sender.get("role", "")
+    return str(role or "").strip().lower()
+
+
+async def is_admin_or_owner(group_id, user_id, member_role="") -> bool:
     from ..storage import repository as store
 
     if store.is_owner(user_id):
         return True
+    role = str(member_role or "").strip().lower()
+    if role in ("admin", "owner"):
+        return True
+    if role == "member":
+        return False
     return await is_secondary_admin(group_id, user_id)
 
 

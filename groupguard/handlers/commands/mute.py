@@ -186,20 +186,6 @@ def _parse_unmute_target(event, arg):
     return (member_id, "") if member_id else (None, "")
 
 
-def _find_muted_member(setting, member_id):
-    if not isinstance(setting, dict):
-        return None
-    for item in setting.get("members") or []:
-        if not isinstance(item, dict):
-            continue
-        item_id = str(
-            item.get("member_openid") or item.get("user_id") or item.get("id") or ""
-        ).strip()
-        if item_id == str(member_id):
-            return item
-    return None
-
-
 @handler(
     r"^/?(?:解禁|解除禁言)(?:\s*(.*?))?\s*$",
     name="解除禁言",
@@ -215,32 +201,6 @@ async def cmd_unmute_member(event, match):
     if not member_id:
         finish_action(event, "unmute", False, details={"reason": "target_required"})
         return await reply_at(event, "unmute_target_required")
-    setting, status_error = await api_pair(
-        event.sender.get_group_restrict_chat_setting(
-            event.group_id,
-            return_error=True,
-        ),
-        failure=None,
-    )
-    if not isinstance(setting, dict):
-        finish_action(
-            event,
-            "unmute",
-            False,
-            target_id=member_id,
-            details={"reason": "status_unavailable", "error": api_error(status_error)},
-        )
-        return await reply_at(
-            event,
-            "unmute_status_failed",
-            target_id=member_id,
-            error=api_error(status_error),
-        )
-    if _find_muted_member(setting, member_id) is None:
-        finish_action(
-            event, "unmute", False, target_id=member_id, details={"reason": "not_muted"}
-        )
-        return await reply_at(event, "unmute_not_muted", target_id=member_id)
     success, response = await api_pair(
         event.sender.set_group_member_mute(
             event.group_id,

@@ -32,7 +32,7 @@ __plugin_meta__ = {
     "name": "猫娘 AI (aicat)",
     "author": "冷曦",
     "description": "接入 OpenAI 兼容接口的 AI 对话助手, 支持人设/上下文/工具调用与 Web 面板配置",
-    "version": "1.3.2",
+    "version": "1.3.3",
 }
 
 log = get_logger(PLUGIN, "aicat")
@@ -54,6 +54,21 @@ _POLL_TASK_ATTR = "_aicat_poll_task"
 _POLL_STOP_ATTR = "_aicat_poll_stop"
 _SCHED_TASK_ATTR = "_aicat_sched_task"
 _SCHED_STOP_ATTR = "_aicat_sched_stop"
+
+
+def _event_member_role(event) -> str:
+    role = getattr(event, "member_role", "") or getattr(event, "sender_role", "")
+    sender = getattr(event, "sender", None)
+    if not role and isinstance(sender, dict):
+        role = sender.get("role", "")
+    elif not role and sender is not None:
+        role = getattr(sender, "role", "")
+    raw_data = getattr(event, "raw_data", None)
+    if not role and isinstance(raw_data, dict):
+        raw_sender = raw_data.get("sender")
+        if isinstance(raw_sender, dict):
+            role = raw_sender.get("role", "")
+    return str(role or "").strip().lower()
 
 
 def _start_poll():
@@ -292,6 +307,7 @@ async def _run_and_reply(
         "group_id": group_id,
         "is_owner": aiconfig.is_owner(user_id),
         "self_id": str(getattr(event, "self_id", "") or ""),
+        "member_role": _event_member_role(event),
     }
 
     try:

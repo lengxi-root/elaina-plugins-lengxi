@@ -10,7 +10,9 @@ import threading
 
 from .default_templates import (
     DEFAULT_PAYLOAD,
+    JOIN_REVIEW_BUTTONS,
     JOIN_REQUEST_ITEM_CONTENT,
+    LEGACY_JOIN_REVIEW_BUTTONS,
     LEGACY_JOIN_REQUEST_ITEM_CONTENT,
 )
 
@@ -445,6 +447,14 @@ def initialize_reply_templates():
         ):
             join_requests_template["item_content"] = JOIN_REQUEST_ITEM_CONTENT
             changed = True
+        for key in ("join_requests", "join_request_notice"):
+            join_template = payload["templates"].get(key)
+            if (
+                isinstance(join_template, dict)
+                and join_template.get("buttons") == LEGACY_JOIN_REVIEW_BUTTONS
+            ):
+                join_template["buttons"] = copy.deepcopy(JOIN_REVIEW_BUTTONS)
+                changed = True
         if changed:
             _write_file(payload)
         return copy.deepcopy(payload)

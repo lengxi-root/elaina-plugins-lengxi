@@ -30,12 +30,12 @@ JOIN_REVIEW_HANDLER_OPTIONS = dict(
 )
 
 
-def begin_action(event, action, details=None):
+def begin_action(event, action, details=None, *, source="command"):
     """在权限、存储或接口操作前开始记录指令链路。"""
     record_received(
         event,
         action,
-        source="command",
+        source=source,
         details=details
         or {
             "event_type": str(getattr(event, "event_type", "") or ""),
