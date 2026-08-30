@@ -1,8 +1,10 @@
 """Web 面板路由: 侧边栏页面 + /api/ext/aidev/* 接口 (config/models/sessions/history/chat/calls/stream/clear)。"""
 
 import asyncio
+import base64
 import contextlib
 import json
+import re
 import time
 
 from aiohttp import web
@@ -18,6 +20,15 @@ log = get_logger(PLUGIN, "ai_dev")
 
 _PREFIX = "/api/ext/aidev"
 _JOB_RETENTION_SECONDS = 3600
+_MAX_CHAT_BODY_BYTES = 24 * 1024 * 1024
+_MAX_MESSAGE_CHARS = 20_000
+_MAX_IMAGES = 8
+_MAX_IMAGE_CHARS = 4_000_000
+_MAX_TOTAL_IMAGE_CHARS = 16_000_000
+_IMAGE_DATA_RE = re.compile(
+    r"^data:image/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$",
+    re.IGNORECASE,
+)
 
 
 def _store():
@@ -87,10 +98,12 @@ async def _get_config(request: web.Request):
 async def _set_config(request: web.Request):
     """保存 AI 开发运行参数；接口与密钥始终由中央 AI LLM 管理。"""
     body = await _json(request)
+    if not isinstance(body, dict):
+        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
     updates = {}
     for k in (
         "enabled",
-        "high_risk_tools_enabled",
+        "share_tools_enabled",
         "provider_id",
         "model_preference",
         "temperature",
@@ -105,7 +118,10 @@ async def _set_config(request: web.Request):
     ):
         if k in body:
             updates[k] = body[k]
-    aiconfig.set_runtime(updates)
+    try:
+        aiconfig.set_runtime(updates)
+    except (TypeError, ValueError) as error:
+        return web.json_response({"success": False, "error": str(error)}, status=400)
     if aiconfig.enabled():
         central.register_capabilities()
     else:
@@ -120,6 +136,8 @@ async def _get_sessions(request: web.Request):
 
 async def _create_session(request: web.Request):
     body = await _json(request)
+    if not isinstance(body, dict):
+        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
     request_id = str(body.get("request_id", "") or "")[:80]
     sess = await asyncio.to_thread(
         _store().create_session, source="web", request_id=request_id
@@ -131,6 +149,8 @@ async def _create_session(request: web.Request):
 
 async def _delete_session(request: web.Request):
     body = await _json(request)
+    if not isinstance(body, dict):
+        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
     sid = str(body.get("session_id", ""))
     if _session_running(sid):
         return web.json_response(
@@ -181,20 +201,61 @@ async def _post_chat(request: web.Request):
         return web.json_response(
             {"success": False, "error": "AI 开发助手已停用"}, status=503
         )
+    if request.content_length and request.content_length > _MAX_CHAT_BODY_BYTES:
+        return web.json_response({"success": False, "error": "请求体过大"}, status=413)
     body = await _json(request)
+    if not isinstance(body, dict):
+        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
     message = str(body.get("message", "")).strip()
-    model = str(body.get("model", "") or "")
-    sid = str(body.get("session_id", "") or "")
+    if len(message) > _MAX_MESSAGE_CHARS:
+        return web.json_response(
+            {"success": False, "error": f"消息不能超过 {_MAX_MESSAGE_CHARS} 个字符"},
+            status=400,
+        )
+    model = str(body.get("model", "") or "").strip()
+    sid = str(body.get("session_id", "") or "").strip()
+    if len(model) > 256 or len(sid) > 128:
+        return web.json_response({"success": False, "error": "model 或 session_id 过长"}, status=400)
     request_id = str(body.get("request_id", "") or "")[:80]
     mode = (
         "analyze" if str(body.get("mode", "") or "") in {"analyze", "chat"} else "dev"
     )
-    raw_images = body.get("images") or []
-    images = (
-        [u for u in raw_images if isinstance(u, str) and u.startswith("data:image")][:8]
-        if isinstance(raw_images, list)
-        else []
-    )
+    raw_images = body.get("images")
+    if raw_images is None:
+        raw_images = []
+    if not isinstance(raw_images, list) or len(raw_images) > _MAX_IMAGES:
+        return web.json_response(
+            {"success": False, "error": f"最多上传 {_MAX_IMAGES} 张图片"}, status=400
+        )
+    images = []
+    total_image_chars = 0
+    for image in raw_images:
+        if not isinstance(image, str) or not _IMAGE_DATA_RE.fullmatch(image):
+            return web.json_response(
+                {"success": False, "error": "图片必须是 PNG/JPEG/WebP/GIF 的 base64 data URL"},
+                status=400,
+            )
+        if len(image) > _MAX_IMAGE_CHARS:
+            return web.json_response(
+                {"success": False, "error": "单张图片过大"}, status=413
+            )
+        try:
+            encoded = image.split(",", 1)[1]
+            decoded_size = len(base64.b64decode(encoded, validate=True))
+        except (IndexError, ValueError):
+            return web.json_response(
+                {"success": False, "error": "图片 base64 内容无效"}, status=400
+            )
+        if decoded_size > 3 * 1024 * 1024:
+            return web.json_response(
+                {"success": False, "error": "单张图片解码后不能超过 3MB"}, status=413
+            )
+        total_image_chars += len(image)
+        if total_image_chars > _MAX_TOTAL_IMAGE_CHARS:
+            return web.json_response(
+                {"success": False, "error": "图片总大小过大"}, status=413
+            )
+        images.append(image)
     if not message and not images:
         return web.json_response({"success": False, "error": "消息为空"}, status=400)
     sess = await asyncio.to_thread(_store().ensure_session, sid)
@@ -278,6 +339,8 @@ async def _get_calls(request: web.Request):
 
 async def _clear(request: web.Request):
     body = await _json(request)
+    if not isinstance(body, dict):
+        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
     sid = str(body.get("session_id", ""))
     if _session_running(sid):
         return web.json_response(
@@ -331,8 +394,9 @@ async def stop_jobs() -> None:
     jobs.clear()
 
 
-async def _json(request: web.Request) -> dict:
+async def _json(request: web.Request) -> dict | None:
     try:
-        return await request.json()
+        value = await request.json()
+        return value if isinstance(value, dict) else None
     except Exception:  # noqa: BLE001
-        return {}
+        return None

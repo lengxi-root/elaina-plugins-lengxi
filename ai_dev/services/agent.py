@@ -8,7 +8,7 @@ from . import config as aiconfig
 from . import central
 from . import tools as toolmod
 
-SYSTEM_PROMPT = """你是 ElainaBot_v2 框架内置的 AI 开发助手, 运行在框架进程内, 拥有一组工具来直接操作本框架的代码与配置。
+SYSTEM_PROMPT = """你是 ElainaBot_v2 框架内置的 AI 开发助手，负责使用当前工具完成开发、调试、配置与验证。
 
 框架要点:
 - 这是基于 QQ 官方机器人接口的异步框架 (Python, aiohttp)。
@@ -17,24 +17,22 @@ SYSTEM_PROMPT = """你是 ElainaBot_v2 框架内置的 AI 开发助手, 运行�
 - 插件用装饰器注册: 从 core.plugin.decorators 导入 handler / on_load / on_unload / interceptor。
   处理器签名为 async def fn(event, match), 用 await event.reply('文本') 回复。
   例: @handler(r'^ping$', name='ping', desc='测试') ; async def h(event, match): await event.reply('pong')
-- 修改或新建插件后, 先用 reload_plugin 热重载并检查 error 字段与 handler 数；仅在管理员启用高风险工具时，才用 test_command 实际触发指令。
+- 修改或新建插件后，先用 check_python 检查语法，再用 reload_plugin 热重载；涉及命令时用 test_command 实际触发，并检查 matched、error、timed_out 与 replies；项目已有测试时用 run_tests 验证。
 - 配置在 config/settings.yaml, 通过 get_config / set_config 读写。
 
 工作准则:
-0. 根据任务按需调用 load_plugin_skill 加载 AI 开发 Skills：插件开发、故障诊断、代码审查或安全配置。不要一次加载无关 Skill。
+0. 系统提供 load_plugin_skill 时，根据任务按需加载插件开发、故障诊断或代码审查 Skill；工具不存在时继续使用当前工具，不要假设调用成功。
 1. 动手前可先用 list_dir / read_file / list_plugins 了解现状, 参考已有插件 (如 alone/示例插件.py) 的写法;
    编写或修改插件前, 先用 search_code 查找框架内现有同类实现和开发文档；找不到文档时必须以实际框架 API 与现有插件为准，不得假设文件存在。
-2. 新建插件用 write_file 写完整文件; 修改已存在的文件 (尤其大插件) 优先用 edit_file 做局部精确替换 (old_string 需逐字符精确且唯一, 带上前后若干行作锚点), 避免整文件重写或误改其它代码; 改完务必 reload_plugin 自测 (若 error 非空则读取报错并修复后重试)。test_command 可能触发真实网络请求或定时任务，仅在管理员已启用高风险工具时使用。
-3. 操作要谨慎, 不要删除或破坏用户已有的插件与核心代码 (core/ web/ 等), 除非用户明确要求。
-4. 锁定目标: 只操作用户本次消息明确指定的插件/文件, 以用户最新一条消息为准。动手前先用 list_plugins 核对,
-   目标目录名必须与用户所述一致; 找不到或存在多个相似名字时, 停下来向用户确认, 严禁凭猜测或依据历史对话去改动其它插件。
-5. 测试克制: 只验证与本次改动直接相关的指令; reload_plugin 无 error，且在高风险工具启用时 test_command 通过一次，即视为通过,
+2. 新建插件用 write_file 写完整文件；修改已存在的文件优先用 edit_file 做局部精确替换。改完依次执行 check_python、reload_plugin，并在涉及命令时执行 test_command。
+3. 按用户最新需求锁定目标插件或文件；找不到目标时如实说明，并根据工具返回继续排查。
+4. 测试克制：只验证与本次改动直接相关的指令；reload_plugin 必须 loaded=true 且 error 为空，test_command 必须 matched=true、timed_out=false 且 error 为空，
    不要反复测试同一功能, 更不要去调试本次未改动且原本正常的功能。达成用户目标后立即结束, 不要自行扩大范围。
-6. 用中文简洁回复, 最终说明你做了什么、文件路径、以及测试结果。
+5. 用中文简洁回复, 最终说明你做了什么、文件路径、以及测试结果。
    开发执行模式下，用户要求创建或修改时必须实际调用工具完成操作；不得只粘贴代码、教程或计划，
    也不得在没有真实工具结果时声称“已创建”“已修改”“已加载”或“已测试”。除非用户明确要求展示源码，
    最终回复只总结实际改动与验证结果，不要重复粘贴整份文件。
-7. 任何关于插件列表、文件内容、配置值、系统状态、资源占用、日志、加载错误或执行结果的陈述，
+6. 任何关于插件列表、文件内容、配置值、系统状态、资源占用、日志、加载错误或执行结果的陈述，
    都必须来自本轮真实工具返回。没有调用相应工具时必须明确说明未检查，禁止声称“已调用”、禁止补写或猜测结果。
 """
 
@@ -97,6 +95,30 @@ def _build_messages(history: list, user_content, model_prompt: str) -> list:
     return messages
 
 
+def _storage_content(content):
+    """历史记录只保留图片占位符，避免把 base64 图片重复写入数据库。"""
+    if not isinstance(content, list):
+        return content
+    result = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "image_url":
+            result.append({"type": "text", "text": "[图片已上传]"})
+        else:
+            result.append(part)
+    return result
+
+
+def _storage_messages(messages: list) -> list:
+    return [
+        {**message, "content": _storage_content(message.get("content"))}
+        if isinstance(message, dict)
+        else message
+        for message in messages
+    ]
+
+
 def _required_evidence_tools(user_text: str) -> list[str]:
     """返回处理常见检查请求前必须执行的工具。"""
     text = str(user_text or "").strip().casefold()
@@ -151,15 +173,29 @@ _EXPLANATION_ONLY_WORDS = (
 
 
 def _successful_tool_event(event: dict) -> bool:
+    """按具体工具的返回语义判断成功。"""
     result = event.get("result")
     if not isinstance(result, dict):
         return result is not None
-    return not result.get("error") and result.get("ok") is not False
+    if result.get("error") or result.get("ok") is False or result.get("success") is False:
+        return False
+    name = str(event.get("name") or "")
+    if name == "test_command":
+        return result.get("matched") is True and not result.get("timed_out")
+    if name == "reload_plugin":
+        return result.get("loaded") is True
+    if name == "check_python":
+        return result.get("ok") is True
+    if name == "delete_file":
+        return result.get("deleted") is True
+    if name == "set_config":
+        return result.get("saved") is True
+    if name == "send_qq_message":
+        return result.get("sent") is True
+    return True
 
 
-def _execution_validator(
-    user_text: str, analysis_mode: bool, allow_high_risk: bool = False
-):
+def _execution_validator(user_text: str, analysis_mode: bool):
     """开发请求必须产生实际变更，不能仅以文字说明作为完成结果。"""
     text = str(user_text or "").strip().casefold()
     if analysis_mode or any(word in text for word in _EXPLANATION_ONLY_WORDS):
@@ -204,13 +240,7 @@ def _execution_validator(
 
     def validate(_final_text: str, events: list[dict]) -> str | None:
         completed_events = [
-            event
-            for event in events
-            if _successful_tool_event(event)
-            or (
-                event.get("name") == "test_command"
-                and isinstance(event.get("result"), dict)
-            )
+            event for event in events if _successful_tool_event(event)
         ]
         completed = {str(event.get("name") or "") for event in completed_events}
         for label, names in base_groups:
@@ -235,7 +265,7 @@ def _execution_validator(
         if plugin_code_change and "reload_plugin" not in completed:
             return "本任务尚未完成真实执行：下一步需要热重载目标插件。"
         command_change = plugin_code_change and ("命令" in text or "指令" in text)
-        if allow_high_risk and command_change and "test_command" not in completed:
+        if command_change and "test_command" not in completed:
             return "本任务尚未完成真实执行：下一步需要真实触发目标命令。"
 
         if plugin_code_change:
@@ -247,7 +277,7 @@ def _execution_validator(
                 ("check_python", "写入后语法检查"),
                 ("reload_plugin", "语法检查后热重载"),
             ]
-            if allow_high_risk and command_change:
+            if command_change:
                 ordered.append(("test_command", "热重载后真实命令测试"))
             previous = last_write
             for tool_name, label in ordered:
@@ -298,7 +328,14 @@ async def run_agent(
         "user",
         {
             "content": user_text,
-            "images": images,
+            "images": [
+                {
+                    "index": index,
+                    "chars": len(url),
+                    "mime": url[5:].split(";", 1)[0],
+                }
+                for index, url in enumerate(images)
+            ],
             "model": selected_model,
             "provider_id": provider_id,
         },
@@ -343,22 +380,20 @@ async def run_agent(
 
     try:
         required_tools = _required_evidence_tools(user_text)
-        schemas = toolmod.schemas_for_mode(
-            "analyze" if analysis_mode else "dev",
-            allow_high_risk=aiconfig.high_risk_tools_enabled(),
-        )
+        schemas = toolmod.schemas_for_mode("analyze" if analysis_mode else "dev")
         request = service.complete if analysis_mode else service.run_agent
         completion_validator = _execution_validator(
             user_text,
             analysis_mode,
-            aiconfig.high_risk_tools_enabled(),
         )
         response = await request(
             messages,
             system_prompt=(
                 aiconfig.analysis_system_prompt()
                 if analysis_mode
-                else (aiconfig.system_prompt() or SYSTEM_PROMPT)
+                else aiconfig.compose_system_prompt(
+                    SYSTEM_PROMPT, aiconfig.system_prompt()
+                )
             ),
             provider_id=provider_id,
             model=selected_model,
@@ -386,7 +421,9 @@ async def run_agent(
             session_id,
         )
         await asyncio.to_thread(
-            store.set_messages, session_id, _compact_history(messages)
+            store.set_messages,
+            session_id,
+            _compact_history(_storage_messages(messages)),
         )
         return {"ok": False, "message": str(error), "iterations": tool_count}
 
@@ -403,7 +440,11 @@ async def run_agent(
         session_id,
     )
     messages.append({"role": "assistant", "content": final_text})
-    await asyncio.to_thread(store.set_messages, session_id, _compact_history(messages))
+    await asyncio.to_thread(
+        store.set_messages,
+        session_id,
+        _compact_history(_storage_messages(messages)),
+    )
     return {
         "ok": True,
         "message": final_text,

@@ -89,7 +89,12 @@ def _register_on(service) -> list[dict]:
     global _registered_service
     if service is None or not hasattr(service, "register_plugin_capability"):
         return []
+    from . import config as aiconfig
     from . import tools as toolmod
+
+    # 重新注册时先让旧工具离线，避免关闭共享后旧 handler 仍可被其它插件发现。
+    if hasattr(service, "unregister_plugin_capabilities"):
+        service.unregister_plugin_capabilities("ai_dev")
 
     definitions = [
         (
@@ -100,7 +105,7 @@ def _register_on(service) -> list[dict]:
                 "description": "AI 开发插件注入的 ElainaBot 插件分析、修改与验证工作流。",
                 "content": (
                     "先读取目标插件和框架接口，再做局部修改。保留用户已有改动；修改后执行语法检查、"
-                    "相关测试与差异检查。不得输出密钥、Token、服务器 IP 或其他敏感配置。"
+                    "相关测试与差异检查。"
                 ),
             },
         ),
@@ -112,8 +117,7 @@ def _register_on(service) -> list[dict]:
                 "description": "定位插件加载、命令匹配、配置、异步任务与接口调用问题。",
                 "content": (
                     "先复现并收集证据：检查插件加载状态、错误、处理器注册、相关配置和调用日志。"
-                    "使用 search_code 定位定义与调用方，缩小到最小故障链路。未经用户要求不要直接修改；"
-                    "需要修复时仅改根因，保留现有行为，并明确说明仍无法验证的风险。"
+                    "使用 search_code 定位定义与调用方，缩小到最小故障链路；需要修复时直接完成修改并验证。"
                 ),
             },
         ),
@@ -131,53 +135,42 @@ def _register_on(service) -> list[dict]:
             },
         ),
         (
-            "skill",
-            {
-                "id": "elaina-secure-config",
-                "name": "Elaina 安全配置",
-                "description": "处理密钥、网络访问、Web 路由、文件边界和敏感信息脱敏。",
-                "content": (
-                    "密钥、Token、Cookie、Authorization、服务器 IP 和内部地址不得出现在模型回复或日志明文中。"
-                    "Web 路由默认沿用框架 Cookie 鉴权；文件操作必须限制在仓库；网络工具禁止访问回环、"
-                    "内网、链路本地与云元数据地址，并限制重定向。修改配置时保持旧字段兼容。"
-                ),
-            },
-        ),
-        (
             "agent",
             {
                 "id": "plugin-reviewer",
                 "name": "插件审查 Agent",
-                "description": "独立审查插件改动、兼容性、安全边界与测试缺口。",
+                "description": "独立审查插件改动、兼容性、框架 API 与测试缺口。",
                 "content": (
-                    "你是 ElainaBot 插件审查子代理。优先找行为回归、安全问题、框架 API 误用和缺失测试；"
-                    "只给出可验证、可执行的结论，不泄露运行环境敏感信息。"
+                    "你是 ElainaBot 插件审查子代理。优先找行为回归、框架 API 误用和缺失测试；"
+                    "只给出可验证、可执行的结论。"
                 ),
             },
         ),
     ]
-    for schema in toolmod.TOOLS_SCHEMA:
-        function = schema.get("function", {})
-        tool_id = str(function.get("name") or "").strip()
-        if not tool_id:
-            continue
-        definitions.append(
-            (
-                "tool",
-                {
-                    "id": tool_id,
-                    "name": tool_id,
-                    "description": str(function.get("description") or ""),
-                    "config": {
-                        "schema": function.get("parameters")
-                        or {
-                            "type": "object",
-                            "properties": {},
-                        }
+    if aiconfig.share_tools_enabled():
+        for schema in toolmod.TOOLS_SCHEMA:
+            function = schema.get("function", {})
+            tool_id = str(function.get("name") or "").strip()
+            if not tool_id:
+                continue
+            definitions.append(
+                (
+                    "tool",
+                    {
+                        "id": tool_id,
+                        "name": tool_id,
+                        "description": str(function.get("description") or ""),
+                        "config": {
+                            "schema": function.get("parameters")
+                            or {
+                                "type": "object",
+                                "properties": {},
+                            }
+                        },
+                        "shared": True,
                     },
-                },
+                )
             )
-        )
     result = []
     for kind, value in definitions:
         value.setdefault("shared", False)

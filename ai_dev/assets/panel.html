@@ -194,6 +194,9 @@ input,textarea,select{font-family:inherit}
   font-size:12.5px;font-weight:600;color:var(--ink2);padding:0 28px 0 10px;cursor:pointer;outline:none;
   appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a8a99' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");background-repeat:no-repeat;background-position:right 8px center}
 .composer .chat-mode:focus{border-color:var(--brand)}
+.composer .composer-model{flex:0 1 210px;min-width:96px;height:36px;padding:0 8px;gap:6px;border-radius:9px}
+.composer .composer-model span{display:flex;flex:0 0 auto}
+.composer .composer-model select{width:100%;min-width:0;max-width:none;overflow:hidden;text-overflow:ellipsis}
 .send{width:40px;height:40px;border-radius:11px;flex:0 0 40px;margin-left:auto;background:linear-gradient(135deg,var(--brand),var(--brand2));
   color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;transition:.2s;box-shadow:0 6px 14px color-mix(in srgb,var(--brand) 35%,transparent)}
 .send:hover{transform:translateY(-1px)}
@@ -375,12 +378,15 @@ input,textarea,select{font-family:inherit}
   .composer .box{border-radius:13px;padding:5px}
   .composer textarea{font-size:16px;min-height:54px;max-height:132px;padding:10px 10px 7px}
   .composer-bar{min-height:38px}
+  .composer-tools{flex:1}
+  .composer .composer-model{flex:1 1 150px}
   .composer .hint{display:none}
 }
 @media(max-width:480px){
-  .model-pick:not(.site-pick){display:none}
-  .composer-state{font-size:11px;padding:0 2px}
-  .composer .chat-mode{max-width:116px}
+  .composer-state{display:none}
+  .composer .chat-mode{max-width:112px}
+  .composer .composer-model{min-width:84px;padding:0 6px}
+  .composer .composer-model span{display:none}
   .bubble .imgs img{max-width:120px;max-height:120px}
 }
 .module-missing #app{filter:grayscale(1);opacity:.48;pointer-events:none;user-select:none}
@@ -404,10 +410,6 @@ body.module-missing .module-missing-overlay{display:grid}
     <div class="model-pick site-pick" title="选择中央 AI 接口">
       <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20a15.3 15.3 0 0 1 0-20z"/><circle cx="12" cy="12" r="10"/></svg></span>
       <select id="siteSel" title="选择中央 AI 接口"><option value="">自动接口</option></select>
-    </div>
-    <div class="model-pick" title="选择模型">
-      <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></span>
-      <select id="modelSel"></select>
     </div>
     <div class="status"><span class="dot" id="connDot"></span><span id="connTxt">连接中…</span></div>
     <button class="icon-btn menu-btn menu-act" id="menuActivity" title="实时调用"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="18" y2="18"/></svg></button>
@@ -445,6 +447,10 @@ body.module-missing .module-missing-overlay{display:grid}
                 <option value="dev">开发执行</option>
                 <option value="analyze">只读分析</option>
               </select>
+              <div class="model-pick composer-model" title="选择模型">
+                <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></span>
+                <select id="modelSel" aria-label="选择模型"></select>
+              </div>
             </div>
             <span class="composer-state" id="composerState">准备就绪</span>
             <button class="send" id="sendBtn" title="发送"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
@@ -476,11 +482,11 @@ body.module-missing .module-missing-overlay{display:grid}
 
 <div class="modal" id="capabilityModal">
   <div class="modal-card" style="width:520px">
-    <h2>AI 开发安全与中央能力</h2>
-    <div class="sub">控制插件运行状态、高风险本地操作，以及可调用的中央能力。</div>
+    <h2>AI 开发与中央能力</h2>
+    <div class="sub">控制插件运行状态、中央扩展能力，以及是否向其他插件共享开发工具。</div>
     <div class="set-row">
       <label class="switch-row"><input type="checkbox" id="capabilityEnabled"><span class="sw"></span><span class="sw-text"><b>启用 AI 开发助手</b><small>关闭后拒绝 QQ、Web 对话和中央能力调用。</small></span></label>
-      <label class="switch-row"><input type="checkbox" id="capabilityHighRisk"><span class="sw"></span><span class="sw-text"><b>启用高风险工具</b><small>允许删除单个文件、真实触发处理器和主动发送 QQ 消息。</small></span></label>
+      <label class="switch-row"><input type="checkbox" id="capabilityShareTools"><span class="sw"></span><span class="sw-text"><b>允许其他插件调用开发工具</b><small>默认关闭；开启后中央 AI 能力目录会向已授权插件暴露 AI 开发工具。</small></span></label>
       <label class="switch-row"><input type="checkbox" id="centralSkills"><span class="sw"></span><span class="sw-text"><b>Skills</b><small>允许读取中央 Skill 与 AI 开发注入的开发规范。</small></span></label>
       <label class="switch-row"><input type="checkbox" id="centralMcp"><span class="sw"></span><span class="sw-text"><b>MCP</b><small>允许调用中央 MCP 与已授权的插件 MCP 服务。</small></span></label>
       <label class="switch-row"><input type="checkbox" id="centralAgent"><span class="sw"></span><span class="sw-text"><b>Agent</b><small>允许委派中央子代理与已授权的插件 Agent。</small></span></label>
@@ -500,8 +506,6 @@ body.module-missing .module-missing-overlay{display:grid}
       <div class="set-col">
         <label class="switch-row"><input type="checkbox" id="setEnabled"><span class="sw"></span>
           <span class="sw-text"><b>启用 AI 开发助手</b><small>关闭后拒绝 QQ、Web 和中央能力调用。</small></span></label>
-        <label class="switch-row"><input type="checkbox" id="setHighRiskTools"><span class="sw"></span>
-          <span class="sw-text"><b>启用高风险工具</b><small>允许删除单个文件、真实触发处理器和主动发送 QQ 消息。</small></span></label>
         <label class="switch-row"><input type="checkbox" id="setAutoSwitch"><span class="sw"></span>
           <span class="sw-text"><b>自动切换模型（故障转移）</b><small>调用失败（5xx/429/超时等）时，按下方优先级自动切换到下一个已启用的模型重试。</small></span></label>
         <label class="switch-row"><input type="checkbox" id="setHealthCheck"><span class="sw"></span>
@@ -753,7 +757,6 @@ function openSettings(){
   $('#setReasoning').value=CFG.reasoning_effort||'';
   $('#setMaxIter').value=(CFG.max_iterations!=null?CFG.max_iterations:50);
   $('#setEnabled').checked=CFG.enabled!==false;
-  $('#setHighRiskTools').checked=CFG.high_risk_tools_enabled===true;
   $('#setAutoSwitch').checked=!!CFG.auto_switch;
   $('#setHealthCheck').checked=!!CFG.health_check;
   $('#setChatPrompt').value=CFG.chat_system_prompt||'';
@@ -895,7 +898,7 @@ async function saveSettings(){
   const re=$('#setReasoning').value, miRaw=$('#setMaxIter').value.trim();
   const btn=$('#setSave');btn.disabled=true;btn.textContent='保存中…';setErr('');
   try{
-    const payload={enabled:$('#setEnabled').checked,high_risk_tools_enabled:$('#setHighRiskTools').checked,reasoning_effort:re,auto_switch:$('#setAutoSwitch').checked,health_check:$('#setHealthCheck').checked,
+    const payload={enabled:$('#setEnabled').checked,reasoning_effort:re,auto_switch:$('#setAutoSwitch').checked,health_check:$('#setHealthCheck').checked,
       chat_system_prompt:$('#setChatPrompt').value};
     if(miRaw!==''){const mi=parseInt(miRaw,10);if(isNaN(mi)||mi<1){setErr('工具调用上限需为 ≥1 的整数');btn.disabled=false;btn.textContent='保存并应用';return;}payload.max_iterations=mi;}
     const d=await (await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify(payload)})).json();
@@ -919,10 +922,10 @@ async function saveSettings(){
   btn.disabled=false;btn.textContent='保存并应用';
 }
 }
-$('#settingsBtn').title='AI 开发安全与中央能力';
+$('#settingsBtn').title='AI 开发与中央能力';
 $('#settingsBtn').addEventListener('click',()=>{
   $('#capabilityEnabled').checked=CFG.enabled!==false;
-  $('#capabilityHighRisk').checked=CFG.high_risk_tools_enabled===true;
+  $('#capabilityShareTools').checked=CFG.share_tools_enabled===true;
   $('#centralSkills').checked=CFG.central_skills_enabled!==false;
   $('#centralMcp').checked=CFG.central_mcp_enabled!==false;
   $('#centralAgent').checked=CFG.central_agent_enabled!==false;
@@ -934,7 +937,7 @@ $('#capabilityModal').addEventListener('click',e=>{if(e.target.id==='capabilityM
 $('#capabilitySave').addEventListener('click',async()=>{
   const button=$('#capabilitySave');button.disabled=true;$('#capabilityErr').textContent='';
   try{
-    const response=await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify({enabled:$('#capabilityEnabled').checked,high_risk_tools_enabled:$('#capabilityHighRisk').checked,central_skills_enabled:$('#centralSkills').checked,central_mcp_enabled:$('#centralMcp').checked,central_agent_enabled:$('#centralAgent').checked})});
+    const response=await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify({enabled:$('#capabilityEnabled').checked,share_tools_enabled:$('#capabilityShareTools').checked,central_skills_enabled:$('#centralSkills').checked,central_mcp_enabled:$('#centralMcp').checked,central_agent_enabled:$('#centralAgent').checked})});
     const data=await response.json();if(!data.success)throw new Error(data.error||'保存失败');
     CFG=data.config||CFG;$('#capabilityModal').classList.remove('show');toast('中央能力设置已保存');
   }catch(error){$('#capabilityErr').textContent=error.message;}finally{button.disabled=false;}
@@ -1215,8 +1218,9 @@ function renderWelcome(){
 
 /* ---- 消息 ---- */
 function imgsHtml(images){
-  if(!images||!images.length)return '';
-  return `<div class="imgs">${images.map(u=>`<img src="${esc(u)}" onclick="window.open(this.src)">`).join('')}</div>`;
+  const safe=(images||[]).filter(u=>typeof u==='string'&&/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(u));
+  if(!safe.length)return '';
+  return `<div class="imgs">${safe.map(u=>`<img src="${esc(u)}" onclick="window.open(this.src)">`).join('')}</div>`;
 }
 function addMsg(role,content,anim,images){
   const box=RENDER_TARGET||$('#messages');
@@ -1288,17 +1292,29 @@ $('#sendBtn').addEventListener('click',send);
 /* ---- 图片附件 (多模态): 点击/粘贴/拖拽, base64 data URL ---- */
 let pendingImages=[];
 const MAX_IMAGES=8;
+const MAX_IMAGE_BYTES=3*1024*1024;
+const MAX_TOTAL_IMAGE_CHARS=16000000;
+const ALLOWED_IMAGE_TYPES=new Set(['image/png','image/jpeg','image/webp','image/gif']);
 function renderThumbs(){
   const wrap=$('#thumbs');
   wrap.innerHTML=pendingImages.map((u,i)=>`<div class="thumb"><img src="${esc(u)}"><span class="rm" data-i="${i}" title="移除">×</span></div>`).join('');
   wrap.querySelectorAll('.rm').forEach(b=>b.addEventListener('click',()=>{pendingImages.splice(+b.dataset.i,1);renderThumbs();}));
 }
 function addFiles(files){
-  const imgs=[...files].filter(f=>f.type.startsWith('image/'));
+  const imgs=[...files].filter(f=>{
+    if(!ALLOWED_IMAGE_TYPES.has(f.type)){toast('仅支持 PNG、JPEG、WebP、GIF 图片');return false;}
+    if(f.size>MAX_IMAGE_BYTES){toast('单张图片不能超过 3 MB');return false;}
+    return true;
+  });
   imgs.forEach(f=>{
     if(pendingImages.length>=MAX_IMAGES)return;
     const reader=new FileReader();
-    reader.onload=()=>{if(pendingImages.length<MAX_IMAGES){pendingImages.push(reader.result);renderThumbs();}};
+    reader.onload=()=>{
+      const value=String(reader.result||'');
+      const total=pendingImages.reduce((sum,item)=>sum+String(item).length,0);
+      if(pendingImages.length<MAX_IMAGES&&total+value.length<=MAX_TOTAL_IMAGE_CHARS){pendingImages.push(value);renderThumbs();}
+      else if(total+value.length>MAX_TOTAL_IMAGE_CHARS)toast('图片总大小超过限制');
+    };
     reader.readAsDataURL(f);
   });
 }

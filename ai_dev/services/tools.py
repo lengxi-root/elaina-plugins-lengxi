@@ -7,18 +7,28 @@ import json
 import os
 import platform
 import re
+import subprocess
 import time
 
 from core.base.config import cfg
 
-# 框架根目录: 从当前服务模块位置向上定位。
-# AI 开发工具的路径语义始终相对实际框架根，而不是外层聚合仓库。
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+def _locate_root() -> str:
+    """安装态定位框架根，源码态回退到当前插件仓库根。"""
+    services_dir = os.path.dirname(os.path.abspath(__file__))
+    plugin_dir = os.path.dirname(services_dir)
+    container = os.path.dirname(plugin_dir)
+    if os.path.basename(container).casefold() == "plugins":
+        return os.path.realpath(os.path.dirname(container))
+    return os.path.realpath(container)
+
+
+ROOT = _locate_root()
 
 _MAX_READ_BYTES = 200_000
 _MAX_WRITE_BYTES = 1_000_000
 _CONFIG_FILES = ("settings", "bot")
-_HIGH_RISK_TOOL_NAMES = {"delete_file", "test_command", "send_qq_message"}
+_MAX_CONFIG_VALUE_BYTES = 100_000
+_CONFIG_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$")
 _SENSITIVE_CONFIG_KEY = re.compile(
     r"(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie|secret|password|passwd|app[_-]?secret)",
     re.IGNORECASE,
@@ -58,6 +68,25 @@ def _safe_path(rel: str) -> str:
 
 def _rel(abs_path: str) -> str:
     return os.path.relpath(abs_path, ROOT).replace(os.sep, "/")
+
+
+_SENSITIVE_PATH_NAMES = {
+    "settings.yaml",
+    "settings.yml",
+    "bot.yaml",
+    "bot.yml",
+    "credentials.json",
+    "secrets.json",
+}
+
+
+def _is_sensitive_path(abs_path: str) -> bool:
+    """判断文件是否可能包含凭据，避免 read/search 直接回传原文。"""
+    relative = _rel(abs_path).replace("\\", "/").casefold()
+    name = os.path.basename(relative)
+    if name.startswith(".env") or name in _SENSITIVE_PATH_NAMES:
+        return True
+    return bool(set(relative.split("/")) & {"secrets", "credentials"})
 
 
 def _read_text(path: str, limit: int | None = None) -> tuple[int, str]:
@@ -141,6 +170,8 @@ async def _t_read_file(path: str) -> dict:
     target = _safe_path(path)
     if not os.path.isfile(target):
         raise ValueError(f"文件不存在: {path}")
+    if _is_sensitive_path(target):
+        raise ValueError("该文件可能包含凭据或密钥，请使用 get_config 获取脱敏配置")
     size, content = await asyncio.to_thread(_read_text, target, _MAX_READ_BYTES)
     truncated = size > _MAX_READ_BYTES
     return {
@@ -237,6 +268,9 @@ async def _t_reload_plugin(name: str) -> dict:
         raise ValueError("插件管理器不可用")
     if not name:
         raise ValueError("缺少插件名 name")
+    name = str(name).strip()
+    if os.path.basename(name) != name or name in {".", ".."} or ".." in name:
+        raise ValueError("插件名只能是单层目录名")
     await pm.reload(name)
     info = pm.plugins.get(name)
     if not info:
@@ -344,7 +378,10 @@ async def _t_test_command(
 
     if not match:
         return {
+            "success": False,
             "matched": False,
+            "timed_out": False,
+            "error": "",
             "message": "没有处理器匹配该指令 (检查正则/场景/权限)",
             "replies": [],
         }
@@ -370,7 +407,9 @@ async def _t_test_command(
 
         error = f"{type(e).__name__}: {e}"
         tb = traceback.format_exc()[-3000:]
+    success = not timed_out and not error
     return {
+        "success": success,
         "matched": True,
         "handler": h["name"],
         "plugin": h.get("_plugin", ""),
@@ -405,6 +444,8 @@ def _search_code(
             item for item in dirs if item not in {".git", "__pycache__", "node_modules"}
         ]
         for name in files:
+            if _is_sensitive_path(os.path.join(root, name)):
+                continue
             rel = _rel(os.path.join(root, name))
             if not fnmatch.fnmatch(name, pattern or "*") and not fnmatch.fnmatch(
                 rel, pattern or "*"
@@ -480,9 +521,21 @@ async def _t_get_config(file: str = "settings") -> dict:
 async def _t_set_config(file: str, key: str, value) -> dict:
     if file not in _CONFIG_FILES:
         raise ValueError(f"file 仅支持 {' 或 '.join(_CONFIG_FILES)}")
+    key = str(key or "").strip()
     if not key:
         raise ValueError("缺少 key (点号路径, 如 web.framework_name)")
-    cfg.set_value(file, key, value)
+    if len(key) > 256 or not _CONFIG_KEY_PATTERN.fullmatch(key):
+        raise ValueError("key 必须是合法的点号路径，且长度不能超过 256")
+    try:
+        serialized = json.dumps(value, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise ValueError("value 必须是可序列化的 JSON 值") from error
+    if len(serialized.encode("utf-8")) > _MAX_CONFIG_VALUE_BYTES:
+        raise ValueError("配置值过大")
+    await asyncio.to_thread(cfg.set_value, file, key, value)
+    actual = cfg.get(file, key, object())
+    if actual != value:
+        raise RuntimeError("配置写入后校验失败")
     return {
         "file": file,
         "key": key,
@@ -526,13 +579,91 @@ async def _t_system_info() -> dict:
     return info
 
 
-async def _t_send_qq_message(target_type: str, target_id, text: str) -> dict:
+def _git_command(args: list[str]) -> dict:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {"ok": False, "error": f"git 执行失败: {error}"}
+    output = (completed.stdout or "") + (completed.stderr or "")
+    return {"ok": completed.returncode == 0, "returncode": completed.returncode, "output": output[:100_000]}
+
+
+async def _t_git_status() -> dict:
+    return await asyncio.to_thread(_git_command, ["status", "--short"])
+
+
+async def _t_git_diff(path: str = "") -> dict:
+    args = ["diff", "--"]
+    if path:
+        _safe_path(path)
+        args.append(_rel(_safe_path(path)))
+    return await asyncio.to_thread(_git_command, args)
+
+
+async def _t_run_tests(
+    command: str = "python -m pytest",
+    path: str = ".",
+    timeout: int = 120,
+) -> dict:
+    """运行项目测试命令，限制工作目录、时长和输出，避免阻塞 Agent。"""
+    command = str(command or "").strip()
+    if not command or len(command) > 1000:
+        raise ValueError("command 不能为空且不能超过 1000 个字符")
+    target = _safe_path(path or ".")
+    if not os.path.isdir(target):
+        raise ValueError(f"不是目录: {path}")
+    try:
+        seconds = min(300, max(1, int(timeout)))
+    except (TypeError, ValueError):
+        seconds = 120
+    try:
+        completed = await asyncio.to_thread(
+            subprocess.run,
+            command,
+            cwd=target,
+            shell=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=seconds,
+            check=False,
+        )
+        output = (completed.stdout or "") + (completed.stderr or "")
+        return {
+            "success": completed.returncode == 0,
+            "returncode": completed.returncode,
+            "timed_out": False,
+            "output": output[:100_000],
+        }
+    except subprocess.TimeoutExpired as error:
+        output = ((error.stdout or "") if isinstance(error.stdout, str) else "")
+        return {"success": False, "returncode": None, "timed_out": True, "output": output[:100_000]}
+
+
+async def _t_send_qq_message(
+    target_type: str, target_id, text: str, appid: str = ""
+) -> dict:
     """通过框架已连接的机器人主动发送一条 QQ 消息 (group 或 private)"""
     from core.application import get_app
 
     app = get_app()
     bots = getattr(app, "bots", None) or {}
-    bot = next(iter(bots.values()), None)
+    if appid:
+        bot = bots.get(str(appid))
+    elif len(bots) == 1:
+        bot = next(iter(bots.values()))
+    else:
+        return {"sent": False, "error": "存在多个机器人连接，请提供 appid"}
     if bot is None or getattr(bot, "sender", None) is None:
         return {"sent": False, "error": "无可用机器人连接"}
     sender = bot.sender
@@ -544,6 +675,7 @@ async def _t_send_qq_message(target_type: str, target_id, text: str) -> dict:
         raise ValueError("target_type 仅支持 'group' 或 'private'")
     return {
         "sent": True,
+        "appid": str(appid or getattr(bot, "appid", "") or ""),
         "result": res
         if isinstance(res, (dict, list, str, int, type(None)))
         else str(res),
@@ -568,6 +700,9 @@ _DISPATCH = {
     "get_config": _t_get_config,
     "set_config": _t_set_config,
     "system_info": _t_system_info,
+    "git_status": _t_git_status,
+    "git_diff": _t_git_diff,
+    "run_tests": _t_run_tests,
     "send_qq_message": _t_send_qq_message,
 }
 
@@ -756,7 +891,8 @@ TOOLS_SCHEMA = [
             "description": (
                 "主动模拟用户发送一条指令并真实触发匹配的处理器, 验证功能是否正常 "
                 "(网络请求/定时器等会真实运行)。编写或修改插件并 reload_plugin 自检通过后, "
-                "应再用本工具实际跑一遍指令, 检查 matched/error/replies 确认功能无异常。"
+                "应再用本工具实际跑一遍指令。仅 success=true 才表示测试通过；"
+                "matched=false、timed_out=true 或 error 非空都表示失败。"
             ),
             "parameters": {
                 "type": "object",
@@ -824,6 +960,25 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "git_status",
+            "description": "读取当前框架工作区的 Git 未提交文件列表。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_diff",
+            "description": "读取当前工作区的 Git diff；可选 path 限定到仓库内文件。",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "send_qq_message",
             "description": "通过框架已连接的机器人主动发送一条 QQ 消息。",
             "parameters": {
@@ -832,8 +987,24 @@ TOOLS_SCHEMA = [
                     "target_type": {"type": "string", "enum": ["group", "private"]},
                     "target_id": {"type": "string", "description": "群号或 QQ 号"},
                     "text": {"type": "string"},
+                    "appid": {"type": "string", "description": "多机器人时指定 appid"},
                 },
                 "required": ["target_type", "target_id", "text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_tests",
+            "description": "在仓库内运行已有测试命令并返回退出码、超时状态和输出；默认 python -m pytest。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"},
+                    "path": {"type": "string"},
+                    "timeout": {"type": "integer"},
+                },
             },
         },
     },
@@ -849,18 +1020,15 @@ _READ_ONLY_TOOL_NAMES = {
     "list_handlers",
     "get_config",
     "system_info",
+    "git_status",
+    "git_diff",
 }
 
 
 def schemas_for_mode(mode: str, allow_high_risk: bool = False) -> list[dict]:
-    """返回开发模式或只读分析模式下明确开放的工具集合。"""
+    """开发模式开放全部工具；分析模式只开放读取与检查工具。"""
     if mode == "dev":
-        return [
-            item
-            for item in TOOLS_SCHEMA
-            if allow_high_risk
-            or item.get("function", {}).get("name") not in _HIGH_RISK_TOOL_NAMES
-        ]
+        return list(TOOLS_SCHEMA)
     return [
         item
         for item in TOOLS_SCHEMA
