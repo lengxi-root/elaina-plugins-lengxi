@@ -8,7 +8,6 @@ from core.base.config import cfg
 
 DEFAULTS = {
     "enabled": True,
-    "share_tools_enabled": False,
     "provider_id": "",
     "model_preference": "",
     "temperature": 0.3,
@@ -77,7 +76,6 @@ def _normalize_runtime_value(key: str, value):
         return None
     boolean_keys = {
         "enabled",
-        "share_tools_enabled",
         "central_skills_enabled",
         "central_mcp_enabled",
         "central_agent_enabled",
@@ -162,13 +160,8 @@ def enabled() -> bool:
 
 
 def high_risk_tools_enabled() -> bool:
-    """旧版兼容接口；开发模式始终开放完整工具集。"""
+    """旧版兼容接口；开发执行模式始终提供完整工具集。"""
     return True
-
-
-def share_tools_enabled() -> bool:
-    """是否允许其它插件调用 AI 开发注册到中央服务的工具。"""
-    return _as_bool(_setting("share_tools_enabled"))
 
 
 def history_limit() -> int:
@@ -215,8 +208,8 @@ def chat_system_prompt() -> str:
 
 
 def runtime_capabilities() -> list[str]:
-    # AI 开发工具已通过 caller tools 直接传入。不要再从中央能力注册表
-    # 注入一份 plugin_ai_dev_* 副本，否则会绕过面板的实时工具事件。
+    # AI 开发使用直接传入的内置工具，不请求中央 tool 能力，因此不会
+    # 注入其它插件共享的工具；仅按需使用中央 Skill、MCP 和 Agent。
     result = []
     if _as_bool(_setting("central_skills_enabled")):
         result.append("skill")
@@ -230,7 +223,6 @@ def runtime_capabilities() -> list[str]:
 def public_config() -> dict:
     return {
         "enabled": enabled(),
-        "share_tools_enabled": share_tools_enabled(),
         "provider_id": provider_id(),
         "model_preference": model_preference(),
         "temperature": temperature(),

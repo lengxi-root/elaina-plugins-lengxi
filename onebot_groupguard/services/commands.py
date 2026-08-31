@@ -25,6 +25,15 @@ def _write_config(conf, group_id, user_id) -> dict:
     return conf if store.is_owner(user_id) else _group_editable(group_id)
 
 
+def _match_target_command(event, text: str, *commands: str) -> tuple[bool, str | None]:
+    """精准匹配目标指令，拒绝“拉黑了”等普通聊天文本。"""
+    pattern = "|".join(re.escape(command) for command in commands)
+    match = re.fullmatch(rf"(?:{pattern})(?:\s*(\d{{5,12}}))?", text)
+    if not match:
+        return False, None
+    return True, match.group(1) or get_target(event, "")
+
+
 async def _can_group_blacklist(group_id, target) -> tuple[bool, str]:
     """二级管理员不能加黑主人、本群群主或本群管理员。"""
     if store.is_owner(target):
@@ -334,14 +343,14 @@ async def handle_command(event) -> bool:
         return True
 
     # 黑名单
-    if text.startswith(("拉黑", "加黑")):
+    matched, target = _match_target_command(event, text, "拉黑", "加黑")
+    if matched:
         actor_is_owner = store.is_owner(user_id)
         if not actor_is_owner and not await is_admin_or_owner(
             group_id, user_id, member_role
         ):
             await send_group_text(group_id, "需要主人或本群二级管理员权限")
             return True
-        target = get_target(event, text[2:].strip())
         if not target:
             await send_group_text(group_id, "请指定目标：拉黑@某人 或 拉黑QQ号")
             return True
@@ -362,12 +371,14 @@ async def handle_command(event) -> bool:
             await store.save()
         await send_group_text(group_id, f"已将 {target} 加入{scope}黑名单")
         return True
-    if text.startswith(("取消拉黑", "取消加黑")):
+    matched, target = _match_target_command(
+        event, text, "取消拉黑", "取消加黑"
+    )
+    if matched:
         owner = store.is_owner(user_id)
         if not owner and not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要主人或本群二级管理员权限")
             return True
-        target = get_target(event, text[4:].strip())
         if not target:
             await send_group_text(group_id, "请指定目标")
             return True
@@ -399,11 +410,11 @@ async def handle_command(event) -> bool:
         return True
 
     # ===== 群独立黑名单 =====
-    if text.startswith("群拉黑"):
+    matched, target = _match_target_command(event, text, "群拉黑")
+    if matched:
         if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
-        target = get_target(event, text[3:].strip())
         if not target:
             await send_group_text(group_id, "请指定目标：群拉黑@某人 或 群拉黑QQ号")
             return True
@@ -418,11 +429,11 @@ async def handle_command(event) -> bool:
             await store.save()
         await send_group_text(group_id, f"已将 {target} 加入本群黑名单")
         return True
-    if text.startswith("群取消拉黑"):
+    matched, target = _match_target_command(event, text, "群取消拉黑")
+    if matched:
         if not await is_admin_or_owner(group_id, user_id, member_role):
             await send_group_text(group_id, "需要管理员权限")
             return True
-        target = get_target(event, text[5:].strip())
         if not target:
             await send_group_text(group_id, "请指定目标")
             return True

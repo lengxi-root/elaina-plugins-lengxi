@@ -186,7 +186,7 @@ input,textarea,select{font-family:inherit}
 .composer textarea{width:100%;min-width:0;border:none;background:none;resize:none;font-size:14.5px;
   line-height:1.5;min-height:48px;max-height:160px;padding:10px 11px 6px;color:var(--ink)}
 .composer textarea:focus{outline:none}
-.composer-bar{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 1px}
+.composer-bar{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 1px;flex-wrap:wrap}
 .composer-tools{display:flex;align-items:center;gap:4px;min-width:0}
 .composer-state{flex:1;min-width:0;padding:0 5px;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .composer-state.running{color:var(--brand);font-weight:600}
@@ -203,6 +203,38 @@ input,textarea,select{font-family:inherit}
 .send:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .attach{width:36px;height:36px;flex:0 0 36px;border-radius:9px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:.15s}
 .attach:hover{background:var(--brand-soft);color:var(--brand)}
+.plugin-attach{position:relative}
+.plugin-attach input{display:none}
+.plugin-files{display:flex;flex-direction:column;gap:6px;padding:0 4px 8px}
+.plugin-files:empty{display:none}
+.plugin-file{display:flex;align-items:center;gap:6px;max-width:100%;padding:5px 2px;color:var(--ink2);font-size:11px}
+.plugin-file .pf-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plugin-file .pf-count{color:var(--brand);font-weight:700;white-space:nowrap}
+.plugin-file .pf-clear{margin-left:auto}
+.plugin-file .pf-clear,.plugin-target .pf-remove{width:24px;height:24px;flex:0 0 24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px;line-height:1}
+.plugin-file .pf-clear:hover,.plugin-target .pf-remove:hover{background:var(--red-soft);color:var(--red)}
+.plugin-targets{display:flex;flex-direction:column;gap:4px}
+.plugin-target{display:grid;grid-template-columns:18px minmax(0,1fr) 100px 24px;align-items:center;gap:7px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--brand-soft)}
+.plugin-target .pf-kind{font:9px var(--mono);font-weight:700;color:var(--brand);text-align:center}
+.plugin-target .pf-path{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px var(--mono);color:var(--ink2)}
+.plugin-target .pf-role{height:28px;min-width:0;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink2);font-size:11px;padding:0 5px;outline:none}
+.plugin-target .pf-role:focus{border-color:var(--brand)}
+.plugin-file-list{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.plugin-file-list span{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}
+.plugin-file-list span::before{content:'•';margin-right:4px;color:var(--brand)}
+.workspace-picker-card{width:620px;max-width:94vw}
+.workspace-picker-path{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg2);font:12px var(--mono);color:var(--ink2);overflow:hidden}
+.workspace-picker-path span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workspace-picker-list{max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.workspace-picker-row{display:flex;align-items:center;gap:8px;width:100%;padding:9px 11px;text-align:left;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink2)}
+.workspace-picker-row:last-child{border-bottom:none}
+.workspace-picker-row:hover{background:var(--brand-soft);color:var(--brand)}
+.workspace-picker-row .wp-kind{flex:0 0 18px;color:var(--brand);font-weight:700;text-align:center}
+.workspace-picker-row .wp-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workspace-picker-row .wp-size{color:var(--muted);font-size:11px}
+.workspace-picker-empty,.workspace-picker-loading{padding:20px;text-align:center;color:var(--muted);font-size:12px}
+.workspace-picker-card .modal-actions{align-items:center}
+.workspace-picker-card .modal-actions .btn-primary{flex:0 0 auto}
 .composer.drag .box{border-color:var(--brand);background:var(--brand-soft)}
 .composer .thumbs{display:flex;flex-wrap:wrap;gap:8px;padding:0 4px 8px}
 .composer .thumbs:empty{display:none}
@@ -383,6 +415,8 @@ input,textarea,select{font-family:inherit}
   .composer .hint{display:none}
 }
 @media(max-width:480px){
+  .plugin-target{grid-template-columns:16px minmax(0,1fr) 88px 24px;gap:4px;padding:5px 6px}
+  .plugin-target .pf-role{font-size:10.5px;padding:0 3px}
   .composer-state{display:none}
   .composer .chat-mode{max-width:112px}
   .composer .composer-model{min-width:84px;padding:0 6px}
@@ -437,12 +471,15 @@ body.module-missing .module-missing-overlay{display:grid}
       <div class="messages" id="messages"></div>
       <div class="composer">
         <div class="thumbs" id="thumbs"></div>
+        <div class="plugin-files" id="pluginFiles"></div>
         <div class="box">
           <textarea id="input" rows="1" placeholder="对 AI 说点什么… 例如：写一个 ID 命令插件，返回我的 QQ 号"></textarea>
           <div class="composer-bar">
             <div class="composer-tools">
               <button class="attach" id="attachBtn" title="添加图片（也可直接粘贴/拖拽）"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
               <input type="file" id="fileInput" accept="image/*" multiple hidden>
+              <button class="attach plugin-attach" id="pluginFileBtn" title="选择工作区插件文件"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg></button>
+              <button class="attach plugin-attach" id="pluginFolderBtn" title="选择工作区插件文件夹"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9h18"/></svg></button>
               <select id="chatMode" class="chat-mode" title="任务模式：开发执行可修改；只读分析只检查不修改">
                 <option value="dev">开发执行</option>
                 <option value="analyze">只读分析</option>
@@ -456,7 +493,7 @@ body.module-missing .module-missing-overlay{display:grid}
             <button class="send" id="sendBtn" title="发送"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
           </div>
         </div>
-        <div class="hint">Enter 发送 · Shift+Enter 换行 · 可粘贴/拖拽图片（需视觉模型）· 可切换「开发执行 / 只读分析」</div>
+        <div class="hint">Enter 发送 · Shift+Enter 换行 · 图片可粘贴/拖拽 · 选择工作区插件目标后由读取 Agent 识别 · 可切换「开发执行 / 只读分析」</div>
       </div>
     </div>
 
@@ -483,16 +520,26 @@ body.module-missing .module-missing-overlay{display:grid}
 <div class="modal" id="capabilityModal">
   <div class="modal-card" style="width:520px">
     <h2>AI 开发与中央能力</h2>
-    <div class="sub">控制插件运行状态、中央扩展能力，以及是否向其他插件共享开发工具。</div>
+    <div class="sub">AI 开发使用自己的完整工具集；这里仅控制插件运行状态和中央扩展能力。</div>
     <div class="set-row">
       <label class="switch-row"><input type="checkbox" id="capabilityEnabled"><span class="sw"></span><span class="sw-text"><b>启用 AI 开发助手</b><small>关闭后拒绝 QQ、Web 对话和中央能力调用。</small></span></label>
-      <label class="switch-row"><input type="checkbox" id="capabilityShareTools"><span class="sw"></span><span class="sw-text"><b>允许其他插件调用开发工具</b><small>默认关闭；开启后中央 AI 能力目录会向已授权插件暴露 AI 开发工具。</small></span></label>
       <label class="switch-row"><input type="checkbox" id="centralSkills"><span class="sw"></span><span class="sw-text"><b>Skills</b><small>允许读取中央 Skill 与 AI 开发注入的开发规范。</small></span></label>
       <label class="switch-row"><input type="checkbox" id="centralMcp"><span class="sw"></span><span class="sw-text"><b>MCP</b><small>允许调用中央 MCP 与已授权的插件 MCP 服务。</small></span></label>
       <label class="switch-row"><input type="checkbox" id="centralAgent"><span class="sw"></span><span class="sw-text"><b>Agent</b><small>允许委派中央子代理与已授权的插件 Agent。</small></span></label>
     </div>
     <div class="set-err" id="capabilityErr"></div>
     <div class="modal-actions"><button class="btn-primary" id="capabilitySave" type="button">保存</button><button class="btn-ghost" id="capabilityCancel" type="button">取消</button></div>
+  </div>
+</div>
+
+<div class="modal" id="workspacePickerModal">
+  <div class="modal-card workspace-picker-card">
+    <h2 id="workspacePickerTitle">选择工作区插件文件</h2>
+    <div class="sub">这里只记录工作区路径引用，不上传文件正文；发送后由“选定插件读取 Agent”使用只读工具读取。</div>
+    <div class="workspace-picker-path"><button class="btn-ghost btn-sm" id="workspacePickerUp" type="button">返回上级</button><span id="workspacePickerPath">.</span></div>
+    <div class="workspace-picker-list" id="workspacePickerList"><div class="workspace-picker-loading">加载中…</div></div>
+    <div class="set-err" id="workspacePickerErr"></div>
+    <div class="modal-actions"><button class="btn-primary" id="workspacePickerSelect" type="button" disabled>选择当前文件夹</button><button class="btn-ghost" id="workspacePickerCancel" type="button">取消</button></div>
   </div>
 </div>
 
@@ -925,7 +972,6 @@ async function saveSettings(){
 $('#settingsBtn').title='AI 开发与中央能力';
 $('#settingsBtn').addEventListener('click',()=>{
   $('#capabilityEnabled').checked=CFG.enabled!==false;
-  $('#capabilityShareTools').checked=CFG.share_tools_enabled===true;
   $('#centralSkills').checked=CFG.central_skills_enabled!==false;
   $('#centralMcp').checked=CFG.central_mcp_enabled!==false;
   $('#centralAgent').checked=CFG.central_agent_enabled!==false;
@@ -937,7 +983,7 @@ $('#capabilityModal').addEventListener('click',e=>{if(e.target.id==='capabilityM
 $('#capabilitySave').addEventListener('click',async()=>{
   const button=$('#capabilitySave');button.disabled=true;$('#capabilityErr').textContent='';
   try{
-    const response=await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify({enabled:$('#capabilityEnabled').checked,share_tools_enabled:$('#capabilityShareTools').checked,central_skills_enabled:$('#centralSkills').checked,central_mcp_enabled:$('#centralMcp').checked,central_agent_enabled:$('#centralAgent').checked})});
+    const response=await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify({enabled:$('#capabilityEnabled').checked,central_skills_enabled:$('#centralSkills').checked,central_mcp_enabled:$('#centralMcp').checked,central_agent_enabled:$('#centralAgent').checked})});
     const data=await response.json();if(!data.success)throw new Error(data.error||'保存失败');
     CFG=data.config||CFG;$('#capabilityModal').classList.remove('show');toast('中央能力设置已保存');
   }catch(error){$('#capabilityErr').textContent=error.message;}finally{button.disabled=false;}
@@ -1165,7 +1211,7 @@ function renderHistory(msgs,events){
     let tools=[],reason=[];
     events.forEach(e=>{
       const d=e.data||{};
-      if(e.type==='user'){addMsg('user',d.content||'',false,d.images||[]);tools=[];reason=[];}
+      if(e.type==='user'){addMsg('user',d.content||'',false,d.images||[],d.plugin_files||[]);tools=[];reason=[];}
       else if(e.type==='reasoning'){if(d.content)reason.push(d.content);}
       else if(e.type==='tool_call'||e.type==='tool_result'){tools.push(e);}
       else if(e.type==='assistant'){addAiTurnFromHistory(d.content||'',tools,reason.join('\n\n'),true);tools=[];reason=[];}
@@ -1222,11 +1268,16 @@ function imgsHtml(images){
   if(!safe.length)return '';
   return `<div class="imgs">${safe.map(u=>`<img src="${esc(u)}" onclick="window.open(this.src)">`).join('')}</div>`;
 }
-function addMsg(role,content,anim,images){
+function pluginFilesHtml(files){
+  const safe=(files||[]).filter(f=>f&&typeof f.path==='string');
+  if(!safe.length)return '';
+  return `<div class="plugin-file-list">${safe.map(f=>`<span title="${esc(f.path)}">[${esc(pluginRoleLabel(f.role))}] ${esc(f.path)}</span>`).join('')}</div>`;
+}
+function addMsg(role,content,anim,images,pluginFiles){
   const box=RENDER_TARGET||$('#messages');
   if(box.querySelector&&box.querySelector('.welcome'))box.innerHTML='';
   const el=document.createElement('div');el.className='msg '+role;if(!anim)el.style.animation='none';
-  const inner=role==='ai'?render(content):imgsHtml(images)+esc(content).replace(/\n/g,'<br>');
+  const inner=role==='ai'?render(content):imgsHtml(images)+pluginFilesHtml(pluginFiles)+esc(content).replace(/\n/g,'<br>');
   el.innerHTML=`<div class="av">${role==='user'?'我':'AI'}</div><div class="bubble">${inner}</div>`;
   box.appendChild(el);if(!RENDER_TARGET)scrollChat();return el;
 }
@@ -1321,23 +1372,115 @@ function addFiles(files){
 $('#attachBtn').addEventListener('click',()=>$('#fileInput').click());
 $('#fileInput').addEventListener('change',e=>{addFiles(e.target.files);e.target.value='';});
 inp.addEventListener('paste',e=>{const f=[...(e.clipboardData?.files||[])];if(f.some(x=>x.type.startsWith('image/'))){e.preventDefault();addFiles(f);}});
+
+/* ---- 插件目标引用: 只记录路径元数据，不读取或上传文件正文 ---- */
+let pendingPluginFiles=[];
+const MAX_PLUGIN_FILES=40;
+const PLUGIN_SOURCE_EXTENSIONS=new Set(['.bat','.cfg','.css','.graphql','.htm','.html','.ini','.js','.json','.jsx','.md','.mjs','.py','.pyi','.ps1','.scss','.sh','.sql','.toml','.ts','.tsx','.txt','.vue','.xml','.yaml','.yml']);
+const PLUGIN_SOURCE_NAMES=new Set(['dockerfile','license','makefile','procfile','requirements.txt']);
+const IGNORED_PLUGIN_PARTS=new Set(['.git','.idea','.venv','.vscode','__pycache__','build','dist','node_modules','venv']);
+const SENSITIVE_PLUGIN_NAME=/(?:^\.env(?:\.|$)|(?:^|[._-])(?:credentials?|secrets?|private[_-]?key|api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd)(?:[._-]|$))/i;
+const PLUGIN_ROLE_LABELS={primary:'主要修改',reference:'参考实现',test:'测试文件',protected:'不要修改'};
+function pluginRoleLabel(role){return PLUGIN_ROLE_LABELS[role]||PLUGIN_ROLE_LABELS.primary;}
+function normalizedPluginPath(path){return String(path||'').replace(/\\/g,'/').replace(/^\/+|\/+$/g,'');}
+function isPluginSource(path){
+  path=normalizedPluginPath(path);const parts=path.split('/'),name=(parts.at(-1)||'').toLowerCase();
+  if(!path||parts.some(p=>IGNORED_PLUGIN_PARTS.has(p.toLowerCase()))||SENSITIVE_PLUGIN_NAME.test(name))return false;
+  const dot=name.lastIndexOf('.'),ext=dot>=0?name.slice(dot):'';
+  return PLUGIN_SOURCE_EXTENSIONS.has(ext)||PLUGIN_SOURCE_NAMES.has(name);
+}
+function renderPluginFiles(){
+  const wrap=$('#pluginFiles');
+  if(!pendingPluginFiles.length){wrap.innerHTML='';return;}
+  const roots=[...new Set(pendingPluginFiles.map(f=>f.path.split('/')[0]).filter(Boolean))];
+  const label=roots.length===1?roots[0]:(roots.length+' 个来源');
+  const options=Object.entries(PLUGIN_ROLE_LABELS).map(([value,text])=>({value,text}));
+  wrap.innerHTML=`<div class="plugin-file"><span class="pf-count">${pendingPluginFiles.length} 个目标</span><span class="pf-name" title="${esc(roots.join(', '))}">${esc(label)}</span><button class="pf-clear" type="button" title="清空插件目标" aria-label="清空插件目标">×</button></div>`+
+    `<div class="plugin-targets">${pendingPluginFiles.map((f,i)=>`<div class="plugin-target" data-index="${i}"><span class="pf-kind">${f.kind==='directory'?'DIR':'FILE'}</span><span class="pf-path" title="${esc(f.path)}">${esc(f.path)}</span><select class="pf-role" title="目标用途" aria-label="${esc(f.path)} 的目标用途">${options.map(o=>`<option value="${o.value}"${o.value===(f.role||'primary')?' selected':''}>${o.text}</option>`).join('')}</select><button class="pf-remove" type="button" title="移除此目标" aria-label="移除 ${esc(f.path)}">×</button></div>`).join('')}</div>`;
+  wrap.querySelector('.pf-clear').addEventListener('click',()=>{pendingPluginFiles=[];renderPluginFiles();});
+  wrap.querySelectorAll('.pf-role').forEach(select=>select.addEventListener('change',()=>{const row=select.closest('.plugin-target'),item=pendingPluginFiles[+row.dataset.index];if(item)item.role=select.value;}));
+  wrap.querySelectorAll('.pf-remove').forEach(button=>button.addEventListener('click',()=>{const row=button.closest('.plugin-target');pendingPluginFiles.splice(+row.dataset.index,1);renderPluginFiles();}));
+}
+let workspacePickerKind='file',workspacePickerPath='.';
+function workspaceJoin(path,name){return normalizedPluginPath(path==='.'?name:path+'/'+name);}
+function workspaceParent(path){
+  const parts=String(path||'.').split('/').filter(Boolean);
+  parts.pop();return parts.join('/')||'.';
+}
+function workspaceSize(size){
+  if(size==null||Number.isNaN(Number(size)))return '';
+  const n=Number(size);return n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
+}
+function addWorkspaceTarget(path,kind){
+  path=normalizedPluginPath(path);
+  if(!path||path==='.')return false;
+  const existing=new Map(pendingPluginFiles.map(item=>[item.path.toLowerCase(),item]));
+  if(!existing.has(path.toLowerCase())&&existing.size>=MAX_PLUGIN_FILES){toast('插件目标最多选择 '+MAX_PLUGIN_FILES+' 个');return false;}
+  const previous=existing.get(path.toLowerCase());
+  existing.set(path.toLowerCase(),{path,kind,role:previous?.role||'primary',source:'workspace'});
+  pendingPluginFiles=[...existing.values()].sort((a,b)=>a.path.localeCompare(b.path,'zh-CN'));
+  renderPluginFiles();toast('已记录'+(kind==='directory'?'文件夹':'文件')+'路径，发送后由读取 Agent 读取');return true;
+}
+async function loadWorkspacePicker(path){
+  workspacePickerPath=normalizedPluginPath(path)||'.';
+  $('#workspacePickerPath').textContent=workspacePickerPath;
+  $('#workspacePickerList').innerHTML='<div class="workspace-picker-loading">加载中…</div>';
+  $('#workspacePickerErr').textContent='';$('#workspacePickerUp').disabled=workspacePickerPath==='.';
+  $('#workspacePickerSelect').disabled=workspacePickerKind!=='folder'||workspacePickerPath==='.';
+  try{
+    const response=await api('/api/ext/aidev/workspace?path='+encodeURIComponent(workspacePickerPath));
+    const data=await response.json();if(!response.ok||!data.success)throw new Error(data.error||'读取工作区失败');
+    workspacePickerPath=String(data.path||workspacePickerPath).replace(/\\/g,'/');
+    $('#workspacePickerPath').textContent=workspacePickerPath;
+    const entries=(data.entries||[]).filter(item=>item.type==='dir'||(workspacePickerKind==='file'&&isPluginSource(workspaceJoin(workspacePickerPath,item.name))));
+    const list=$('#workspacePickerList');list.innerHTML='';
+    if(!entries.length){list.innerHTML='<div class="workspace-picker-empty">此目录没有可选目标</div>';return;}
+    entries.forEach(item=>{
+      const row=document.createElement('button');row.className='workspace-picker-row';row.type='button';row.dataset.name=item.name;row.dataset.kind=item.type;
+      const kind=document.createElement('span');kind.className='wp-kind';kind.textContent=item.type==='dir'?'DIR':'FILE';
+      const name=document.createElement('span');name.className='wp-name';name.textContent=item.name;
+      const size=document.createElement('span');size.className='wp-size';size.textContent=item.type==='dir'?'文件夹':workspaceSize(item.size);
+      row.append(kind,name,size);list.appendChild(row);
+    });
+  }catch(error){$('#workspacePickerList').innerHTML='<div class="workspace-picker-empty">加载失败</div>';$('#workspacePickerErr').textContent=error.message;}
+}
+function openWorkspacePicker(kind){
+  workspacePickerKind=kind;workspacePickerPath='.';
+  $('#workspacePickerTitle').textContent=kind==='folder'?'选择工作区插件文件夹':'选择工作区插件文件';
+  $('#workspacePickerSelect').textContent=kind==='folder'?'选择当前文件夹':'选择文件';
+  $('#workspacePickerModal').classList.add('show');loadWorkspacePicker('.');
+}
+function closeWorkspacePicker(){$('#workspacePickerModal').classList.remove('show');}
+$('#pluginFileBtn').addEventListener('click',()=>openWorkspacePicker('file'));
+$('#pluginFolderBtn').addEventListener('click',()=>openWorkspacePicker('folder'));
+$('#workspacePickerCancel').addEventListener('click',closeWorkspacePicker);
+$('#workspacePickerModal').addEventListener('click',e=>{if(e.target.id==='workspacePickerModal')closeWorkspacePicker();});
+$('#workspacePickerUp').addEventListener('click',()=>{if(workspacePickerPath!=='.')loadWorkspacePicker(workspaceParent(workspacePickerPath));});
+$('#workspacePickerSelect').addEventListener('click',()=>{if(workspacePickerKind==='folder'&&addWorkspaceTarget(workspacePickerPath,'directory'))closeWorkspacePicker();});
+$('#workspacePickerList').addEventListener('click',e=>{
+  const row=e.target.closest('.workspace-picker-row');if(!row)return;
+  const path=workspaceJoin(workspacePickerPath,row.dataset.name);
+  if(row.dataset.kind==='dir')loadWorkspacePicker(path);
+  else if(workspacePickerKind==='file'&&addWorkspaceTarget(path,'file'))closeWorkspacePicker();
+});
+
 const composer=document.querySelector('.composer');
 ['dragover','dragenter'].forEach(ev=>composer.addEventListener(ev,e=>{e.preventDefault();composer.classList.add('drag');}));
 ['dragleave','drop'].forEach(ev=>composer.addEventListener(ev,e=>{e.preventDefault();if(ev==='drop')addFiles(e.dataTransfer.files);composer.classList.remove('drag');}));
 
 async function send(){
-  const text=inp.value.trim();const imgs=pendingImages.slice();
-  if((!text&&!imgs.length)||sending)return;
+  const text=inp.value.trim();const imgs=pendingImages.slice();const pluginFiles=pendingPluginFiles.map(f=>({...f}));
+  if((!text&&!imgs.length&&!pluginFiles.length)||sending)return;
   setSendingState(true,SID?'正在提交…':'正在创建会话…');
   try{if(!SID)await createSession();}
   catch(e){setSendingState(false,'创建会话失败');toast(e.message||'创建会话失败');return;}
   const requestId=newRequestId();
   const submissionSid=SID;
-  const payload={session_id:submissionSid,message:text,model:MODEL,images:imgs,mode:($('#chatMode').value||'dev'),request_id:requestId};
+  const payload={session_id:submissionSid,message:text,model:MODEL,images:imgs,plugin_files:pluginFiles.map(({path,kind,role,source})=>({path,kind,role,source})),mode:($('#chatMode').value||'dev'),request_id:requestId};
   activePayload=payload;
   localStorage.setItem('ai_dev_active_'+submissionSid,requestId);
   setSendingState(true,'正在提交…');
-  addMsg('user',text,true,imgs);inp.value='';pendingImages=[];renderThumbs();autoGrow();
+  addMsg('user',text,true,imgs,pluginFiles);inp.value='';pendingImages=[];pendingPluginFiles=[];renderThumbs();renderPluginFiles();autoGrow();
   const turn=startAiTurn();
   liveTurn={stepsWrap:turn.stepsWrap,stepsBody:turn.stepsBody,cnt:turn.cnt,thinkWrap:turn.thinkWrap,thinkBody:turn.thinkBody,turn,startIdx:evbuf.length,sid:submissionSid};
   try{

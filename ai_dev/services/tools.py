@@ -1,8 +1,9 @@
-"""Agent 工具集：受限文件操作、插件管理、配置读写和消息发送。"""
+"""Agent 工具集：仓库文件操作、插件管理、配置读写和消息发送。"""
 
 import asyncio
 import ast
 import fnmatch
+import hashlib
 import json
 import os
 import platform
@@ -28,6 +29,8 @@ _MAX_READ_BYTES = 200_000
 _MAX_WRITE_BYTES = 1_000_000
 _CONFIG_FILES = ("settings", "bot")
 _MAX_CONFIG_VALUE_BYTES = 100_000
+_MAX_RANGE_CHARS = 60_000
+_MAX_OUTLINE_SYMBOLS = 240
 _CONFIG_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$")
 _SENSITIVE_CONFIG_KEY = re.compile(
     r"(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie|secret|password|passwd|app[_-]?secret)",
@@ -96,6 +99,14 @@ def _read_text(path: str, limit: int | None = None) -> tuple[int, str]:
         return size, file.read(limit)
 
 
+def _file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for chunk in iter(lambda: file.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _write_text(path: str, content: str) -> bool:
     """在线程中写入文本，返回写入前文件是否存在。"""
     os.makedirs(os.path.dirname(path) or ROOT, exist_ok=True)
@@ -105,8 +116,20 @@ def _write_text(path: str, content: str) -> bool:
     return existed
 
 
-def _replace_text(path: str, old: str, new: str, replace_all: bool) -> tuple[int, str]:
+def _replace_text(
+    path: str,
+    old: str,
+    new: str,
+    replace_all: bool,
+    expected_sha256: str = "",
+) -> tuple[int, str, str]:
     """在线程中完成读取、精确替换和写回。"""
+    before_sha256 = _file_sha256(path)
+    if expected_sha256 and expected_sha256 != before_sha256:
+        raise ValueError(
+            "文件已在读取后发生变化，请重新读取后再修改 "
+            f"(expected={expected_sha256}, actual={before_sha256})"
+        )
     _size, content = _read_text(path)
     count = content.count(old)
     if count == 0:
@@ -121,7 +144,7 @@ def _replace_text(path: str, old: str, new: str, replace_all: bool) -> tuple[int
     if len(updated.encode("utf-8")) > _MAX_WRITE_BYTES:
         raise ValueError("内容过大")
     _write_text(path, updated)
-    return count, updated
+    return count, updated, before_sha256
 
 
 def _directory_entries(base: str) -> list[dict]:
@@ -177,9 +200,259 @@ async def _t_read_file(path: str) -> dict:
     return {
         "path": _rel(target),
         "size": size,
+        "sha256": await asyncio.to_thread(_file_sha256, target),
         "truncated": truncated,
         "content": content,
     }
+
+
+def _read_ranges_sync(ranges: list[dict], max_chars: int) -> dict:
+    blocks = []
+    used = 0
+    truncated = False
+    for request in ranges:
+        path = str(request.get("path") or "")
+        target = _safe_path(path)
+        if not os.path.isfile(target):
+            raise ValueError(f"文件不存在: {path}")
+        if _is_sensitive_path(target):
+            raise ValueError(f"文件可能包含凭据或密钥: {path}")
+        try:
+            start = max(1, int(request.get("start") or 1))
+            end = max(start, int(request.get("end") or start + 199))
+        except (TypeError, ValueError) as error:
+            raise ValueError("start/end 必须是整数") from error
+        end = min(end, start + 399)
+        lines = []
+        with open(target, encoding="utf-8", errors="replace") as file:
+            for number, line in enumerate(file, 1):
+                if number < start:
+                    continue
+                if number > end:
+                    break
+                rendered = f"{number:>6} | {line.rstrip()}\n"
+                if used + len(rendered) > max_chars:
+                    truncated = True
+                    break
+                lines.append(rendered)
+                used += len(rendered)
+        blocks.append(
+            {
+                "path": _rel(target),
+                "start": start,
+                "end": start + max(0, len(lines) - 1),
+                "content": "".join(lines),
+            }
+        )
+        if truncated:
+            break
+    return {"ranges": blocks, "chars": used, "truncated": truncated}
+
+
+async def _t_read_ranges(ranges: list, max_chars: int = 30_000) -> dict:
+    """一次读取多个文件的限定行范围，避免整文件回灌。"""
+    if not isinstance(ranges, list) or not 1 <= len(ranges) <= 20:
+        raise ValueError("ranges 必须包含 1 到 20 个范围")
+    if any(not isinstance(item, dict) for item in ranges):
+        raise ValueError("ranges 中每项必须是对象")
+    try:
+        limit = min(_MAX_RANGE_CHARS, max(1_000, int(max_chars)))
+    except (TypeError, ValueError) as error:
+        raise ValueError("max_chars 必须是整数") from error
+    return await asyncio.to_thread(_read_ranges_sync, ranges, limit)
+
+
+def _decorator_name(node: ast.AST) -> str:
+    try:
+        return ast.unparse(node)[:160]
+    except Exception:  # noqa: BLE001
+        return type(node).__name__
+
+
+def _python_outline(path: str, source: str) -> dict:
+    tree = ast.parse(source, filename=path)
+    imports = []
+    symbols = []
+    metadata = {}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imports.append("." * node.level + str(node.module or ""))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            symbols.append(
+                {
+                    "kind": (
+                        "class"
+                        if isinstance(node, ast.ClassDef)
+                        else ("async_function" if isinstance(node, ast.AsyncFunctionDef) else "function")
+                    ),
+                    "name": node.name,
+                    "line": node.lineno,
+                    "end_line": getattr(node, "end_lineno", node.lineno),
+                    "decorators": [_decorator_name(item) for item in node.decorator_list],
+                }
+            )
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(target, ast.Name) and target.id == "__plugin_meta__" for target in targets):
+                try:
+                    metadata = ast.literal_eval(node.value)
+                except Exception:  # noqa: BLE001
+                    metadata = {}
+    return {
+        "language": "python",
+        "imports": imports[:120],
+        "symbols": symbols[:_MAX_OUTLINE_SYMBOLS],
+        "plugin_meta": metadata if isinstance(metadata, dict) else {},
+        "truncated": len(symbols) > _MAX_OUTLINE_SYMBOLS,
+    }
+
+
+def _script_outline(source: str) -> dict:
+    patterns = (
+        ("class", re.compile(r"^\s*(?:export\s+)?class\s+([A-Za-z_$][\w$]*)")),
+        ("function", re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)")),
+        ("function", re.compile(r"^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(")),
+    )
+    imports = []
+    symbols = []
+    for number, line in enumerate(source.splitlines(), 1):
+        if re.match(r"^\s*(?:import|export\s+.+\s+from)\b", line):
+            imports.append(line.strip()[:240])
+        for kind, pattern in patterns:
+            match = pattern.search(line)
+            if match:
+                symbols.append({"kind": kind, "name": match.group(1), "line": number})
+                break
+    return {
+        "language": "javascript/typescript",
+        "imports": imports[:120],
+        "symbols": symbols[:_MAX_OUTLINE_SYMBOLS],
+        "truncated": len(symbols) > _MAX_OUTLINE_SYMBOLS,
+    }
+
+
+def _code_outline_sync(path: str) -> dict:
+    target = _safe_path(path)
+    if not os.path.isfile(target):
+        raise ValueError(f"文件不存在: {path}")
+    if _is_sensitive_path(target):
+        raise ValueError("该文件可能包含凭据或密钥")
+    size, source = _read_text(target, _MAX_READ_BYTES)
+    suffix = os.path.splitext(target)[1].casefold()
+    if suffix in {".py", ".pyi"}:
+        outline = _python_outline(_rel(target), source)
+    elif suffix in {".js", ".jsx", ".mjs", ".ts", ".tsx", ".vue"}:
+        outline = _script_outline(source)
+    else:
+        raise ValueError("code_outline 仅支持 Python、JavaScript、TypeScript 和 Vue 文件")
+    return {"path": _rel(target), "size": size, **outline}
+
+
+async def _t_code_outline(path: str) -> dict:
+    """提取文件结构而非回传整份源码。"""
+    return await asyncio.to_thread(_code_outline_sync, path)
+
+
+def _inspect_plugin_sync(path: str) -> dict:
+    target = _safe_path(path)
+    if os.path.isfile(target):
+        target = os.path.dirname(target)
+    if not os.path.isdir(target):
+        raise ValueError(f"插件目录不存在: {path}")
+    files = []
+    entrypoints = []
+    tests = []
+    configs = []
+    outlines = []
+    skipped = 0
+    ignored = {".git", ".idea", ".venv", ".vscode", "__pycache__", "build", "dist", "node_modules", "venv"}
+    for root, dirs, names in os.walk(target):
+        dirs[:] = [name for name in dirs if name.casefold() not in ignored]
+        for name in names:
+            full = os.path.join(root, name)
+            if _is_sensitive_path(full):
+                skipped += 1
+                continue
+            relative = _rel(full)
+            suffix = os.path.splitext(name)[1].casefold()
+            item = {"path": relative, "size": os.path.getsize(full)}
+            files.append(item)
+            folded = name.casefold()
+            if folded in {"main.py", "app.py", "index.py", "main.js", "index.js", "index.ts"}:
+                entrypoints.append(relative)
+            if folded.startswith("test_") or folded.endswith(("_test.py", ".test.js", ".test.ts", ".spec.js", ".spec.ts")):
+                tests.append(relative)
+            if folded in {"pyproject.toml", "requirements.txt", "package.json", "plugin.json"} or suffix in {".yaml", ".yml", ".toml", ".ini", ".cfg"}:
+                configs.append(relative)
+            if len(outlines) < 20 and suffix in {".py", ".pyi", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".vue"}:
+                try:
+                    outline = _code_outline_sync(relative)
+                    if outline.get("symbols") or outline.get("plugin_meta"):
+                        outlines.append(outline)
+                except (OSError, SyntaxError, ValueError):
+                    pass
+            if len(files) >= 300:
+                break
+        if len(files) >= 300:
+            break
+    return {
+        "path": _rel(target),
+        "files": files,
+        "entrypoints": entrypoints,
+        "tests": tests,
+        "config_files": configs,
+        "outlines": outlines,
+        "sensitive_files_skipped": skipped,
+        "truncated": len(files) >= 300,
+    }
+
+
+async def _t_inspect_plugin(path: str) -> dict:
+    """一次返回插件文件、入口、测试、配置和主要符号结构。"""
+    return await asyncio.to_thread(_inspect_plugin_sync, path)
+
+
+def _find_references_sync(symbol: str, path: str, pattern: str, limit: int) -> dict:
+    name = str(symbol or "").strip()
+    if not name or len(name) > 200:
+        raise ValueError("symbol 不能为空且不能超过 200 字符")
+    base = _safe_path(path or ".")
+    if not os.path.isdir(base):
+        raise ValueError(f"不是目录: {path}")
+    maximum = min(max(int(limit or 100), 1), 300)
+    matcher = re.compile(rf"(?<![\w$]){re.escape(name)}(?![\w$])")
+    definition_patterns = (
+        re.compile(rf"^\s*(?:async\s+)?def\s+{re.escape(name)}\b"),
+        re.compile(rf"^\s*class\s+{re.escape(name)}\b"),
+        re.compile(rf"^\s*(?:export\s+)?(?:async\s+)?function\s+{re.escape(name)}\b"),
+    )
+    matches = []
+    for root, dirs, names in os.walk(base):
+        dirs[:] = [item for item in dirs if item not in {".git", "__pycache__", "node_modules"}]
+        for filename in names:
+            full = os.path.join(root, filename)
+            relative = _rel(full)
+            if _is_sensitive_path(full) or not (fnmatch.fnmatch(filename, pattern or "*") or fnmatch.fnmatch(relative, pattern or "*")):
+                continue
+            try:
+                if os.path.getsize(full) > _MAX_READ_BYTES:
+                    continue
+                with open(full, encoding="utf-8", errors="replace") as file:
+                    for number, line in enumerate(file, 1):
+                        if matcher.search(line):
+                            kind = "definition" if any(item.search(line) for item in definition_patterns) else "reference"
+                            matches.append({"path": relative, "line": number, "kind": kind, "text": line.rstrip()[:500]})
+                            if len(matches) >= maximum:
+                                return {"symbol": name, "matches": matches, "truncated": True}
+            except OSError:
+                continue
+    return {"symbol": name, "matches": matches, "truncated": False}
+
+
+async def _t_find_references(symbol: str, path: str = ".", pattern: str = "*", limit: int = 100) -> dict:
+    return await asyncio.to_thread(_find_references_sync, symbol, path, pattern, limit)
 
 
 async def _t_write_file(path: str, content: str) -> dict:
@@ -196,7 +469,11 @@ async def _t_write_file(path: str, content: str) -> dict:
 
 
 async def _t_edit_file(
-    path: str, old_string: str, new_string: str = "", replace_all: bool = False
+    path: str,
+    old_string: str,
+    new_string: str = "",
+    replace_all: bool = False,
+    expected_sha256: str = "",
 ) -> dict:
     """局部精确替换 (不重写整文件): old_string 需逐字符精确且唯一, replace_all=true 才全部替换。"""
     target = _safe_path(path)
@@ -212,13 +489,16 @@ async def _t_edit_file(
         raise ValueError("old_string 不能为空 (新建文件请用 write_file)")
     if old == new:
         raise ValueError("old_string 与 new_string 相同, 无需修改")
-    count, updated = await asyncio.to_thread(
-        _replace_text, target, old, new, replace_all
+    expected = str(expected_sha256 or "").strip().casefold()
+    count, updated, before_sha256 = await asyncio.to_thread(
+        _replace_text, target, old, new, replace_all, expected
     )
     return {
         "path": _rel(target),
         "replaced": count if replace_all else 1,
         "bytes": len(updated.encode("utf-8")),
+        "before_sha256": before_sha256,
+        "sha256": await asyncio.to_thread(_file_sha256, target),
     }
 
 
@@ -232,12 +512,6 @@ async def _t_delete_file(path: str) -> dict:
     if os.path.isdir(target):
         raise ValueError("禁止递归删除目录；请逐个删除明确文件后由管理员处理空目录")
     raise ValueError(f"路径不存在: {path}")
-
-
-async def _t_make_dir(path: str) -> dict:
-    target = _safe_path(path)
-    await asyncio.to_thread(os.makedirs, target, exist_ok=True)
-    return {"path": _rel(target), "created": True}
 
 
 def _plugin_manager():
@@ -650,6 +924,73 @@ async def _t_run_tests(
         return {"success": False, "returncode": None, "timed_out": True, "output": output[:100_000]}
 
 
+async def _t_verify_change(
+    paths: list,
+    plugin: str = "",
+    command_text: str = "",
+    test_suite_command: str = "",
+    test_path: str = ".",
+    timeout: int = 120,
+) -> dict:
+    """按固定顺序执行语法、测试、热重载和命令验收，并返回逐项证据。"""
+    if not isinstance(paths, list) or not 1 <= len(paths) <= 40:
+        raise ValueError("paths 必须包含 1 到 40 个已修改文件")
+    normalized_paths = []
+    for path in paths:
+        target = _safe_path(str(path or ""))
+        if not os.path.isfile(target):
+            raise ValueError(f"文件不存在: {path}")
+        normalized_paths.append(_rel(target))
+
+    steps = []
+    for path in normalized_paths:
+        if path.casefold().endswith((".py", ".pyi")):
+            result = await _t_check_python(path)
+            steps.append({"step": "check_python", "path": path, "ok": result.get("ok") is True, "result": result})
+
+    if test_suite_command:
+        result = await _t_run_tests(test_suite_command, test_path, timeout)
+        steps.append({"step": "run_tests", "ok": result.get("success") is True, "result": result})
+
+    if plugin:
+        result = await _t_reload_plugin(plugin)
+        steps.append(
+            {
+                "step": "reload_plugin",
+                "plugin": plugin,
+                "ok": result.get("loaded") is True and not result.get("error"),
+                "result": result,
+            }
+        )
+
+    if command_text:
+        if not plugin:
+            raise ValueError("提供 command_text 时必须同时提供 plugin")
+        result = await _t_test_command(command_text)
+        steps.append(
+            {
+                "step": "test_command",
+                "command": command_text,
+                "ok": result.get("success") is True and result.get("matched") is True and not result.get("timed_out") and not result.get("error"),
+                "result": result,
+            }
+        )
+
+    if not steps:
+        raise ValueError("没有可执行的验证步骤")
+    diffs = []
+    for path in normalized_paths:
+        result = await _t_git_diff(path)
+        diffs.append({"path": path, "diff": result.get("diff", "")})
+    return {
+        "success": all(step["ok"] for step in steps),
+        "paths": normalized_paths,
+        "steps": steps,
+        "failed_steps": [step["step"] for step in steps if not step["ok"]],
+        "diffs": diffs,
+    }
+
+
 async def _t_send_qq_message(
     target_type: str, target_id, text: str, appid: str = ""
 ) -> dict:
@@ -687,10 +1028,13 @@ async def _t_send_qq_message(
 _DISPATCH = {
     "list_dir": _t_list_dir,
     "read_file": _t_read_file,
+    "read_ranges": _t_read_ranges,
+    "code_outline": _t_code_outline,
+    "inspect_plugin": _t_inspect_plugin,
+    "find_references": _t_find_references,
     "write_file": _t_write_file,
     "edit_file": _t_edit_file,
     "delete_file": _t_delete_file,
-    "make_dir": _t_make_dir,
     "list_plugins": _t_list_plugins,
     "list_handlers": _t_list_handlers,
     "reload_plugin": _t_reload_plugin,
@@ -703,6 +1047,7 @@ _DISPATCH = {
     "git_status": _t_git_status,
     "git_diff": _t_git_diff,
     "run_tests": _t_run_tests,
+    "verify_change": _t_verify_change,
     "send_qq_message": _t_send_qq_message,
 }
 
@@ -772,13 +1117,82 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "读取仓库内某个文本文件的内容。",
+            "description": "读取仓库内某个文本文件的内容与 SHA-256 版本哈希。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "相对仓库根的文件路径"}
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_ranges",
+            "description": "按行号批量读取一个或多个文件的局部范围；定位完成后用它代替整文件读取。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ranges": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string"},
+                                "start": {"type": "integer"},
+                                "end": {"type": "integer"},
+                            },
+                            "required": ["path", "start", "end"],
+                        },
+                    },
+                    "max_chars": {"type": "integer"},
+                },
+                "required": ["ranges"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_outline",
+            "description": "读取单个源码文件的导入、类、函数、装饰器和插件元数据轮廓，不回传整份源码。",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "inspect_plugin",
+            "description": "一次识别插件目录的文件、入口、测试、配置与主要符号轮廓，适合开发前建立上下文。",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_references",
+            "description": "在指定目录中查找符号的定义和引用位置。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string"},
+                    "path": {"type": "string"},
+                    "pattern": {"type": "string"},
+                    "limit": {"type": "integer"},
+                },
+                "required": ["symbol"],
             },
         },
     },
@@ -825,6 +1239,10 @@ TOOLS_SCHEMA = [
                         "type": "boolean",
                         "description": "是否替换全部出现处 (如重命名变量), 默认 false 只替换唯一的一处",
                     },
+                    "expected_sha256": {
+                        "type": "string",
+                        "description": "可选；read_file 返回的 SHA-256。文件已变化时拒绝写入。",
+                    },
                 },
                 "required": ["path", "old_string"],
             },
@@ -835,18 +1253,6 @@ TOOLS_SCHEMA = [
         "function": {
             "name": "delete_file",
             "description": "删除仓库内的文件或目录。",
-            "parameters": {
-                "type": "object",
-                "properties": {"path": {"type": "string"}},
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "make_dir",
-            "description": "在仓库内创建目录。",
             "parameters": {
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
@@ -1008,29 +1414,88 @@ TOOLS_SCHEMA = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "verify_change",
+            "description": "按语法检查、已有测试、热重载、真实命令的固定顺序验证改动，并返回差异证据。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 40,
+                        "items": {"type": "string"},
+                    },
+                    "plugin": {"type": "string"},
+                    "command_text": {"type": "string"},
+                    "test_suite_command": {"type": "string"},
+                    "test_path": {"type": "string"},
+                    "timeout": {"type": "integer"},
+                },
+                "required": ["paths"],
+            },
+        },
+    },
 ]
 
 
-_READ_ONLY_TOOL_NAMES = {
+_CORE_READ_TOOL_NAMES = {
     "search_code",
     "check_python",
     "list_dir",
     "read_file",
+    "read_ranges",
+    "code_outline",
+    "inspect_plugin",
+    "find_references",
     "list_plugins",
-    "list_handlers",
-    "get_config",
-    "system_info",
     "git_status",
     "git_diff",
 }
 
+_READER_TOOL_NAMES = {
+    "search_code",
+    "list_dir",
+    "read_file",
+    "read_ranges",
+    "code_outline",
+    "inspect_plugin",
+    "find_references",
+    "list_plugins",
+}
 
-def schemas_for_mode(mode: str, allow_high_risk: bool = False) -> list[dict]:
-    """开发模式开放全部工具；分析模式只开放读取与检查工具。"""
+_REVIEW_TOOL_NAMES = {
+    "search_code",
+    "check_python",
+    "read_file",
+    "read_ranges",
+    "code_outline",
+    "find_references",
+    "git_status",
+    "git_diff",
+}
+
+_ANALYSIS_TOOL_NAMES = _CORE_READ_TOOL_NAMES | {
+    "list_handlers",
+    "get_config",
+    "system_info",
+}
+
+
+def schemas_for_mode(mode: str) -> list[dict]:
+    """按 Agent 职责返回工具集；开发执行模式直接提供全部工具。"""
     if mode == "dev":
         return list(TOOLS_SCHEMA)
+    elif mode == "reader":
+        allowed = _READER_TOOL_NAMES
+    elif mode == "review":
+        allowed = _REVIEW_TOOL_NAMES
+    else:
+        allowed = _ANALYSIS_TOOL_NAMES
     return [
         item
         for item in TOOLS_SCHEMA
-        if item.get("function", {}).get("name") in _READ_ONLY_TOOL_NAMES
+        if item.get("function", {}).get("name") in allowed
     ]

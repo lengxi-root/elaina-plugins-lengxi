@@ -15,6 +15,7 @@ from core.plugin.web_pages import register_route
 from ..services import agent as agentmod
 from ..services import central
 from ..services import config as aiconfig
+from ..services import tools as toolmod
 
 log = get_logger(PLUGIN, "ai_dev")
 
@@ -25,8 +26,60 @@ _MAX_MESSAGE_CHARS = 20_000
 _MAX_IMAGES = 8
 _MAX_IMAGE_CHARS = 4_000_000
 _MAX_TOTAL_IMAGE_CHARS = 16_000_000
+_MAX_PLUGIN_FILES = 40
+_PLUGIN_FILE_ROLES = {"primary", "reference", "test", "protected"}
 _IMAGE_DATA_RE = re.compile(
     r"^data:image/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$",
+    re.IGNORECASE,
+)
+_PLUGIN_SOURCE_EXTENSIONS = {
+    ".bat",
+    ".cfg",
+    ".css",
+    ".graphql",
+    ".htm",
+    ".html",
+    ".ini",
+    ".js",
+    ".json",
+    ".jsx",
+    ".md",
+    ".mjs",
+    ".py",
+    ".pyi",
+    ".ps1",
+    ".scss",
+    ".sh",
+    ".sql",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".vue",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
+_PLUGIN_SOURCE_NAMES = {
+    "dockerfile",
+    "license",
+    "makefile",
+    "procfile",
+    "requirements.txt",
+}
+_IGNORED_PLUGIN_PARTS = {
+    ".git",
+    ".idea",
+    ".venv",
+    ".vscode",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+}
+_SENSITIVE_PLUGIN_NAME_RE = re.compile(
+    r"(?:^\.env(?:\.|$)|(?:^|[._-])(?:credentials?|secrets?|private[_-]?key|api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd)(?:[._-]|$))",
     re.IGNORECASE,
 )
 
@@ -79,6 +132,7 @@ def register_routes():
     register_route("POST", _PREFIX + "/sessions", _create_session)
     register_route("POST", _PREFIX + "/sessions/delete", _delete_session)
     register_route("GET", _PREFIX + "/history", _get_history)
+    register_route("GET", _PREFIX + "/workspace", _get_workspace)
     register_route("POST", _PREFIX + "/chat", _post_chat)
     register_route("GET", _PREFIX + "/task", _get_task)
     register_route("GET", _PREFIX + "/calls", _get_calls)
@@ -103,7 +157,6 @@ async def _set_config(request: web.Request):
     updates = {}
     for k in (
         "enabled",
-        "share_tools_enabled",
         "provider_id",
         "model_preference",
         "temperature",
@@ -185,6 +238,39 @@ async def _get_history(request: web.Request):
     )
 
 
+async def _get_workspace(request: web.Request):
+    """返回工作区单层目录结构；不会读取或返回任何文件正文。"""
+    path = str(request.query.get("path", ".") or ".").strip()
+    if len(path) > 300:
+        return web.json_response(
+            {"success": False, "error": "工作区路径过长"}, status=400
+        )
+    try:
+        result = await toolmod.run_tool("list_dir", {"path": path})
+    except (OSError, TypeError, ValueError) as error:
+        return web.json_response(
+            {"success": False, "error": str(error)}, status=400
+        )
+    entries = []
+    for item in result.get("entries", []):
+        name = str(item.get("name") or "")
+        folded = name.casefold()
+        if not name or folded in _IGNORED_PLUGIN_PARTS:
+            continue
+        if item.get("type") == "file" and _SENSITIVE_PLUGIN_NAME_RE.search(folded):
+            continue
+        entries.append(
+            {
+                "name": name,
+                "type": "dir" if item.get("type") == "dir" else "file",
+                "size": item.get("size"),
+            }
+        )
+    return web.json_response(
+        {"success": True, "path": result.get("path", "."), "entries": entries}
+    )
+
+
 def _content_text(content):
     """content 可能是字符串或多模态数组, 统一取出文本部分用于展示。"""
     if isinstance(content, list):
@@ -220,6 +306,12 @@ async def _post_chat(request: web.Request):
     mode = (
         "analyze" if str(body.get("mode", "") or "") in {"analyze", "chat"} else "dev"
     )
+    try:
+        plugin_files = _validate_plugin_files(body.get("plugin_files"))
+    except ValueError as error:
+        return web.json_response(
+            {"success": False, "error": str(error)}, status=400
+        )
     raw_images = body.get("images")
     if raw_images is None:
         raw_images = []
@@ -256,7 +348,7 @@ async def _post_chat(request: web.Request):
                 {"success": False, "error": "图片总大小过大"}, status=413
             )
         images.append(image)
-    if not message and not images:
+    if not message and not images and not plugin_files:
         return web.json_response({"success": False, "error": "消息为空"}, status=400)
     sess = await asyncio.to_thread(_store().ensure_session, sid)
     sid = sess["id"]
@@ -284,7 +376,9 @@ async def _post_chat(request: web.Request):
         "result": None,
     }
     task = asyncio.create_task(
-        _run_chat_job(job, _store(), sid, message, model, images, mode),
+        _run_chat_job(
+            job, _store(), sid, message, model, images, mode, plugin_files
+        ),
         name=f"ai-dev-web:{sid}",
     )
     job["task"] = task
@@ -295,12 +389,25 @@ async def _post_chat(request: web.Request):
 
 
 async def _run_chat_job(
-    job: dict, store, session_id: str, message: str, model: str, images: list, mode: str
+    job: dict,
+    store,
+    session_id: str,
+    message: str,
+    model: str,
+    images: list,
+    mode: str,
+    plugin_files: list,
 ):
     """独立于 HTTP 请求执行；手机页面切后台或断线不会取消 Agent。"""
     try:
         result = await agentmod.run_agent(
-            store, session_id, message, model, images=images, mode=mode
+            store,
+            session_id,
+            message,
+            model,
+            images=images,
+            mode=mode,
+            plugin_files=plugin_files,
         )
         job["result"] = {
             "success": result.get("ok", False),
@@ -400,3 +507,77 @@ async def _json(request: web.Request) -> dict | None:
         return value if isinstance(value, dict) else None
     except Exception:  # noqa: BLE001
         return None
+
+
+def _validate_plugin_files(raw_files) -> list[dict]:
+    """校验工作区路径引用；请求中禁止携带源码正文。"""
+    if raw_files is None:
+        return []
+    if not isinstance(raw_files, list):
+        raise ValueError("plugin_files 必须是数组")
+    if len(raw_files) > _MAX_PLUGIN_FILES:
+        raise ValueError(f"最多选择 {_MAX_PLUGIN_FILES} 个插件文件")
+
+    files = []
+    seen_paths = set()
+    for item in raw_files:
+        if not isinstance(item, dict):
+            raise ValueError("插件文件数据格式无效")
+        raw_path = item.get("path")
+        if "content" in item:
+            raise ValueError("插件路径引用不得包含源码正文 content")
+        if not isinstance(raw_path, str):
+            raise ValueError("插件路径引用必须包含文本 path")
+
+        kind = str(item.get("kind") or "file").strip().casefold()
+        if kind not in {"file", "directory"}:
+            raise ValueError("插件路径 kind 仅支持 file 或 directory")
+        role = str(item.get("role") or "primary").strip().casefold()
+        if role not in _PLUGIN_FILE_ROLES:
+            raise ValueError(
+                "插件目标 role 仅支持 primary、reference、test 或 protected"
+            )
+
+        path = raw_path.strip().replace("\\", "/").strip("/")
+        parts = path.split("/")
+        if (
+            not path
+            or len(path) > 300
+            or any(not part or part in {".", ".."} for part in parts)
+            or any(ord(char) < 32 for char in path)
+            or re.match(r"^[A-Za-z]:", path)
+        ):
+            raise ValueError("插件文件路径无效")
+        folded_parts = {part.casefold() for part in parts}
+        if folded_parts & _IGNORED_PLUGIN_PARTS:
+            raise ValueError(f"不支持选择构建或缓存目录中的文件: {path}")
+
+        name = parts[-1]
+        folded_name = name.casefold()
+        if kind == "file":
+            extension = (
+                "." + folded_name.rsplit(".", 1)[-1]
+                if "." in folded_name
+                else ""
+            )
+            if (
+                extension not in _PLUGIN_SOURCE_EXTENSIONS
+                and folded_name not in _PLUGIN_SOURCE_NAMES
+            ):
+                raise ValueError(f"不支持的插件文件类型: {path}")
+            if _SENSITIVE_PLUGIN_NAME_RE.search(folded_name):
+                raise ValueError(f"为避免泄露凭据，不能选择敏感文件: {path}")
+
+        normalized_key = path.casefold()
+        if normalized_key in seen_paths:
+            continue
+        seen_paths.add(normalized_key)
+        files.append(
+            {
+                "path": path,
+                "kind": kind,
+                "role": role,
+                "source": "workspace",
+            }
+        )
+    return files
