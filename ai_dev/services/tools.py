@@ -165,6 +165,33 @@ def _directory_entries(base: str) -> list[dict]:
     return entries
 
 
+def _iter_matching_files(target: str, pattern: str):
+    """遍历目录或单个文件，并应用统一的过滤规则。"""
+    glob = pattern or "*"
+    if os.path.isfile(target):
+        candidates = ((target, _rel(target)),)
+    else:
+        def walk():
+            for root, dirs, names in os.walk(target):
+                dirs[:] = [
+                    item
+                    for item in dirs
+                    if item.casefold() not in {".git", "__pycache__", "node_modules"}
+                ]
+                for name in names:
+                    full = os.path.join(root, name)
+                    yield full, _rel(full)
+
+        candidates = walk()
+    for full, relative in candidates:
+        if _is_sensitive_path(full):
+            continue
+        if fnmatch.fnmatch(os.path.basename(full), glob) or fnmatch.fnmatch(
+            relative, glob
+        ):
+            yield full, relative
+
+
 def _short(val) -> str:
     """把回复参数渲染成简短可读文本 (截断, 避免回灌给模型时过长)"""
     try:
@@ -418,9 +445,9 @@ def _find_references_sync(symbol: str, path: str, pattern: str, limit: int) -> d
     name = str(symbol or "").strip()
     if not name or len(name) > 200:
         raise ValueError("symbol 不能为空且不能超过 200 字符")
-    base = _safe_path(path or ".")
-    if not os.path.isdir(base):
-        raise ValueError(f"不是目录: {path}")
+    target = _safe_path(path or ".")
+    if not os.path.isfile(target) and not os.path.isdir(target):
+        raise ValueError(f"路径不存在: {path}")
     maximum = min(max(int(limit or 100), 1), 300)
     matcher = re.compile(rf"(?<![\w$]){re.escape(name)}(?![\w$])")
     definition_patterns = (
@@ -429,25 +456,34 @@ def _find_references_sync(symbol: str, path: str, pattern: str, limit: int) -> d
         re.compile(rf"^\s*(?:export\s+)?(?:async\s+)?function\s+{re.escape(name)}\b"),
     )
     matches = []
-    for root, dirs, names in os.walk(base):
-        dirs[:] = [item for item in dirs if item not in {".git", "__pycache__", "node_modules"}]
-        for filename in names:
-            full = os.path.join(root, filename)
-            relative = _rel(full)
-            if _is_sensitive_path(full) or not (fnmatch.fnmatch(filename, pattern or "*") or fnmatch.fnmatch(relative, pattern or "*")):
+    for full, relative in _iter_matching_files(target, pattern):
+        try:
+            if os.path.getsize(full) > _MAX_READ_BYTES:
                 continue
-            try:
-                if os.path.getsize(full) > _MAX_READ_BYTES:
-                    continue
-                with open(full, encoding="utf-8", errors="replace") as file:
-                    for number, line in enumerate(file, 1):
-                        if matcher.search(line):
-                            kind = "definition" if any(item.search(line) for item in definition_patterns) else "reference"
-                            matches.append({"path": relative, "line": number, "kind": kind, "text": line.rstrip()[:500]})
-                            if len(matches) >= maximum:
-                                return {"symbol": name, "matches": matches, "truncated": True}
-            except OSError:
-                continue
+            with open(full, encoding="utf-8", errors="replace") as file:
+                for number, line in enumerate(file, 1):
+                    if matcher.search(line):
+                        kind = (
+                            "definition"
+                            if any(item.search(line) for item in definition_patterns)
+                            else "reference"
+                        )
+                        matches.append(
+                            {
+                                "path": relative,
+                                "line": number,
+                                "kind": kind,
+                                "text": line.rstrip()[:500],
+                            }
+                        )
+                        if len(matches) >= maximum:
+                            return {
+                                "symbol": name,
+                                "matches": matches,
+                                "truncated": True,
+                            }
+        except OSError:
+            continue
     return {"symbol": name, "matches": matches, "truncated": False}
 
 
@@ -707,48 +743,35 @@ def _search_code(
     """搜索仓库文本，不暴露工作区外的文件。"""
     if not str(query or ""):
         raise ValueError("缺少 query")
-    base = _safe_path(path or ".")
-    if not os.path.isdir(base):
-        raise ValueError(f"不是目录: {path}")
+    target = _safe_path(path or ".")
+    if not os.path.isfile(target) and not os.path.isdir(target):
+        raise ValueError(f"路径不存在: {path}")
     maximum = min(max(int(limit or 100), 1), 500)
     needle = str(query) if case_sensitive else str(query).lower()
     results = []
-    for root, dirs, files in os.walk(base):
-        dirs[:] = [
-            item for item in dirs if item not in {".git", "__pycache__", "node_modules"}
-        ]
-        for name in files:
-            if _is_sensitive_path(os.path.join(root, name)):
+    for full, relative in _iter_matching_files(target, pattern):
+        try:
+            if os.path.getsize(full) > _MAX_READ_BYTES:
                 continue
-            rel = _rel(os.path.join(root, name))
-            if not fnmatch.fnmatch(name, pattern or "*") and not fnmatch.fnmatch(
-                rel, pattern or "*"
-            ):
-                continue
-            try:
-                if os.path.getsize(os.path.join(root, name)) > _MAX_READ_BYTES:
-                    continue
-                with open(
-                    os.path.join(root, name), encoding="utf-8", errors="replace"
-                ) as file:
-                    for number, line in enumerate(file, 1):
-                        candidate = line if case_sensitive else line.lower()
-                        if needle in candidate:
-                            results.append(
-                                {
-                                    "path": rel,
-                                    "line": number,
-                                    "text": line.rstrip()[:500],
-                                }
-                            )
-                            if len(results) >= maximum:
-                                return {
-                                    "query": query,
-                                    "matches": results,
-                                    "truncated": True,
-                                }
-            except OSError:
-                continue
+            with open(full, encoding="utf-8", errors="replace") as file:
+                for number, line in enumerate(file, 1):
+                    candidate = line if case_sensitive else line.lower()
+                    if needle in candidate:
+                        results.append(
+                            {
+                                "path": relative,
+                                "line": number,
+                                "text": line.rstrip()[:500],
+                            }
+                        )
+                        if len(results) >= maximum:
+                            return {
+                                "query": query,
+                                "matches": results,
+                                "truncated": True,
+                            }
+        except OSError:
+            continue
     return {"query": query, "matches": results, "truncated": False}
 
 
@@ -1068,12 +1091,15 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "search_code",
-            "description": "在仓库内按文本搜索代码，返回文件、行号和匹配内容。定位实现和调用关系时优先使用。",
+            "description": "在仓库内的目录或单个文件中按文本搜索代码，返回文件、行号和匹配内容。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
-                    "path": {"type": "string"},
+                    "path": {
+                        "type": "string",
+                        "description": "相对仓库根的目录或文件路径，默认 '.'",
+                    },
                     "pattern": {
                         "type": "string",
                         "description": "文件 glob，例如 *.py",
@@ -1183,12 +1209,15 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "find_references",
-            "description": "在指定目录中查找符号的定义和引用位置。",
+            "description": "在指定目录或单个文件中查找符号的定义和引用位置。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "symbol": {"type": "string"},
-                    "path": {"type": "string"},
+                    "path": {
+                        "type": "string",
+                        "description": "相对仓库根的目录或文件路径，默认 '.'",
+                    },
                     "pattern": {"type": "string"},
                     "limit": {"type": "integer"},
                 },

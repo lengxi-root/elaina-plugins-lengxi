@@ -24,9 +24,9 @@ SYSTEM_PROMPT = """你是 ElainaBot_v2 框架内置的 AI 开发助手，负责�
 
 工作准则:
 0. 系统提供 load_plugin_skill 时，根据任务按需加载插件开发、故障诊断或代码审查 Skill；工具不存在时继续使用当前工具，不要假设调用成功。
-1. 动手前优先用 inspect_plugin 建立插件全貌、code_outline 定位结构、find_references 确认调用关系，
-   再用 read_ranges 读取必要代码；只有这些信息不足时才读取整份文件。参考已有插件 (如 alone/示例插件.py) 的写法;
-   编写或修改插件前, 先用 search_code 查找框架内现有同类实现和开发文档；找不到文档时必须以实际框架 API 与现有插件为准，不得假设文件存在。
+1. 按任务选用最少的读取工具，不要把 inspect_plugin、code_outline、find_references、read_ranges、read_file、search_code 逐个调用。
+   有选定目标契约时直接读取目标的必要代码范围；契约已确认的信息不要重复 list_dir 或 inspect_plugin。仅在需要确认框架 API 或调用关系时搜索同类实现。
+   修改任务一旦获得目标代码和必要 API 依据就立即写入；不要继续做与本次改动无关的宽泛搜索。工具报参数错误时只修正参数重试一次，不要重复同一失败调用。
 2. 新建插件用 write_file 写完整文件；修改已存在的文件优先用 edit_file 做局部精确替换，并传入 read_file 返回的 expected_sha256 防止覆盖并发变化。
    改完优先用 verify_change 一次执行语法、已有测试、热重载和真实命令验证；单项工具仍可用于补充排查。
 3. 按用户最新需求锁定目标插件或文件；找不到目标时如实说明，并根据工具返回继续排查。
@@ -201,7 +201,7 @@ async def _run_selected_plugin_reader(
             temperature=aiconfig.temperature(),
             tools=reader_tools,
             tool_handler=reader_tool,
-            max_tool_rounds=min(aiconfig.max_iterations(), 12),
+            max_tool_rounds=min(aiconfig.max_iterations(), 8),
             session_id=f"ai-dev:{session_id}:selected-reader",
             consumer_plugin="ai_dev",
             runtime_capabilities=["none"],
