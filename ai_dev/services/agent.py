@@ -14,8 +14,8 @@ SYSTEM_PROMPT = """你是 ElainaBot_v2 框架内置的 AI 开发助手，负责�
 
 框架要点:
 - 这是基于 QQ 官方机器人接口的异步框架 (Python, aiohttp)。
-- 插件位于框架根目录的各插件文件夹中, 每个插件是一个目录。普通插件可放多个 .py (文件名不以 _ 开头且不叫 main/app/index);
-  大型插件用 main.py / app.py / index.py 作为入口, 入口内可用相对导入 (from . import xxx)。
+- 插件统一位于框架根目录的 plugins/ 下，每个插件是一个目录。list_plugins 的 name 是运行时名称，path 才是文件工具使用的规范路径。普通插件可放多个 .py (文件名不以 _ 开头且不叫 main/app/index);
+  新建大型插件必须使用 main.py 作为唯一入口，入口内可用相对导入 (from . import xxx)。
 - 插件用装饰器注册: 从 core.plugin.decorators 导入 handler / on_load / on_unload / interceptor。
   处理器签名为 async def fn(event, match), 用 await event.reply('文本') 回复。
   例: @handler(r'^ping$', name='ping', desc='测试') ; async def h(event, match): await event.reply('pong')
@@ -24,9 +24,11 @@ SYSTEM_PROMPT = """你是 ElainaBot_v2 框架内置的 AI 开发助手，负责�
 
 工作准则:
 0. 系统提供 load_plugin_skill 时，根据任务按需加载插件开发、故障诊断或代码审查 Skill；工具不存在时继续使用当前工具，不要假设调用成功。
+   新建或开发插件时，优先读取框架开发文档 docs/plugin-development.md（只需特定章节时读取对应范围）。文档是默认首要依据；文档未覆盖、用户明确要求参考已有实现，或确实需要确认现有兼容行为时，再读取最相关的现有插件。仓库内其他文件仍可按任务需要自由读取。
 1. 按任务选用最少的读取工具，不要把 inspect_plugin、code_outline、find_references、read_ranges、read_file、search_code 逐个调用。
    有选定目标契约时直接读取目标的必要代码范围；契约已确认的信息不要重复 list_dir 或 inspect_plugin。仅在需要确认框架 API 或调用关系时搜索同类实现。
    修改任务一旦获得目标代码和必要 API 依据就立即写入；不要继续做与本次改动无关的宽泛搜索。工具报参数错误时只修正参数重试一次，不要重复同一失败调用。
+   新建插件时根据需求选择单文件或大型插件结构；大型插件必须创建 main.py 作为入口，并按需创建子模块、资源、配置、测试和面板。不要为新插件选择 app.py 或 index.py 作为入口。
 2. 新建插件用 write_file 写完整文件；修改已存在的文件优先用 edit_file 做局部精确替换，并传入 read_file 返回的 expected_sha256 防止覆盖并发变化。
    改完优先用 verify_change 一次执行语法、已有测试、热重载和真实命令验证；单项工具仍可用于补充排查。
 3. 按用户最新需求锁定目标插件或文件；找不到目标时如实说明，并根据工具返回继续排查。
@@ -405,6 +407,9 @@ def _required_evidence_tools(user_text: str) -> list[str]:
     """返回处理常见检查请求前必须执行的工具。"""
     text = str(user_text or "").strip().casefold()
     required = []
+    if _is_create_plugin_request(text):
+        # 新建插件需要有开发文档读取证据，但不限制后续按任务读取其他仓库文件。
+        required.append("read_file")
     status_request = ("系统" in text or "框架" in text) and any(
         word in text for word in ("状态", "检查", "健康", "运行情况")
     )
@@ -484,6 +489,25 @@ _EXPLANATION_ONLY_WORDS = (
 )
 
 
+def _is_create_plugin_request(user_text: str) -> bool:
+    text = str(user_text or "").strip().casefold()
+    actions = (
+        "写一个",
+        "写个",
+        "编写",
+        "创建",
+        "新建",
+        "新增",
+        "开发一个",
+        "开发个",
+        "开发",
+        "做一个",
+        "做个",
+        "实现",
+    )
+    return "插件" in text and any(word in text for word in actions)
+
+
 def _successful_tool_event(event: dict) -> bool:
     """按具体工具的返回语义判断成功。"""
     result = event.get("result")
@@ -517,20 +541,7 @@ def _execution_validator(user_text: str, analysis_mode: bool):
     if not any(word in text for word in _CHANGE_WORDS):
         return None
 
-    create_plugin = "插件" in text and any(
-        word in text
-        for word in (
-            "写一个插件",
-            "写个插件",
-            "编写插件",
-            "创建插件",
-            "新建插件",
-            "新增插件",
-            "开发一个插件",
-            "开发个插件",
-            "实现一个插件",
-        )
-    )
+    create_plugin = _is_create_plugin_request(text)
     write_tools = (
         {"write_file"}
         if create_plugin

@@ -506,11 +506,13 @@
 <script>
 const API = '/api/ext/groupguard';
 const THEME_MAP = {
+  '--background':'--host-bg','--card':'--host-bg2','--popover':'--host-bg-float','--secondary':'--host-bg3',
+  '--foreground':'--host-text','--muted-foreground':'--host-text2','--border':'--host-border',
+  '--primary':'--host-accent','--accent-foreground':'--host-accent-hover','--accent':'--host-accent-soft',
+  '--success':'--host-success','--destructive':'--host-danger','--warning':'--host-warning','--info':'--host-info',
   '--bg':'--host-bg','--bg2':'--host-bg2','--bg3':'--host-bg3','--bg-float':'--host-bg-float',
-  '--text':'--host-text','--text2':'--host-text2','--text3':'--host-text3','--border':'--host-border',
-  '--accent':'--host-accent','--accent-hover':'--host-accent-hover','--accent-light':'--host-accent-light',
-  '--accent-soft':'--host-accent-soft','--success':'--host-success','--danger':'--host-danger',
-  '--warning':'--host-warning','--info':'--host-info'
+  '--text':'--host-text','--text2':'--host-text2','--text3':'--host-text3','--accent-hover':'--host-accent-hover',
+  '--accent-light':'--host-accent-light','--accent-soft':'--host-accent-soft','--danger':'--host-danger'
 };
 
 function hostColorScheme(style){
@@ -518,7 +520,7 @@ function hostColorScheme(style){
   if(declared === 'dark' || declared.startsWith('dark only')) return 'dark';
   if(declared === 'light' || declared.startsWith('light only')) return 'light';
   const probe = document.createElement('span');
-  probe.style.cssText = 'position:fixed;visibility:hidden;color:' + (style.getPropertyValue('--bg').trim() || '#fff');
+  probe.style.cssText = 'position:fixed;visibility:hidden;color:' + (style.getPropertyValue('--background').trim() || style.getPropertyValue('--bg').trim() || '#fff');
   document.body.appendChild(probe);
   const rgb = getComputedStyle(probe).color.match(/[\d.]+/g);
   probe.remove();

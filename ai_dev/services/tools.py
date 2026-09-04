@@ -31,6 +31,19 @@ _CONFIG_FILES = ("settings", "bot")
 _MAX_CONFIG_VALUE_BYTES = 100_000
 _MAX_RANGE_CHARS = 60_000
 _MAX_OUTLINE_SYMBOLS = 240
+_SEARCH_IGNORED_DIRS = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "env",
+    "node_modules",
+    "venv",
+}
 _CONFIG_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$")
 _SENSITIVE_CONFIG_KEY = re.compile(
     r"(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie|secret|password|passwd|app[_-]?secret)",
@@ -66,6 +79,19 @@ def _safe_path(rel: str) -> str:
     parts = os.path.relpath(target, root).split(os.sep)
     if any(part.casefold() == ".git" for part in parts):
         raise ValueError("禁止访问 .git 目录")
+    return target
+
+
+def _read_path(rel: str) -> str:
+    """解析读取路径，并兼容 list_plugins 返回的单层运行时插件名。"""
+    target = _safe_path(rel)
+    if os.path.exists(target):
+        return target
+    normalized = str(rel or "").strip().replace("\\", "/").strip("/")
+    if normalized and "/" not in normalized and normalized not in {".", ".."}:
+        plugin_target = _safe_path(f"plugins/{normalized}")
+        if os.path.exists(plugin_target):
+            return plugin_target
     return target
 
 
@@ -176,7 +202,7 @@ def _iter_matching_files(target: str, pattern: str):
                 dirs[:] = [
                     item
                     for item in dirs
-                    if item.casefold() not in {".git", "__pycache__", "node_modules"}
+                    if item.casefold() not in _SEARCH_IGNORED_DIRS
                 ]
                 for name in names:
                     full = os.path.join(root, name)
@@ -209,7 +235,7 @@ def _short(val) -> str:
 
 
 async def _t_list_dir(path: str = ".") -> dict:
-    base = _safe_path(path or ".")
+    base = _read_path(path or ".")
     if not os.path.isdir(base):
         raise ValueError(f"不是目录: {path}")
     entries = await asyncio.to_thread(_directory_entries, base)
@@ -383,7 +409,7 @@ async def _t_code_outline(path: str) -> dict:
 
 
 def _inspect_plugin_sync(path: str) -> dict:
-    target = _safe_path(path)
+    target = _read_path(path)
     if os.path.isfile(target):
         target = os.path.dirname(target)
     if not os.path.isdir(target):
@@ -445,7 +471,7 @@ def _find_references_sync(symbol: str, path: str, pattern: str, limit: int) -> d
     name = str(symbol or "").strip()
     if not name or len(name) > 200:
         raise ValueError("symbol 不能为空且不能超过 200 字符")
-    target = _safe_path(path or ".")
+    target = _read_path(path or ".")
     if not os.path.isfile(target) and not os.path.isdir(target):
         raise ValueError(f"路径不存在: {path}")
     maximum = min(max(int(limit or 100), 1), 300)
@@ -561,7 +587,13 @@ async def _t_list_plugins() -> dict:
     pm = _plugin_manager()
     if not pm:
         raise ValueError("插件管理器不可用")
-    return {"plugins": pm.get_plugin_list()}
+    plugins = []
+    for item in pm.get_plugin_list():
+        rendered = dict(item)
+        name = str(rendered.get("name") or "").strip()
+        rendered["path"] = f"plugins/{name}" if name else "plugins"
+        plugins.append(rendered)
+    return {"plugins": plugins}
 
 
 async def _t_list_handlers() -> dict:
@@ -743,7 +775,7 @@ def _search_code(
     """搜索仓库文本，不暴露工作区外的文件。"""
     if not str(query or ""):
         raise ValueError("缺少 query")
-    target = _safe_path(path or ".")
+    target = _read_path(path or ".")
     if not os.path.isfile(target) and not os.path.isdir(target):
         raise ValueError(f"路径不存在: {path}")
     maximum = min(max(int(limit or 100), 1), 500)
@@ -1091,7 +1123,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "search_code",
-            "description": "在仓库内的目录或单个文件中按文本搜索代码，返回文件、行号和匹配内容。",
+            "description": "在仓库内的目录或单个文件中按文本搜索代码，返回文件、行号和匹配内容；也接受 list_plugins 返回的插件 name。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1127,7 +1159,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "list_dir",
-            "description": "列出仓库内某个目录下的文件与子目录。",
+            "description": "列出仓库内某个目录下的文件与子目录；也接受 list_plugins 返回的插件 name。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1143,7 +1175,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "读取仓库内某个文本文件的内容与 SHA-256 版本哈希。",
+            "description": "读取仓库内任意正常文本文件的内容与 SHA-256 版本哈希；新建插件时优先读取 docs/plugin-development.md，其他文件仍可按任务需要读取。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1197,7 +1229,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "inspect_plugin",
-            "description": "一次识别插件目录的文件、入口、测试、配置与主要符号轮廓，适合开发前建立上下文。",
+            "description": "一次识别插件目录的文件、入口、测试、配置与主要符号轮廓；path 可直接使用 list_plugins 返回的 path 或 name。",
             "parameters": {
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
@@ -1209,7 +1241,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "find_references",
-            "description": "在指定目录或单个文件中查找符号的定义和引用位置。",
+            "description": "在指定目录或单个文件中查找符号的定义和引用位置；也接受 list_plugins 返回的插件 name。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1293,7 +1325,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "list_plugins",
-            "description": "列出所有插件及其加载状态、handler 数、是否大型插件、报错信息。",
+            "description": "列出所有插件及其规范仓库 path、加载状态、handler 数、是否大型插件和报错信息；后续文件工具优先使用返回的 path。",
             "parameters": {"type": "object", "properties": {}},
         },
     },
