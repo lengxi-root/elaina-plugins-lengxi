@@ -36,8 +36,7 @@ from .runtime import runtime
 PLUGIN_NAME = 'onebot_amsghook'
 EVENT_ID_TTL = 270
 EVENT_ID_MAX_USES = 5
-MEMBER_TRUE_TTL = 1800
-MEMBER_FALSE_TTL = 60
+MEMBERSHIP_CACHE_TTL = 24 * 60 * 60
 PROACTIVE_FAILURE_TTL = 300
 
 CALLBACK_KEYBOARD = {
@@ -471,15 +470,28 @@ async def official_in_group(group_id, self_id):
     def cached_membership():
         cached = runtime.membership_cache.get(group_id)
         if not cached:
+            cached = store.membership(group_id, qq_number)
+            if cached is not None:
+                runtime.membership_cache[group_id] = cached
+        if not cached:
             return None
-        ttl = MEMBER_TRUE_TTL if cached['present'] else MEMBER_FALSE_TTL
-        if time.time() - cached['checked_at'] >= ttl:
+        if str(cached.get('qq_number') or qq_number) != qq_number:
+            runtime.membership_cache.pop(group_id, None)
+            return None
+        try:
+            checked_at = float(cached.get('checked_at'))
+        except (TypeError, ValueError):
+            runtime.membership_cache.pop(group_id, None)
+            return None
+        age = time.time() - checked_at
+        if age < 0 or age >= MEMBERSHIP_CACHE_TTL:
+            runtime.membership_cache.pop(group_id, None)
             return None
         _trace(
             '群成员检测缓存', group_id=group_id, qq_number=qq_number,
-            present=cached['present'], ttl=ttl,
+            present=bool(cached.get('present')), ttl=MEMBERSHIP_CACHE_TTL,
         )
-        return cached['present']
+        return bool(cached.get('present'))
 
     cached = cached_membership()
     if cached is not None:
@@ -501,18 +513,32 @@ async def official_in_group(group_id, self_id):
             _trace('群成员检测异常', level='error', group_id=group_id, error=str(exc))
             return False
         data = unwrap_response(response)
-        present = (
-            _onebot_ok(response)
-            and isinstance(data, list)
-            and any(
-                isinstance(member, dict)
-                and str(member.get('user_id') or '') == qq_number
-                for member in data
+        if not _onebot_ok(response) or not isinstance(data, list):
+            _trace(
+                '群成员检测响应无效', level='warning', group_id=group_id,
+                response=response,
             )
+            return False
+        present = any(
+            isinstance(member, dict)
+            and str(member.get('user_id') or '') == qq_number
+            for member in data
         )
+        checked_at = time.time()
         runtime.membership_cache[group_id] = {
-            'present': present, 'checked_at': time.time(),
+            'qq_number': qq_number,
+            'present': present,
+            'checked_at': checked_at,
         }
+        try:
+            await store.set_membership(group_id, qq_number, present, checked_at)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _trace(
+                '群成员检测缓存落盘失败', level='warning', group_id=group_id,
+                error=str(exc),
+            )
         _trace(
             '群成员检测完成', group_id=group_id, qq_number=qq_number,
             present=present, response=response,
@@ -790,7 +816,7 @@ async def send_dm(group_id, self_id, text):
         _trace('dm 指令失败', level='warning', group_id=group_id, reason='内容为空或网关未连接')
         return 'failed'
     mapping = store.mappings().get(str(group_id)) or {}
-    if not await official_in_group(group_id, self_id):
+    if not mapping and not await official_in_group(group_id, self_id):
         _trace('dm 指令失败', level='warning', group_id=group_id, reason='官机不在群内')
         return 'failed'
     group_id = str(group_id)
@@ -928,7 +954,7 @@ async def intercept_api(request, call_next):
         _trace('原路发送', group_id=group_id or '-', reason='代发条件不满足')
         return await call_next()
     mapping = store.mappings().get(group_id) or {}
-    if not await official_in_group(group_id, request.self_id):
+    if not mapping and not await official_in_group(group_id, request.self_id):
         _trace('原路发送', group_id=group_id, reason='官机不在群内或成员查询失败')
         return await call_next()
 

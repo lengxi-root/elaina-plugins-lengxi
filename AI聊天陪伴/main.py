@@ -20,8 +20,8 @@ from .web import routes as webpanel
 __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
-    "description": "支持多人格、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "2.0.1",
+    "description": "支持多人格、人物集、中央 LLM、全入口用户独立上下文与 Web 面板",
+    "version": "2.1.0",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -292,6 +292,14 @@ async def _watch_ai_service() -> None:
 async def help_command(event, _match) -> None:
     current = config.load()
     personality = await _personality_for(event, current)
+    character_set = current.get("character_sets", {}).get(
+        current.get("active_character_set", ""), {}
+    )
+    character_set_name = (
+        character_set.get("name", "未使用")
+        if character_set.get("enabled", True)
+        else "未使用"
+    )
     personalities = "、".join(
         f"{key}({value['name']})" for key, value in current["personalities"].items()
     )
@@ -302,11 +310,13 @@ async def help_command(event, _match) -> None:
         "全量群聊可按面板设置的概率自动参与对话\n"
         "/ai clear - 清空当前会话\n"
         "/ai personality <ID> - 切换人格\n"
+        "人物集由 Web 面板配置，可填写人物经历和人物关系\n"
         "/ai remember <内容> - 保存个人长期记忆\n"
         "/ai memories - 查看个人长期记忆\n"
         "/ai forget - 清空个人长期记忆\n"
         "当前接口：由中央 AI 模块管理\n"
         f"当前人格：{personality['name'] if personality else '未配置'}\n"
+        f"当前人物集：{character_set_name}\n"
         f"可用人格：{personalities}",
     )
 

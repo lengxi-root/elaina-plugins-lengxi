@@ -256,9 +256,11 @@ async def on_group_increase(event, match):
         log.warning(f"无法确定处理群 {group_id} 入群事件的机器人账号")
         return
 
-    if user_id == self_id:
-        return
-    if not await is_bot_admin(group_id, self_id):
+    # GROUP_ADD_ROBOT 会被基座桥接成 group_increase，user_id 就是机器人自身。
+    # 机器人入群也参与同一套验证判定；命中“跳过机器人验证”号段时再跳过。
+    robot_joined = user_id == self_id
+    # 机器人刚被邀请时通常还不是群管理员，但仍应先进入验证会话。
+    if not robot_joined and not await is_bot_admin(group_id, self_id):
         log.warning(
             f"新成员 {user_id}@{group_id}: 机器人 {self_id} 非管理员, 跳过入群验证/欢迎"
         )
@@ -286,7 +288,10 @@ async def on_group_increase(event, match):
     welcome_text = (
         tpl.replace("{user}", user_id).replace("{group}", group_id) if tpl else ""
     )
-    log.info(f"新成员进群: 用户 {user_id}@{group_id}, 发起验证")
+    if robot_joined:
+        log.info(f"机器人 {user_id}@{group_id} 入群, 发起验证")
+    else:
+        log.info(f"新成员进群: 用户 {user_id}@{group_id}, 发起验证")
     verify.create_verify_session(self_id, group_id, user_id, comment, welcome_text)
 
 

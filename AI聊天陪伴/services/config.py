@@ -83,6 +83,7 @@ DEFAULT_CONFIG = {
     "provider_id": "",
     "model_preference": "",
     "active_personality": "catgirl",
+    "active_character_set": "",
     "companion_context": (
         "你是一个稳定、真诚、克制的陪伴者。你有自己的连续身份和判断，不冒充真人，不声称拥有现实经历，"
         "不把用户当作可以操控的对象；保持温和、清晰和有边界的表达。"
@@ -117,6 +118,7 @@ DEFAULT_CONFIG = {
     "blocked_words": [],
     "blocked_response": "这条消息未通过内容安全检查，请换一种安全、合规的表达。",
     "personalities": copy.deepcopy(BUILTIN_PERSONALITIES),
+    "character_sets": {},
 }
 
 _lock = threading.RLock()
@@ -150,6 +152,9 @@ def _merge(defaults: dict, current: dict) -> dict:
     if isinstance(current.get("personalities"), dict):
         # 精确保存配置集合，确保用户可以删除内置人设。
         result["personalities"] = copy.deepcopy(current["personalities"])
+    if isinstance(current.get("character_sets"), dict):
+        # 人物集同样是用户维护的完整集合，空字典表示暂不使用人物集。
+        result["character_sets"] = copy.deepcopy(current["character_sets"])
     return result
 
 
@@ -215,6 +220,74 @@ def validate(value: dict) -> dict:
         personality["builtin"] = bool(personality.get("builtin", False))
     if value.get("active_personality") not in personalities:
         value["active_personality"] = next(iter(personalities))
+    value["active_character_set"] = str(
+        value.get("active_character_set") or ""
+    ).strip()[:128]
+    character_sets = value.get("character_sets")
+    if not isinstance(character_sets, dict):
+        raise ValueError("人物集必须是对象集合")
+    normalized_character_sets = {}
+    seen_character_set_ids = set()
+    for character_set_id, item in list(character_sets.items())[:50]:
+        if not isinstance(item, dict):
+            continue
+        set_id = str(character_set_id or "").strip()[:128]
+        if not set_id or set_id in seen_character_set_ids:
+            continue
+        name = str(item.get("name") or set_id).strip()[:120]
+        description = str(item.get("description") or "").strip()[:6000]
+        raw_characters = item.get("characters", [])
+        if not isinstance(raw_characters, list):
+            raise ValueError(f"人物集 {name} 的人物列表必须是列表")
+        characters = []
+        for character in raw_characters[:100]:
+            if not isinstance(character, dict):
+                continue
+            character_name = str(character.get("name") or "").strip()[:120]
+            if not character_name:
+                continue
+            characters.append(
+                {
+                    "name": character_name,
+                    "identity": str(character.get("identity") or "").strip()[:500],
+                    "personality": str(character.get("personality") or "").strip()[:3000],
+                    "background": str(character.get("background") or "").strip()[:8000],
+                    "notes": str(character.get("notes") or "").strip()[:3000],
+                }
+            )
+        raw_relationships = item.get("relationships", [])
+        if not isinstance(raw_relationships, list):
+            raise ValueError(f"人物集 {name} 的人物关系必须是列表")
+        relationships = []
+        for relationship in raw_relationships[:200]:
+            if not isinstance(relationship, dict):
+                continue
+            source = str(relationship.get("source") or "").strip()[:120]
+            target = str(relationship.get("target") or "").strip()[:120]
+            relation = str(relationship.get("relation") or "").strip()[:500]
+            if not source or not target or not relation:
+                continue
+            relationships.append(
+                {
+                    "source": source,
+                    "target": target,
+                    "relation": relation,
+                    "description": str(
+                        relationship.get("description") or ""
+                    ).strip()[:3000],
+                }
+            )
+        normalized_character_sets[set_id] = {
+            "name": name,
+            "description": description,
+            "enabled": bool(item.get("enabled", True)),
+            "characters": characters,
+            "relationships": relationships,
+        }
+        seen_character_set_ids.add(set_id)
+    value["character_sets"] = normalized_character_sets
+    if value["active_character_set"] not in normalized_character_sets:
+        value["active_character_set"] = ""
     value["temperature"] = min(2.0, max(0.0, float(value.get("temperature", 0.8))))
     value["max_tokens"] = min(131072, max(1, int(value.get("max_tokens", 8192))))
     value["context_messages"] = min(200, max(2, int(value.get("context_messages", 24))))
