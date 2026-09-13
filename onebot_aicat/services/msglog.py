@@ -1,16 +1,10 @@
-"""聊天记录查询: 直接查询框架 LogService 自动记录的消息库 (logs/<bot_qq>/message.db)。
-
-框架在收到每条消息时已写入 SQLite (见 core/application.py), 表结构:
-log(id, timestamp 'YYYY-MM-DD HH:MM:SS', content, source, level,
-    user_id, group_id, message_id, message_type, raw_data, extra)
-extra 为 {"nickname": ...} 的 JSON, 消息被撤回后会被改写为 'recalled'。
-"""
+"""查询框架自动记录的聊天消息。"""
 
 import json
 import re
 import time
 
-from core.plugins import get_app
+from core.plugins import get_api, get_app
 
 
 def _log_service():
@@ -19,14 +13,18 @@ def _log_service():
 
 
 def resolve_bot_qq(meta: dict) -> str:
-    """确定查询哪个机器人的消息库: 优先事件的 self_id, 否则取第一个已连接的 bot。"""
+    """确定查询哪个机器人的消息库，并通过统一 OneBot API 解析账号。"""
     self_id = str(meta.get("self_id") or "")
-    if self_id:
-        return self_id
-    app = get_app()
-    adapter = getattr(app, "adapter", None) if app else None
-    bots = getattr(adapter, "bots", None) or {}
-    return str(next(iter(bots), ""))
+    try:
+        api = get_api()
+        selector = getattr(api, "select_self_id", None) if api is not None else None
+        if callable(selector):
+            selected = str(selector(self_id) or "")
+            if selected:
+                return selected
+    except Exception:  # noqa: BLE001
+        pass
+    return self_id
 
 
 def _ts_str(epoch) -> str:
