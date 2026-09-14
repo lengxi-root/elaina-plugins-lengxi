@@ -430,6 +430,16 @@ body.module-missing .module-missing-overlay{display:grid}
 .module-missing-card h2{margin:0 0 8px;font-size:18px}.module-missing-card p{margin:0;color:var(--ink2);font-size:13px;line-height:1.7}
 </style>
 </head>
+<style data-elaina-theme-transition>
+html, body, body *, body *::before, body *::after {
+  transition-property: background-color, color, border-color, box-shadow, fill, stroke;
+  transition-duration: .28s;
+  transition-timing-function: ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  html, body, body *, body *::before, body *::after { transition-duration: 0s !important; }
+}
+</style>
 <body>
 
 <!-- 应用 -->

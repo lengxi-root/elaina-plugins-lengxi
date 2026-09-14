@@ -224,6 +224,16 @@
   }
 </style>
 </head>
+<style data-elaina-theme-transition>
+html, body, body *, body *::before, body *::after {
+  transition-property: background-color, color, border-color, box-shadow, fill, stroke;
+  transition-duration: .28s;
+  transition-timing-function: ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  html, body, body *, body *::before, body *::after { transition-duration: 0s !important; }
+}
+</style>
 <body>
 <div class="ab-app">
   <!-- 左侧栏 -->

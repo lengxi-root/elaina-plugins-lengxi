@@ -58,6 +58,16 @@ th{background:var(--card2);color:var(--muted);font-size:11px;font-weight:600;whi
 @media(max-width:760px){.wrap{padding:24px 16px 40px}.stats{grid-template-columns:repeat(2,1fr);gap:10px}.hero{align-items:flex-start;flex-direction:column}.hero-actions{width:100%}.switcher{margin-left:auto}.card{padding:18px}.actions .btn{flex:1}}
 </style>
 </head>
+<style data-elaina-theme-transition>
+html, body, body *, body *::before, body *::after {
+  transition-property: background-color, color, border-color, box-shadow, fill, stroke;
+  transition-duration: .28s;
+  transition-timing-function: ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  html, body, body *, body *::before, body *::after { transition-duration: 0s !important; }
+}
+</style>
 <body>
 <div class="wrap">
   <div class="hero">

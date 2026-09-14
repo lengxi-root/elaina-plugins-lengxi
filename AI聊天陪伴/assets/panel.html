@@ -11,6 +11,16 @@
 @media(max-width:720px){.app{display:block}.sidebar{position:fixed;left:0;top:0;width:250px;transform:translateX(-105%)}.app.mobile-open .sidebar{transform:none}.app.mobile-open .scrim{display:block;position:fixed;inset:0;background:rgba(10,12,20,.38);z-index:19}.topbar{height:66px;padding:0 14px}.heading p{display:none}.content{padding:16px 14px 38px}.grid,.grid.two,.switches,.provider-list,.route{grid-template-columns:1fr}.route .order{text-align:left}.route .actions{grid-column:auto}.panel-head{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
+<style data-elaina-theme-transition>
+html, body, body *, body *::before, body *::after {
+  transition-property: background-color, color, border-color, box-shadow, fill, stroke;
+  transition-duration: .28s;
+  transition-timing-function: ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  html, body, body *, body *::before, body *::after { transition-duration: 0s !important; }
+}
+</style>
 <body>
 <div class="app" id="app"><div class="scrim" id="scrim"></div><aside class="sidebar"><div class="brand"><div class="logo">AC</div><div><strong>AI 聊天陪伴</strong><small>Companion Runtime</small></div></div><nav class="nav"><button class="active" data-page="overview"><i>01</i><span>概览</span></button><button data-page="models"><i>02</i><span>聊天模型</span></button><button data-page="images"><i>03</i><span>生图旁路</span></button><button data-page="personalities"><i>04</i><span>人格</span></button><button data-page="context"><i>05</i><span>上下文</span></button><button data-page="skills"><i>06</i><span>Skills</span></button><button data-page="model-tools"><i>07</i><span>模型工具</span></button><button data-page="resources"><i>08</i><span>资源</span></button><button data-page="safety"><i>09</i><span>安全</span></button></nav><div class="service-state"><span class="pulse"></span><span id="service-text">等待中央 LLM</span></div></aside>
 <main class="workspace"><header class="topbar"><div class="heading"><button class="icon-btn" id="sidebar-toggle" type="button" title="菜单">≡</button><div><h1 id="page-title">概览</h1><p>用户隔离上下文、稳定人格与按需媒体能力</p></div></div><button class="btn" id="reload" type="button">刷新</button></header><div class="content">

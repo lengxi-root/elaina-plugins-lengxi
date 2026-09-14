@@ -23,6 +23,8 @@ from .policy import (
     button_click_params,
     caller_name,
     extract_media,
+    extract_official_keyboard,
+    extract_official_markdown,
     extract_text,
     find_rule,
     group_target,
@@ -823,6 +825,8 @@ async def _send_with_event(group_id, self_id, message, event=None):
     group_openid = mapping.get("group_openid")
     event_id = str((event or {}).get("event_id") or "")
     text = extract_text(message)
+    markdown = extract_official_markdown(message)
+    keyboard = extract_official_keyboard(message)
     media = extract_media(message)
     _trace(
         "最终发送开始",
@@ -830,6 +834,8 @@ async def _send_with_event(group_id, self_id, message, event=None):
         group_openid=group_openid,
         event_id=event_id,
         text=text,
+        markdown=markdown,
+        keyboard=keyboard,
         media=media,
     )
     try:
@@ -868,8 +874,9 @@ async def _send_with_event(group_id, self_id, message, event=None):
         else:
             response = await bridge.send_group_markdown(
                 group_openid,
-                text or "1",
+                markdown or text or "1",
                 event_id=event_id,
+                keyboard=keyboard,
             )
     except OfficialBotApiError as exc:
         result = send_result(exc.data)

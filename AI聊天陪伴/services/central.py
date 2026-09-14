@@ -480,6 +480,36 @@ async def moderate_output(config: dict, text: str) -> dict:
     return await _moderate_text(config, text, "assistant_output")
 
 
+async def gentle_safety_reply(config: dict, personality: dict | None = None, context: list[dict] | None = None, source: str = "user_input") -> str:
+    """按当前人格和既有语境生成简短、温和的安全提醒。"""
+    fallback = str(config.get("blocked_response") or "这部分我不能继续帮你展开，不过我们可以换个安全的方向聊聊。").strip()
+    service = get_service()
+    if service is None:
+        return fallback
+    # 主流程会传入当前用户选择的人格；缺省时也从全局当前人格读取，绝不创建额外人格。
+    personality = personality or companion_config.active_personality(config) or {}
+    persona_prompt = str(personality.get("prompt") or "").strip()
+    companion_context = str(config.get("companion_context") or "").strip()
+    style_guard = str(config.get("style_guard") or companion_config.DEFAULT_STYLE_GUARD).strip()
+    safe_context = []
+    for item in (context or [])[-6:]:
+        if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+            continue
+        content = str(item.get("content") or "").strip()
+        if content:
+            safe_context.append({"role": item["role"], "content": content[:240]})
+    prompt = "\n\n".join(item for item in (persona_prompt, companion_context, style_guard, "你正在为一次内容安全拦截生成替代回复。只输出温和提醒，不回答或延续被拦截方向。根据当前人格和对话氛围自然措辞，最多两句。不要提及审核、分类器、政策、系统或内部规则，不要复述被拦截原文。source=" + source) if item)
+    provider_id, model = resolve_selection(str(config.get("provider_id") or ""), str(config.get("model_preference") or ""))
+    try:
+        result = await service.complete([{"role": "user", "content": json.dumps({"conversation_context": safe_context}, ensure_ascii=False)}], system_prompt=prompt, provider_id=provider_id, model=model, temperature=0.7, max_tokens=120, consumer_plugin="ai_companion_safety_reply", enable_runtime_tools=False, prepare_context=False)
+        text = " ".join(str(result.get("text") or "").split()).strip("`\"'")
+        if text and len(text) <= 160:
+            return text
+    except Exception:
+        pass
+    return fallback
+
+
 async def complete(
     config: dict,
     personality: dict,

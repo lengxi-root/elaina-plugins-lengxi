@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from copy import deepcopy
 
@@ -230,18 +231,98 @@ def extract_text(message):
     return ''.join(parts)
 
 
+def extract_official_markdown(message):
+    """提取供 QQ 官方机器人直接发送的 Markdown 内容。"""
+    if isinstance(message, dict):
+        value = message.get('content') or message.get('markdown')
+        if isinstance(value, dict):
+            value = value.get('content') or value.get('data')
+        return str(value or '') or None
+    if not isinstance(message, list):
+        return None
+    for segment in message:
+        if not isinstance(segment, dict):
+            continue
+        if str(segment.get('type') or '').lower() != 'markdown':
+            continue
+        data = segment.get('data') or segment.get('markdown') or {}
+        if isinstance(data, str):
+            return data or None
+        return str(data.get('content') or data.get('data') or data.get('markdown') or '') or None
+    return None
+
+
+def extract_official_keyboard(message):
+    """提取插件传入的官方机器人 keyboard 对象。"""
+    def normalize(value):
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, list):
+            return {'content': {'rows': [{'buttons': value}]}}
+        if isinstance(value, str):
+            try:
+                parsed = __import__('json').loads(value)
+            except (TypeError, ValueError):
+                return None
+            return normalize(parsed)
+        return None
+
+    if isinstance(message, dict):
+        return normalize(message.get('keyboard') or message.get('inline_keyboard'))
+    if not isinstance(message, list):
+        return None
+    for segment in message:
+        if not isinstance(segment, dict):
+            continue
+        if str(segment.get('type') or '').lower() not in {'button', 'buttons', 'keyboard', 'inline_keyboard'}:
+            continue
+        data = segment.get('data') or segment.get('keyboard') or segment.get('buttons')
+        if isinstance(data, dict) and data.get('keyboard'):
+            data = data.get('keyboard')
+        if isinstance(data, dict) and data.get('inline_keyboard'):
+            data = data.get('inline_keyboard')
+        if (keyboard := normalize(data)):
+            return keyboard
+        if isinstance(segment.get('data'), dict):
+            if (keyboard := normalize(segment['data'].get('keyboard') or segment['data'].get('inline_keyboard'))):
+                return keyboard
+    return None
+
+
 def official_message_supported(message):
     if isinstance(message, str):
         return True
+    if isinstance(message, dict):
+        markdown = extract_official_markdown(message)
+        keyboard = extract_official_keyboard(message)
+        return bool(markdown or keyboard)
     if not isinstance(message, list) or not message:
         return False
     media_count = 0
+    has_markdown = False
     for segment in message:
         if not isinstance(segment, dict):
             return False
-        segment_type = str(segment.get('type') or '')
+        segment_type = str(segment.get('type') or '').lower()
         if segment_type in {'text', 'at'}:
             continue
+        if segment_type == 'markdown':
+            data = segment.get('data')
+            if isinstance(data, str) or (isinstance(data, dict) and (data.get('content') or data.get('data'))):
+                has_markdown = True
+                continue
+            return False
+        if segment_type in {'button', 'buttons', 'keyboard', 'inline_keyboard'}:
+            data = segment.get('data') or segment.get('keyboard') or segment.get('buttons')
+            if isinstance(data, (dict, list)):
+                continue
+            if isinstance(data, str):
+                try:
+                    if isinstance(json.loads(data), (dict, list)):
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            return False
         if segment_type not in {'image', 'record', 'video'}:
             return False
         data = segment.get('data')

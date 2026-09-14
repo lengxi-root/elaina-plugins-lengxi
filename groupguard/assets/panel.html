@@ -6,6 +6,20 @@
   <title>群管中心</title>
   <link rel="stylesheet" href="/api/ext/groupguard/assets/panel.css">
 </head>
+<style data-elaina-theme-transition>
+:root { color-scheme: light; }
+html, body, body *, body *::before, body *::after {
+  transition-property: background-color, color, border-color, box-shadow, fill, stroke;
+  transition-duration: .28s;
+  transition-timing-function: ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  html, body, body *, body *::before, body *::after { transition-duration: 0s !important; }
+}
+</style>
+<script data-elaina-theme-bridge>
+(function(){try{var t=window.parent!==window&&window.parent.ElainaWebPanelTheme;if(t&&typeof t.bind==='function')t.bind(document.documentElement,{suppressTransitions:false,map:{'--bg':['--bg','--bg2'],'--background':['--bg','--bg2'],'--card':['--bg2','--bg-float'],'--panel':['--bg2','--bg-float'],'--surface':['--bg2','--bg-float'],'--card2':['--bg3','--bg2'],'--text':['--text'],'--fg':['--text'],'--text2':['--text2'],'--muted':['--text3','--text2'],'--mut':['--text3','--text2'],'--border':['--border'],'--bd':['--border'],'--accent':['--accent'],'--primary':['--accent'],'--primary-color':['--accent']}})}catch(_){}})();
+</script>
 <body>
   <div class="app sidebar-collapsed" id="app">
     <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="关闭侧边栏"></button>

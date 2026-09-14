@@ -116,7 +116,7 @@ DEFAULT_CONFIG = {
     "moderation_enabled": True,
     "safety_review_prompt": DEFAULT_SAFETY_REVIEW_PROMPT,
     "blocked_words": [],
-    "blocked_response": "这条消息未通过内容安全检查，请换一种安全、合规的表达。",
+    "blocked_response": "这部分我不能继续帮你展开，不过我们可以换个安全的方向聊聊。",
     "personalities": copy.deepcopy(BUILTIN_PERSONALITIES),
     "character_sets": {},
 }
@@ -530,3 +530,4 @@ def resource_file_path(file_name: str) -> str:
     name = os.path.basename(str(file_name or ""))
     path = os.path.realpath(os.path.join(root, name))
     return path if name and path.startswith(root + os.sep) else ""
+

@@ -143,6 +143,18 @@ async def _output_rejected(current: dict, text: str) -> bool:
     return False
 
 
+async def _gentle_blocked_response(event, current: dict, source: str = "user_input") -> str:
+    """根据当前人格和既有上下文生成温和提醒；被拦截原文不进入上下文。"""
+    personality = await _personality_for(event, current)
+    context = await asyncio.to_thread(
+        store.history,
+        user_context_scope(event),
+        min(current.get("context_messages", 24), 6),
+        current.get("context_expire_seconds", 86400),
+    )
+    return await central.gentle_safety_reply(current, personality, context, source)
+
+
 async def reply_for_event(event, text: str) -> str:
     """完成一轮对话。失败时撤销刚写入的用户消息。"""
     current = config.load()
@@ -187,8 +199,9 @@ async def reply_for_event(event, text: str) -> str:
                 raise RuntimeError("模型没有返回可发送的最终答复")
             if blocked:
                 log.warning("AI 输出命中违规词，已替换为安全回复")
+                reply = await _gentle_blocked_response(event, current, "assistant_output")
             elif await _output_rejected(current, reply):
-                reply = current["blocked_response"]
+                reply = await _gentle_blocked_response(event, current, "assistant_output")
         except Exception:
             await asyncio.to_thread(store.remove, message_id)
             raise
@@ -376,10 +389,10 @@ async def remember_command(event, match) -> None:
     if current.get("moderation_enabled") and safety.find_blocked(
         content, current["blocked_words"]
     ):
-        await _reply_to_user(event, current["blocked_response"])
+        await _reply_to_user(event, await _gentle_blocked_response(event, current))
         return
     if await _input_rejected(current, content):
-        await _reply_to_user(event, current["blocked_response"])
+        await _reply_to_user(event, await _gentle_blocked_response(event, current))
         return
     await asyncio.to_thread(
         store.add_memory,
@@ -468,10 +481,10 @@ async def chat_message(event, _match) -> None:
         else ""
     )
     if blocked:
-        await _reply_to_user(event, current["blocked_response"])
+        await _reply_to_user(event, await _gentle_blocked_response(event, current))
         return
     if await _input_rejected(current, text):
-        await _reply_to_user(event, current["blocked_response"])
+        await _reply_to_user(event, await _gentle_blocked_response(event, current))
         return
     try:
         reply = await reply_for_event(event, text)
