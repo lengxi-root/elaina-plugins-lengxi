@@ -299,7 +299,8 @@ class OfficialBotBridge:
             self.ready.set()
             return
         if event_type in {
-            'GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE', 'INTERACTION_CREATE',
+            'GROUP_AT_MESSAGE_CREATE', 'GROUP_MESSAGE_CREATE',
+            'C2C_MESSAGE_CREATE', 'INTERACTION_CREATE',
         }:
             try:
                 await self.on_event(event_type, payload, event_id)

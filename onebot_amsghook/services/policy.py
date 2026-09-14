@@ -161,11 +161,18 @@ def button_click_params(group_id, mapping, appid='', msg_seq=''):
 
 def official_message_event(event_type, payload, event_id, self_id, *, group_id=''):
     """将 QQ 官方机器人消息转换为框架可分发的 OneBot v11 消息事件。"""
-    if event_type not in {'GROUP_AT_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE'}:
+    if event_type not in {'GROUP_AT_MESSAGE_CREATE', 'GROUP_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE'}:
         return None
     payload = payload if isinstance(payload, dict) else {}
-    message_type = 'group' if event_type == 'GROUP_AT_MESSAGE_CREATE' else 'private'
-    content = str(payload.get('content') or '').strip()
+    message_type = 'group' if event_type in {'GROUP_AT_MESSAGE_CREATE', 'GROUP_MESSAGE_CREATE'} else 'private'
+    raw_content = payload.get('content') or payload.get('message')
+    if isinstance(raw_content, list):
+        raw_content = ''.join(
+            str(item.get('text') or item.get('content') or '')
+            if isinstance(item, dict) else str(item or '')
+            for item in raw_content
+        )
+    content = str(raw_content or '').strip()
     if message_type == 'group':
         import re
 

@@ -206,8 +206,19 @@ async def handle_gateway_event(event_type, payload, event_id):
     ):
         _trace("网关事件去重", event_type=event_type, identity=gateway_identity)
         return
-    if event_type == "GROUP_AT_MESSAGE_CREATE":
-        content = re.sub(r"<@![^>]+>\s*", "", str(payload.get("content") or "")).strip()
+    if event_type in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+        # 不同官方网关版本可能把正文放在 content 或 message 字段，
+        # 同时群聊事件名称也可能是 GROUP_MESSAGE_CREATE；统一提取后再匹配验证码。
+        raw_content = payload.get("content")
+        if not raw_content:
+            raw_content = payload.get("message")
+        if isinstance(raw_content, list):
+            raw_content = "".join(
+                str(item.get("text") or item.get("content") or "")
+                if isinstance(item, dict) else str(item or "")
+                for item in raw_content
+            )
+        content = re.sub(r"<@![^>]+>\s*", "", str(raw_content or "")).strip()
         code_match = re.search(
             r"(?<![A-Z0-9_])VERIFY_[A-Z0-9]{8}(?![A-Z0-9_])", content.upper()
         )
@@ -270,7 +281,7 @@ async def handle_gateway_event(event_type, payload, event_id):
             )
             return
 
-    if event_type in {"GROUP_AT_MESSAGE_CREATE", "C2C_MESSAGE_CREATE"}:
+    if event_type in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE", "C2C_MESSAGE_CREATE"}:
         await inject_gateway_message(event_type, payload, event_id)
         return
 
@@ -1097,7 +1108,15 @@ async def queue_bootstrap(request, message):
 
 
 async def _bootstrap_timeout(code):
-    await asyncio.sleep(store.config().get("wake_timeout_seconds", 15) + 5)
+    config = store.config()
+    # 网关事件可能比 OneBot 回包慢；至少保留 45 秒给 @官机事件，
+    # 避免 QLinux 链路刚发出验证码就被过早回退。
+    try:
+        configured = float(config.get("bootstrap_timeout_seconds", 45))
+    except (TypeError, ValueError):
+        configured = 45
+    timeout = max(45.0, configured, float(config.get("wake_timeout_seconds", 15) or 15) + 5)
+    await asyncio.sleep(timeout)
     item = runtime.pending_codes.pop(code, None)
     if item is None:
         return
