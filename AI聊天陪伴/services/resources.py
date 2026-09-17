@@ -76,9 +76,12 @@ async def run(arguments: dict, items: list[dict], context: dict | None = None) -
         }.get(media_type)
         if sender is None:
             return {"ok": False, "error": "当前消息通道不支持该媒体资源"}
-        sent = await sender(data, content="")
+        try:
+            sent = await sender(data, content="")
+        except Exception:  # noqa: BLE001 - 可选媒体失败不能影响文字回复
+            return {"ok": True, "sent": False}
         if sent is None:
-            return {"ok": False, "error": "媒体资源发送失败"}
+            return {"ok": True, "sent": False}
         return {
             "ok": True,
             "sent": True,

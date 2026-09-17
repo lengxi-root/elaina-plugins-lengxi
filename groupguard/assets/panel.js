@@ -1,7 +1,7 @@
 const BASE = '/api/ext/groupguard';
 const $ = id => document.getElementById(id);
 const PAGE_TITLES = {overview:'概览',config:'功能设置',forbidden:'违禁词',templates:'消息模板',audit:'管理记录',developer:'开发者工具'};
-const ACTION_LABELS = {mute:'禁言',unmute:'解禁',recall:'撤回消息',speak_recall:'发言撤回',cancel_recall:'取消撤回',approve_join:'通过入群',decline_join:'拒绝入群',blacklist_join:'拒绝并拉黑',verify_pass:'通过验证',verify_failure_mute:'验证失败禁言',spam_punish:'刷屏处罚',config_change:'配置变更',forbidden_add:'添加违禁词',forbidden_delete:'删除违禁词',forbidden_clear:'清空违禁词',cache_clear:'清除缓存',template_test:'测试模板'};
+const ACTION_LABELS = {mute:'禁言',unmute:'解禁',kick:'踢人',recall:'撤回消息',speak_recall:'发言撤回',cancel_recall:'取消撤回',approve_join:'通过入群',decline_join:'拒绝入群',blacklist_join:'拒绝并拉黑',verify_pass:'通过验证',verify_failure_mute:'验证失败禁言',verify_failure_kick:'验证失败移出',spam_punish:'刷屏处罚',config_change:'配置变更',forbidden_add:'添加违禁词',forbidden_delete:'删除违禁词',forbidden_clear:'清空违禁词',cache_clear:'清除缓存',template_test:'测试模板'};
 const SOURCE_LABELS = {command:'群命令',automatic:'自动监管',verification:'入群验证',web:'Web 面板'};
 const POLICY_FIELDS = [
   ['block_links','cfg-block-links'],
@@ -110,7 +110,7 @@ function formatTime(timestamp){return new Intl.DateTimeFormat('zh-CN',{month:'2-
 function formatFullTime(timestamp){return new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(Number(timestamp)*1000)).replaceAll('/','-')}
 function timeBucket(timestamp){const then=Number(timestamp)*1000,delta=Math.max(0,Date.now()-then);if(delta<3600000)return Math.max(1,Math.floor(delta/60000))+' 分钟前';if(delta<7200000)return '1 小时前';const date=new Date(then),today=new Date();if(date.toDateString()===today.toDateString())return '今天';return new Intl.DateTimeFormat('zh-CN',{month:'long',day:'numeric'}).format(date)}
 function formatExpire(expire){if(!expire)return '永久';const remain=Number(expire)*1000-Date.now();if(remain<=0)return '已到期';return new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(Number(expire)*1000))}
-function auditReason(item){const count=Number(item.affected_count)||0,target=item.target_name||item.target_id||'';const reasons={mute:'禁言'+(target?'成员 '+target:'成员')+(count?'，共 '+count+' 人':''),unmute:'解除'+(target?'成员 '+target:'成员')+'禁言',recall:'撤回违规消息'+(count?' '+count+' 条':''),speak_recall:'将'+(target?'成员 '+target:'成员')+'加入发言撤回',cancel_recall:'取消'+(target?'成员 '+target:'成员')+'的发言撤回',approve_join:'通过入群申请',decline_join:'拒绝入群申请',blacklist_join:'拒绝入群申请并加入黑名单',verify_pass:'成员已通过入群验证',verify_failure_mute:'入群验证失败并执行禁言',spam_punish:'触发刷屏规则'+(count?'，共处理 '+count+' 条消息':''),config_change:'更新群管配置'+(count?'，共变更 '+count+' 项':''),forbidden_add:'添加新的违禁词规则',forbidden_delete:'删除违禁词规则',forbidden_clear:'清空当前群违禁词',cache_clear:'清除群管缓存',template_test:'向当前群发送测试模板'};return reasons[item.action]||((ACTION_LABELS[item.action]||item.action)+(count?'，影响 '+count+' 项':''))}
+function auditReason(item){const count=Number(item.affected_count)||0,target=item.target_name||item.target_id||'';const reasons={mute:'禁言'+(target?'成员 '+target:'成员')+(count?'，共 '+count+' 人':''),unmute:'解除'+(target?'成员 '+target:'成员')+'禁言',kick:'移出'+(target?'成员 '+target:'成员')+'群聊',recall:'撤回违规消息'+(count?' '+count+' 条':''),speak_recall:'将'+(target?'成员 '+target:'成员')+'加入发言撤回',cancel_recall:'取消'+(target?'成员 '+target:'成员')+'的发言撤回',approve_join:'通过入群申请',decline_join:'拒绝入群申请',blacklist_join:'拒绝入群申请并加入黑名单',verify_pass:'成员已通过入群验证',verify_failure_mute:'入群验证失败并执行禁言',verify_failure_kick:'入群验证失败并移出群聊',spam_punish:'触发刷屏规则'+(count?'，共处理 '+count+' 条消息':''),config_change:'更新群管配置'+(count?'，共变更 '+count+' 项':''),forbidden_add:'添加新的违禁词规则',forbidden_delete:'删除违禁词规则',forbidden_clear:'清空当前群违禁词',cache_clear:'清除群管缓存',template_test:'向当前群发送测试模板'};return reasons[item.action]||((ACTION_LABELS[item.action]||item.action)+(count?'，影响 '+count+' 项':''))}
 function setSidebar(collapsed){$('app').classList.toggle('sidebar-collapsed',collapsed);document.body.classList.toggle('sidebar-open',sidebarMedia.matches&&!collapsed);const button=$('sidebar-toggle');button.textContent=sidebarMedia.matches?(collapsed?'☰':'×'):(collapsed?'›':'‹');button.title=collapsed?'展开侧边栏':'收起侧边栏';button.setAttribute('aria-label',button.title)}
 function openPage(page){
   activePage=PAGE_TITLES[page]?page:'overview';
@@ -289,7 +289,7 @@ function setTemplateTestGroup(){
 function renderOverview(){
   const stats=dashboard.stats||{};
   $('m-management').textContent=stats.management_count||0;$('m-source').textContent=`手动 ${stats.manual_count||0} / 自动 ${stats.automatic_count||0}`;
-  $('m-mute').textContent=stats.mute_count||0;$('m-unmute').textContent=`解禁 ${stats.unmute_count||0}`;
+  $('m-mute').textContent=stats.mute_count||0;$('m-unmute').textContent=`解禁 ${stats.unmute_count||0} · 移出 ${stats.kick_count||0}`;
   $('m-recall').textContent=stats.recall_count||0;$('m-punish').textContent=`处罚 ${stats.punish_count||0}`;
   $('m-failed').textContent=stats.failed_count||0;$('m-approval').textContent=`审批 ${(stats.approve_count||0)+(stats.decline_count||0)}`;
   const enabled=!!dashboard.config.enabled;$('guard-state').textContent=enabled?'已启用':'未启用';$('guard-state').classList.toggle('on',enabled);
@@ -299,7 +299,7 @@ function renderOverview(){
 function renderConfig(){
   const config=dashboard.config,features=config.features||{},policies=config.policies||{},spam=dashboard.spam;
   $('cfg-enabled').checked=!!config.enabled;$('cfg-notify').checked=!!config.notify;$('cfg-join-verify').checked=!!features.join_verify;$('cfg-verify-mute').checked=!!config.mute_during_verify;
-  const joinPolicy=config.join_policy||{mode:'manual',reject_reason:'不符合入群要求'};$('cfg-join-policy').value=joinPolicy.mode;$('cfg-join-reason').value=joinPolicy.reject_reason||'';
+  const joinPolicy=config.join_policy||{mode:'manual',reject_reason:'不符合入群要求',verify_failure_limit:3,verify_failure_action:'mute'};$('cfg-join-policy').value=joinPolicy.mode;$('cfg-join-reason').value=joinPolicy.reject_reason||'';$('cfg-verify-failure-limit').value=joinPolicy.verify_failure_limit||3;$('cfg-verify-failure-action').value=joinPolicy.verify_failure_action||'mute';
   POLICY_FIELDS.forEach(([key,id])=>{const policy=policies[key]||{action:'recall',mute_minutes:10};$(id).checked=!!features[key];$(id+'-action').value=policy.action;$(id+'-mute').value=policy.mute_minutes});
   $('cfg-spam-enabled').checked=!!spam.enabled;$('cfg-spam-window').value=spam.window_seconds;$('cfg-spam-limit').value=spam.limit_count;$('cfg-spam-action').value=spam.action;$('cfg-spam-mute').value=spam.mute_minutes;
   syncPolicyFields();syncJoinPolicyFields();
@@ -326,7 +326,7 @@ function renderTargets(){
 function auditTone(item){
   if(!item.success)return'fail';
   if(['approve_join','verify_pass','unmute'].includes(item.action))return'success';
-  if(['mute','verify_failure_mute','blacklist_join','decline_join','forbidden_delete','forbidden_clear'].includes(item.action))return'danger';
+  if(['mute','kick','verify_failure_mute','verify_failure_kick','blacklist_join','decline_join','forbidden_delete','forbidden_clear'].includes(item.action))return'danger';
   if(['recall','speak_recall','cancel_recall','spam_punish'].includes(item.action))return'warning';
   return'neutral';
 }
@@ -334,6 +334,7 @@ function auditIcon(action){
   if(['approve_join','verify_pass','unmute'].includes(action))return'<path d="M20 6 9 17l-5-5"/>';
   if(['recall','speak_recall','cancel_recall'].includes(action))return'<path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 6 6v2"/>';
   if(['mute','verify_failure_mute','spam_punish'].includes(action))return'<path d="M11 5 6 9H2v6h4l5 4M15 9l6 6M21 9l-6 6"/>';
+  if(['kick','verify_failure_kick'].includes(action))return'<path d="M5 4h14v16H5zM8 8h8M8 12h5M8 16h8"/>';
   if(['approve_join','decline_join','blacklist_join'].includes(action))return'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 11a4 4 0 1 0 0-8M18 8v6M21 11h-6"/>';
   if(action==='config_change')return'<path d="M4 6h16M8 3v6M4 18h16M16 15v6M4 12h16M12 9v6"/>';
   return'<path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/>';
@@ -356,7 +357,7 @@ function renderAudit(){
 async function saveConfig(){
   const button=$('save-config');button.disabled=true;
   const features={join_verify:$('cfg-join-verify').checked};const policies={};POLICY_FIELDS.forEach(([key,id])=>{features[key]=$(id).checked;policies[key]={action:$(id+'-action').value,mute_minutes:Number($(id+'-mute').value)}});
-  const payload={appid:currentBot(),group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,mute_during_verify:$('cfg-verify-mute').checked,features,policies,join_policy:{mode:$('cfg-join-policy').value,reject_reason:$('cfg-join-reason').value.trim()},spam:{enabled:$('cfg-spam-enabled').checked,window_seconds:Number($('cfg-spam-window').value),limit_count:Number($('cfg-spam-limit').value),action:$('cfg-spam-action').value,mute_minutes:Number($('cfg-spam-mute').value)}};
+  const payload={appid:currentBot(),group_id:currentGroup(),enabled:$('cfg-enabled').checked,notify:$('cfg-notify').checked,mute_during_verify:$('cfg-verify-mute').checked,features,policies,join_policy:{mode:$('cfg-join-policy').value,reject_reason:$('cfg-join-reason').value.trim(),verify_failure_limit:Number($('cfg-verify-failure-limit').value),verify_failure_action:$('cfg-verify-failure-action').value},spam:{enabled:$('cfg-spam-enabled').checked,window_seconds:Number($('cfg-spam-window').value),limit_count:Number($('cfg-spam-limit').value),action:$('cfg-spam-action').value,mute_minutes:Number($('cfg-spam-mute').value)}};
   try{dashboard=await api(`/config?days=${encodeURIComponent($('days-select').value)}`,{method:'PUT',body:JSON.stringify(payload)});renderAll();toast('群管配置已保存')}catch(error){toast(error.message,true)}finally{button.disabled=false}
 }
 async function saveGlobalSecurity(){

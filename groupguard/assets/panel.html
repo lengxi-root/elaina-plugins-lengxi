@@ -108,6 +108,8 @@ html, body, body *, body *::before, body *::after {
                 <div class="rule-controls join-policy-controls">
                   <label class="field"><span>审批方式</span><select id="cfg-join-policy"><option value="manual">手动审批</option><option value="auto_approve">自动通过</option><option value="auto_decline">自动拒绝</option><option value="auto_blacklist">自动拒绝并拉黑</option></select></label>
                   <label class="field" id="cfg-join-reason-field"><span>拒绝理由</span><input id="cfg-join-reason" maxlength="200" placeholder="不符合入群要求"></label>
+                  <label class="field"><span>验证失败次数</span><input id="cfg-verify-failure-limit" type="number" min="1" max="20"></label>
+                  <label class="field"><span>达到次数后处理</span><select id="cfg-verify-failure-action"><option value="mute">禁言并允许重试</option><option value="kick">移出群聊</option></select></label>
                 </div>
               </div>
               <div class="rule-row">

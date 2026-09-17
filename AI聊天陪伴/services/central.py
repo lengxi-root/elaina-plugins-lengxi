@@ -6,8 +6,7 @@ import json
 import time
 
 from . import config as companion_config
-from . import image_tool, meme_tool, network_tools, resources, safety, skills
-
+from . import image_tool, meme_tool, network_tools, resources, safety, skills, tts_tool
 
 _registered_service = None
 _media_used: dict[tuple[str, str], float] = {}
@@ -377,6 +376,16 @@ def _mark_media(kind: str, context: dict) -> None:
     scope = str(context.get("scope") or context.get("user_id") or "")
     if scope:
         _media_used[(kind, scope)] = time.monotonic()
+        if len(_media_used) > 2048:
+            cutoff = time.monotonic() - 86400
+            for key, used_at in list(_media_used.items()):
+                if used_at < cutoff:
+                    _media_used.pop(key, None)
+
+
+def clear_runtime_state() -> None:
+    """释放插件卸载时的媒体冷却状态。"""
+    _media_used.clear()
 
 
 def _tools(
@@ -403,6 +412,10 @@ def _tools(
         "meme", media_context, config.get("meme_cooldown_seconds", 300)
     ):
         result.append(meme_tool.TOOL)
+    if config.get("tts_enabled") and config.get("tts_roles") and _media_ready(
+        "tts", media_context, config.get("tts_cooldown_seconds", 300)
+    ):
+        result.append(tts_tool.tool(config.get("tts_roles", [])))
     if (
         config.get("image_generation_enabled")
         and config.get("image_routes")
@@ -545,8 +558,19 @@ async def complete(
                 "meme", media_context, config.get("meme_cooldown_seconds", 300)
             ):
                 return {"ok": True, "sent": False}
-            _mark_media("meme", media_context)
-            return await meme_tool.run(arguments, media_context, config)
+            result = await meme_tool.run(arguments, media_context, config)
+            if result.get("sent"):
+                _mark_media("meme", media_context)
+            return result
+        if name == "send_tts_voice" and config.get("tts_enabled") and media_context:
+            if not _media_ready(
+                "tts", media_context, config.get("tts_cooldown_seconds", 300)
+            ):
+                return {"ok": True, "sent": False}
+            result = await tts_tool.run(arguments, media_context, config)
+            if result.get("sent"):
+                _mark_media("tts", media_context)
+            return result
         if (
             name == "generate_image"
             and config.get("image_generation_enabled")
@@ -556,10 +580,12 @@ async def complete(
                 "image", media_context, config.get("image_cooldown_seconds", 900)
             ):
                 return {"ok": True, "sent": False}
-            _mark_media("image", media_context)
-            return await image_tool.run(
+            result = await image_tool.run(
                 arguments, config, service, personality, media_context
             )
+            if result.get("sent"):
+                _mark_media("image", media_context)
+            return result
         if name == "load_skill" and config.get("skills_enabled"):
             return skills.load_skill(
                 str(arguments.get("skill_id") or ""), config.get("enabled_skills", [])

@@ -17,6 +17,7 @@ _last_cleanup = 0
 _MANAGEMENT_ACTIONS = {
     "mute",
     "unmute",
+    "kick",
     "recall",
     "speak_recall",
     "cancel_recall",
@@ -25,6 +26,7 @@ _MANAGEMENT_ACTIONS = {
     "blacklist_join",
     "verify_pass",
     "verify_failure_mute",
+    "verify_failure_kick",
     "spam_punish",
     "config_change",
     "forbidden_add",
@@ -335,6 +337,8 @@ def get_management_stats(group_id, days=30):
         "mute_count": by_action.get("mute", {}).get("affected", 0)
         + by_action.get("verify_failure_mute", {}).get("affected", 0),
         "unmute_count": by_action.get("unmute", {}).get("affected", 0),
+        "kick_count": by_action.get("kick", {}).get("affected", 0)
+        + by_action.get("verify_failure_kick", {}).get("affected", 0),
         "recall_count": by_action.get("recall", {}).get("affected", 0),
         "approve_count": by_action.get("approve_join", {}).get("affected", 0),
         "decline_count": by_action.get("decline_join", {}).get("affected", 0)

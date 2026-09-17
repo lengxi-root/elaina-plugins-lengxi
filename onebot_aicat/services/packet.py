@@ -49,7 +49,37 @@ def _resp_data(resp):
 
 def _extract_real_seq(resp):
     data = _resp_data(resp)
-    return data.get("real_seq") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        return None
+    return (
+        data.get("real_seq")
+        or data.get("message_seq")
+        or data.get("real_id")
+        or data.get("message_id")
+    )
+
+
+def _event_real_seq(event, fallback=None):
+    """按 OneBot 事件规范提取真实消息序号。
+
+    QLinux 旧消息事件有时只携带 message_id/message_seq，不能只依赖
+    get_msg 返回的 data.real_seq。
+    """
+    raw = getattr(event, "raw_data", {})
+    if not isinstance(raw, dict):
+        raw = {}
+    for value in (
+        raw.get("real_seq"),
+        raw.get("message_seq"),
+        getattr(event, "real_seq", None),
+        getattr(event, "message_seq", None),
+        fallback,
+        getattr(event, "real_id", None),
+        getattr(event, "message_id", None),
+    ):
+        if value not in (None, "", 0, "0"):
+            return value
+    return None
 
 
 def _try_decode_hex(hex_str):
@@ -199,6 +229,8 @@ async def get_message_pb(event, group_id: str, message_id: str, real_seq=None) -
         real_seq = _extract_real_seq(
             await _call(event, "get_msg", {"message_id": int(message_id)})
         )
+    if not real_seq:
+        real_seq = _event_real_seq(event, fallback=message_id)
         if not real_seq:
             return {"success": False, "error": "未找到 real_seq"}
     seq = int(real_seq)
@@ -387,7 +419,10 @@ async def handle_get_reply(event, group_id: str):
     try:
         msg_info = await _call(event, "get_msg", {"message_id": int(reply_id)})
         msg_data = _resp_data(msg_info)
-        real_seq = msg_data.get("real_seq") if isinstance(msg_data, dict) else None
+        real_seq = (
+            _extract_real_seq(msg_info)
+            or _event_real_seq(event, fallback=reply_id)
+        )
 
         pb_data = None
         if real_seq:

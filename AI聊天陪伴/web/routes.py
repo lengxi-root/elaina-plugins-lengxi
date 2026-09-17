@@ -6,11 +6,11 @@ import asyncio
 import io
 import mimetypes
 import os
-from aiohttp import web
 
+from aiohttp import web
 from core.plugin.web_pages import register_route
 
-from ..services import central, config, skills
+from ..services import central, config, skills, tts_tool
 from ..storage import repository as store
 
 PREFIX = "/api/ext/ai-companion"
@@ -45,6 +45,7 @@ def register_routes() -> None:
     register_route("GET", f"{PREFIX}/resources/media")(_get_resource_media)
     register_route("POST", f"{PREFIX}/resources/media")(_upload_resource_media)
     register_route("DELETE", f"{PREFIX}/resources/media")(_delete_resource_media)
+    register_route("GET", f"{PREFIX}/tts/voices")(_tts_voices)
     register_route("DELETE", f"{PREFIX}/context")(_clear_context)
     _registered = True
 
@@ -399,6 +400,19 @@ async def _create_skill(request: web.Request) -> web.Response:
         return web.json_response({"success": True, "data": item})
     except (TypeError, ValueError, OSError) as error:
         return web.json_response({"success": False, "error": str(error)}, status=400)
+
+
+async def _tts_voices(request: web.Request) -> web.Response:
+    """代理 acgn.ttson.cn 角色目录搜索，便于面板挑选角色 ID。"""
+    keyword = str(request.query.get("q") or "").strip()[:60]
+    if not keyword:
+        return web.json_response({"success": True, "data": []})
+    try:
+        token = str(config.load().get("tts_token") or "")
+        rows = await tts_tool.search_voices(keyword, token)
+        return web.json_response({"success": True, "data": rows})
+    except Exception as error:  # noqa: BLE001 - 搜索失败直接返回面板提示
+        return web.json_response({"success": False, "error": str(error)}, status=502)
 
 
 async def _clear_context(request: web.Request) -> web.Response:

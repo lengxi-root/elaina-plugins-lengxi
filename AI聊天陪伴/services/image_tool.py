@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import base64
 import asyncio
+import base64
 import ipaddress
 import socket
 from urllib.parse import urlsplit
@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from . import config as config_store
-
+from . import network_tools
 
 TOOL = {
     "type": "function",
@@ -98,8 +98,11 @@ async def _reference_bytes(url: str) -> bytes | None:
         return None
     timeout = aiohttp.ClientTimeout(total=20)
     try:
+        connector = aiohttp.TCPConnector(
+            resolver=network_tools.SafeResolver(), ttl_dns_cache=0
+        )
         async with (
-            aiohttp.ClientSession(timeout=timeout) as session,
+            aiohttp.ClientSession(connector=connector, timeout=timeout) as session,
             session.get(url, allow_redirects=False) as response,
         ):
             if response.status != 200:
@@ -108,7 +111,7 @@ async def _reference_bytes(url: str) -> bytes | None:
             length = int(response.headers.get("Content-Length") or 0)
             if not content_type.startswith("image/") or length > _MAX_REFERENCE_BYTES:
                 return None
-            data = await response.read()
+            data = await response.content.read(_MAX_REFERENCE_BYTES + 1)
             return data if 0 < len(data) <= _MAX_REFERENCE_BYTES else None
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
         return None
@@ -174,7 +177,7 @@ async def run(
             await event.reply_image(url, content=mention)
         else:
             encoded = str(result.get("b64_json") or "").strip()
-            if not encoded:
+            if not encoded or len(encoded) > (_MAX_REFERENCE_BYTES * 4 // 3 + 4):
                 return {"ok": True, "sent": False}
             data = base64.b64decode(encoded, validate=True)
             if not data:

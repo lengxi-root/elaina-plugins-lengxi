@@ -101,7 +101,9 @@ def _bot_avatar_url(appid: str, fallback_self_id: str = "") -> str:
 async def _download(session: aiohttp.ClientSession, url: str) -> bytes | None:
     try:
         async with session.get(url) as response:
-            data = await response.read() if response.status == 200 else b""
+            if response.status != 200:
+                return None
+            data = await response.content.read(15 * 1024 * 1024 + 1)
             return data if 0 < len(data) <= 15 * 1024 * 1024 else None
     except (aiohttp.ClientError, asyncio.TimeoutError):
         return None
@@ -119,7 +121,10 @@ async def _generate(session, key, images, texts, circle):
         form.add_field("texts", value)
     try:
         async with session.post(f"{_MEME_API}/{key}/", data=form) as response:
-            return await response.read() if response.status == 200 else None
+            if response.status != 200:
+                return None
+            data = await response.content.read(15 * 1024 * 1024 + 1)
+            return data if 0 < len(data) <= 15 * 1024 * 1024 else None
     except (aiohttp.ClientError, asyncio.TimeoutError):
         return None
 

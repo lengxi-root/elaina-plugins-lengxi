@@ -106,6 +106,13 @@ DEFAULT_CONFIG = {
     "resources": [],
     "meme_enabled": True,
     "meme_cooldown_seconds": 300,
+    "tts_enabled": False,
+    "tts_token": "",
+    "tts_to_lang": "ZH",
+    "tts_auto_translate": True,
+    "tts_roles": [],
+    "tts_cooldown_seconds": 300,
+    "tts_max_chars": 150,
     "image_generation_enabled": False,
     "image_routes": [],
     "image_size": "1024x1024",
@@ -206,18 +213,26 @@ def validate(value: dict) -> dict:
     value["safety_review_prompt"] = str(
         value.get("safety_review_prompt") or DEFAULT_SAFETY_REVIEW_PROMPT
     ).strip()[:12000]
-    personalities = value.get("personalities")
-    if not isinstance(personalities, dict) or not personalities:
+    raw_personalities = value.get("personalities")
+    if not isinstance(raw_personalities, dict) or not raw_personalities:
         raise ValueError("至少需要一个人格")
-    for personality_id, personality in personalities.items():
+    personalities = {}
+    for raw_id, personality in list(raw_personalities.items())[:50]:
+        personality_id = str(raw_id or "").strip()[:64]
         if (
-            not isinstance(personality, dict)
+            not personality_id
+            or not isinstance(personality, dict)
             or not str(personality.get("prompt") or "").strip()
         ):
             raise ValueError(f"人格 {personality_id} 缺少提示词")
-        personality["name"] = str(personality.get("name") or personality_id).strip()
-        personality["prompt"] = str(personality["prompt"]).strip()
-        personality["builtin"] = bool(personality.get("builtin", False))
+        personalities[personality_id] = {
+            "name": str(personality.get("name") or personality_id).strip()[:120],
+            "prompt": str(personality["prompt"]).strip()[:20000],
+            "builtin": bool(personality.get("builtin", False)),
+        }
+    if not personalities:
+        raise ValueError("至少需要一个有效人格")
+    value["personalities"] = personalities
     if value.get("active_personality") not in personalities:
         value["active_personality"] = next(iter(personalities))
     value["active_character_set"] = str(
@@ -388,6 +403,31 @@ def validate(value: dict) -> dict:
     value["meme_cooldown_seconds"] = min(
         86400, max(0, int(value.get("meme_cooldown_seconds", 300)))
     )
+    value["tts_token"] = str(value.get("tts_token") or "").strip()[:256]
+    if value.get("tts_to_lang") not in {"ZH", "EN", "JP", "yue", "ko", "auto"}:
+        value["tts_to_lang"] = "ZH"
+    value["tts_cooldown_seconds"] = min(
+        86400, max(0, int(value.get("tts_cooldown_seconds", 300)))
+    )
+    value["tts_max_chars"] = min(1000, max(20, int(value.get("tts_max_chars", 150))))
+    raw_tts_roles = value.get("tts_roles", [])
+    if not isinstance(raw_tts_roles, list):
+        raise ValueError("TTS 角色必须是列表")
+    normalized_tts_roles = []
+    seen_tts_names = set()
+    for item in raw_tts_roles[:20]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()[:60]
+        try:
+            voice_id = int(item.get("voice_id"))
+        except (TypeError, ValueError):
+            continue
+        if not name or voice_id <= 0 or name in seen_tts_names:
+            continue
+        normalized_tts_roles.append({"name": name, "voice_id": voice_id})
+        seen_tts_names.add(name)
+    value["tts_roles"] = normalized_tts_roles
     value["image_cooldown_seconds"] = min(
         86400, max(0, int(value.get("image_cooldown_seconds", 900)))
     )
@@ -485,6 +525,8 @@ def validate(value: dict) -> dict:
         "network_tools_enabled",
         "skills_enabled",
         "meme_enabled",
+        "tts_enabled",
+        "tts_auto_translate",
         "image_generation_enabled",
         "moderation_enabled",
     ):

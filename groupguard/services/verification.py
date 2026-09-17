@@ -76,6 +76,35 @@ async def _mute_failed_user(event, group_id, user_id):
     return bool(success)
 
 
+async def _kick_failed_user(event, group_id, user_id):
+    """达到验证失败次数后移出成员。"""
+    success, response = await api_pair(
+        event.sender.batch_remove_group_members(group_id, [user_id])
+    )
+    success = bool(success)
+    error = "" if success else str(response or "kick_failed")
+    record_audit(
+        event,
+        "verify_failure_kick",
+        "api",
+        success=success,
+        affected_count=1 if success else 0,
+        target_id=user_id,
+        details={"error": error},
+        source="verification",
+    )
+    record_result(
+        event,
+        "verify_failure_kick",
+        success,
+        affected_count=1 if success else 0,
+        target_id=user_id,
+        details={"error": error},
+        source="verification",
+    )
+    return success
+
+
 async def mute_for_verification(event, group_id, user_id, seconds):
     """临时禁言成员，并记录该禁言由本插件管理。"""
     duration = max(1, int(seconds)) + VERIFY_MUTE_GRACE
@@ -352,12 +381,54 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
     if time.time() > pending["expire"]:
         retry_count = pending.get("retry_count", 0) + 1
         state.expire_pending(group_id, user_id)
+        config = get_group_cfg(group_id)
+        join_policy = config.get("join_policy") or {}
+        try:
+            failure_limit = max(1, int(join_policy.get("verify_failure_limit", 3)))
+        except (TypeError, ValueError):
+            failure_limit = 3
+        failure_action = join_policy.get("verify_failure_action", "mute")
+        muted = False
+        if failure_action == "kick" and retry_count >= failure_limit:
+            kicked = await _kick_failed_user(event, group_id, user_id)
+            if kicked:
+                state.clear_verification(group_id, user_id)
+                record_result(
+                    event,
+                    "verify_answer",
+                    False,
+                    target_id=user_id,
+                    details={
+                        "reason": "challenge_expired",
+                        "retry_count": retry_count,
+                        "failure_limit": failure_limit,
+                        "failure_action": failure_action,
+                        "kicked": True,
+                    },
+                    source="verification",
+                )
+                await respond(
+                    event,
+                    "verify_wrong_kicked",
+                    at_user=False,
+                    target_id=user_id,
+                    retry_count=retry_count,
+                    failure_limit=failure_limit,
+                )
+                return
+            muted = await _mute_failed_user(event, group_id, user_id)
         record_result(
             event,
             "verify_answer",
             False,
             target_id=user_id,
-            details={"reason": "challenge_expired"},
+            details={
+                "reason": "challenge_expired",
+                "retry_count": retry_count,
+                "failure_limit": failure_limit,
+                "failure_action": failure_action,
+                "muted": muted,
+            },
             source="verification",
         )
         await send_verify(event, group_id, user_id, retry_count)
@@ -382,7 +453,24 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
             "retry_count": retry_count,
             "next_time": time.time() + VERIFY_FAILURE_MUTE,
         }
-        muted = await _mute_failed_user(event, group_id, user_id)
+        config = get_group_cfg(group_id)
+        join_policy = config.get("join_policy") or {}
+        try:
+            failure_limit = max(1, int(join_policy.get("verify_failure_limit", 3)))
+        except (TypeError, ValueError):
+            failure_limit = 3
+        failure_action = join_policy.get("verify_failure_action", "mute")
+        reached_limit = retry_count >= failure_limit
+        muted = False
+        kicked = False
+        if reached_limit and failure_action == "kick":
+            kicked = await _kick_failed_user(event, group_id, user_id)
+            if kicked:
+                state.clear_verification(group_id, user_id)
+            else:
+                muted = await _mute_failed_user(event, group_id, user_id)
+        else:
+            muted = await _mute_failed_user(event, group_id, user_id)
         record_result(
             event,
             "verify_answer",
@@ -391,17 +479,30 @@ async def handle_verify_answer(event, group_id, user_id, chosen, verify_id=None)
             details={
                 "reason": "wrong_answer",
                 "muted": muted,
+                "kicked": kicked,
                 "retry_count": retry_count,
+                "failure_limit": failure_limit,
+                "failure_action": failure_action,
             },
             source="verification",
         )
-        if muted:
+        if kicked:
+            await respond(
+                event,
+                "verify_wrong_kicked",
+                at_user=False,
+                target_id=user_id,
+                retry_count=retry_count,
+                failure_limit=failure_limit,
+            )
+        elif muted:
             await respond(
                 event,
                 "verify_wrong_muted",
                 at_user=False,
                 target_id=user_id,
                 retry_count=retry_count,
+                failure_limit=failure_limit,
             )
         else:
             await respond(

@@ -6,8 +6,9 @@ import asyncio
 import contextlib
 import os
 import random
-from collections import deque
 import time
+import weakref
+from collections import deque
 
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
@@ -21,7 +22,7 @@ __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
     "description": "支持多人格、人物集、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "2.1.0",
+    "version": "2.1.1",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -36,7 +37,7 @@ MESSAGE_EVENTS = [
     "C2C_MESSAGE_CREATE",
     "DIRECT_MESSAGE_CREATE",
 ]
-_locks: dict[str, asyncio.Lock] = {}
+_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
 _last_group_reply: dict[str, float] = {}
 _group_reply_times: dict[str, deque[float]] = {}
 _capability_task: asyncio.Task | None = None
@@ -167,7 +168,7 @@ async def reply_for_event(event, text: str) -> str:
     lock = _locks.setdefault(scope, asyncio.Lock())
     async with lock:
         message_id = await asyncio.to_thread(
-            store.append, scope, "user", text, current["max_stored_messages"]
+            store.append, scope, "user", text
         )
         try:
             history = await asyncio.to_thread(
@@ -280,6 +281,7 @@ async def cleanup() -> None:
             await _capability_task
         _capability_task = None
     central.unregister_capabilities()
+    central.clear_runtime_state()
     unregister_page(PAGE_KEY)
     await asyncio.to_thread(store.close)
     _locks.clear()

@@ -410,7 +410,11 @@ def _dynamic_template(key, template, data, event=None):
         if not rows:
             key, template = "audit_list_empty", _get_cached_template("audit_list_empty")
         else:
-            labels = template.get("action_labels") or {}
+            labels = {
+                **(template.get("action_labels") or {}),
+                "kick": "踢人",
+                "verify_failure_kick": "验证失败移出",
+            }
             item_template = template.get("item_content", "")
             rendered_rows = [
                 _render_value(
@@ -555,9 +559,13 @@ def _dynamic_template(key, template, data, event=None):
             else template.get("decision_text", "已拒绝该入群申请")
         )
     elif key == "verify_wrong_muted":
+        try:
+            failure_limit = max(1, int(data.get("failure_limit", 3)))
+        except (TypeError, ValueError):
+            failure_limit = 3
         variables["retry_text"] = (
             _render_value(template.get("retry_content", ""), variables)
-            if data.get("retry_count", 0) >= 3
+            if data.get("retry_count", 0) >= failure_limit
             else ""
         )
     return template, variables

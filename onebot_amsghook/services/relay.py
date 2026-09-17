@@ -7,7 +7,6 @@ import base64
 import html
 import json
 import os
-import random
 import re
 import time
 import uuid
@@ -301,16 +300,7 @@ async def handle_gateway_event(event_type, payload, event_id):
     if not group_id:
         _trace("交互事件无群映射", level="warning", group_openid=group_openid)
         return
-    runtime.event_ids[group_id] = {
-        "event_id": interaction_id,
-        "group_openid": group_openid,
-        "created_at": time.time(),
-        "uses": 0,
-    }
-    waiter = runtime.event_waiters.pop(group_id, None)
-    if waiter is not None and not waiter.done():
-        waiter.set_result(interaction_id)
-    runtime.add_log("info", f"已刷新群 {group_id} 的官方机器人 event_id")
+    _cache_gateway_event_id(group_id, group_openid, interaction_id)
     runtime.spawn(flush_pending(group_id), name=f"official-relay-flush-{group_id}")
 
 
@@ -369,6 +359,24 @@ def _group_id_by_openid(group_openid):
     return ""
 
 
+def _cache_gateway_event_id(group_id, group_openid, event_id):
+    """缓存官方群事件的 event_id，并唤醒等待按钮点击结果的协程。"""
+    group_id = str(group_id or "")
+    event_id = str(event_id or "")
+    if not group_id or not event_id:
+        return
+    runtime.event_ids[group_id] = {
+        "event_id": event_id,
+        "group_openid": str(group_openid or ""),
+        "created_at": time.time(),
+        "uses": 0,
+    }
+    waiter = runtime.event_waiters.pop(group_id, None)
+    if waiter is not None and not waiter.done():
+        waiter.set_result(event_id)
+    runtime.add_log("info", f"已刷新群 {group_id} 的官方机器人 event_id")
+
+
 def valid_event(group_id):
     item = runtime.event_ids.get(str(group_id))
     if not item:
@@ -422,7 +430,9 @@ async def wake_event(group_id, self_id, *, force=False):
             group_id,
             mapping,
             appid,
-            str(random.randint(1, 999_999)),
+            # 必须使用官方机器人按钮所在消息的真实序号。随机序号会让
+            # Oidb 0x112e 请求被 QQ 静默丢弃，表现为“发包成功但没有点击”。
+            str(mapping.get("msg_seq") or mapping.get("message_seq") or ""),
         )
         runtime.add_log(
             "info", f"点击按钮发包: 群={group_id}, button_id={payload['button_id']}"
@@ -539,6 +549,12 @@ async def handle_keyboard_event(event):
             "bot_appid": selected.get("bot_appid") or configured_appid,
             "button_id": selected.get("button_id") or "1",
             "callback_data": selected.get("callback_data"),
+            "msg_seq": str(
+                event.raw_data.get("real_seq")
+                or event.raw_data.get("message_seq")
+                or event.message_id
+                or ""
+            ),
             "updated_at": int(time.time()),
         },
     )

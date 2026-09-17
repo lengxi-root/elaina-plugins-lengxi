@@ -714,6 +714,59 @@ DEFAULT_PAYLOAD["templates"]["verify_passed_by_admin"] = {
     "at_user": False,
     "small_buttons": False,
 }
+DEFAULT_PAYLOAD["templates"]["verify_wrong_kicked"] = {
+    "label": "验证失败移出",
+    "category": "入群验证",
+    "content": "<@{target_id}> 多次未通过入群验证，已被移出群聊。",
+    "buttons": None,
+    "at_user": False,
+    "small_buttons": False,
+}
+_audit_labels = DEFAULT_PAYLOAD["templates"].get("audit_list", {}).get("action_labels")
+if isinstance(_audit_labels, dict):
+    _audit_labels.update({"kick": "踢人", "verify_failure_kick": "验证失败移出"})
+DEFAULT_PAYLOAD["templates"]["kick_target_required"] = {
+    "label": "踢人缺少目标",
+    "category": "群管理",
+    "content": "请先 @ 要移出群聊的普通成员。",
+    "buttons": None,
+    "at_user": False,
+    "small_buttons": False,
+}
+DEFAULT_PAYLOAD["templates"]["kick_too_many"] = {
+    "label": "踢人目标过多",
+    "category": "群管理",
+    "content": "一次最多移出 20 名成员，请分批操作。",
+    "buttons": None,
+    "at_user": False,
+    "small_buttons": False,
+}
+DEFAULT_PAYLOAD["templates"]["kick_success"] = {
+    "label": "踢人成功",
+    "category": "群管理",
+    "content": "已将{names}移出群聊。",
+    "buttons": None,
+    "at_user": False,
+    "small_buttons": False,
+}
+DEFAULT_PAYLOAD["templates"]["kick_failed"] = {
+    "label": "踢人失败",
+    "category": "群管理",
+    "content": "移出成员失败：{error}",
+    "buttons": None,
+    "at_user": False,
+    "small_buttons": False,
+}
+_group_category = DEFAULT_PAYLOAD["templates"].get("category_group")
+if isinstance(_group_category, dict):
+    _group_content = _group_category.get("content", "")
+    if "踢人 @用户" not in _group_content:
+        _group_category["content"] = _group_content.replace(
+            '<qqbot-cmd-input text="禁言菜单" show="禁言菜单" />',
+            '<qqbot-cmd-input text="禁言菜单" show="禁言菜单" /> | '
+            '<qqbot-cmd-input text="踢人 @用户" show="踢人" />',
+            1,
+        )
 DEFAULT_PAYLOAD["templates"]["full_message_required"]["buttons"] = [
     {
         "text": "群管刷新群权限",

@@ -291,9 +291,20 @@ def _require_join_policy(value):
         raise ValueError("入群拒绝理由不能超过 200 个字符")
     if mode in ("auto_decline", "auto_blacklist") and not reject_reason:
         raise ValueError("自动拒绝时必须填写拒绝理由")
+    failure_action = str(value.get("verify_failure_action") or "mute")
+    if failure_action not in ("mute", "kick"):
+        raise ValueError("验证失败处理方式无效")
+    failure_limit = _clamp_int(
+        value.get("verify_failure_limit", 3),
+        1,
+        20,
+        "验证失败次数",
+    )
     return {
         "mode": mode,
         "reject_reason": reject_reason or "不符合入群要求",
+        "verify_failure_limit": failure_limit,
+        "verify_failure_action": failure_action,
     }
 
 

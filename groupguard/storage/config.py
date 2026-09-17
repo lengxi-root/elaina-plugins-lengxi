@@ -46,7 +46,12 @@ def default_group_config(group_id):
         "mute_during_verify": False,
         "features": {key: False for key in FEATURE_KEYS},
         "policies": {key: _default_policy() for key in POLICY_KEYS},
-        "join_policy": {"mode": "manual", "reject_reason": "不符合入群要求"},
+        "join_policy": {
+            "mode": "manual",
+            "reject_reason": "不符合入群要求",
+            "verify_failure_limit": 3,
+            "verify_failure_action": "mute",
+        },
     }
 
 
@@ -67,6 +72,8 @@ def _get_group_cfg(group_id):
             tuple(("recall", 10) for _ in POLICY_KEYS),
             "manual",
             "不符合入群要求",
+            3,
+            "mute",
         )
     stored_features = _json_object(row["features"])
     stored_policies = _json_object(row["policies"])
@@ -92,6 +99,15 @@ def _get_group_cfg(group_id):
     ).strip()[:200]
     if not join_reason:
         join_reason = "不符合入群要求"
+    try:
+        verify_failure_limit = max(
+            1, min(20, int(stored_join_policy.get("verify_failure_limit", 3)))
+        )
+    except (TypeError, ValueError):
+        verify_failure_limit = 3
+    verify_failure_action = stored_join_policy.get("verify_failure_action", "mute")
+    if verify_failure_action not in ("mute", "kick"):
+        verify_failure_action = "mute"
     return (
         _as_bool(row["enabled"]),
         _as_bool(row["notify"]),
@@ -100,6 +116,8 @@ def _get_group_cfg(group_id):
         tuple(policy_values),
         join_mode,
         join_reason,
+        verify_failure_limit,
+        verify_failure_action,
     )
 
 
@@ -112,6 +130,8 @@ def get_group_cfg(group_id):
         policy_values,
         join_mode,
         join_reason,
+        verify_failure_limit,
+        verify_failure_action,
     ) = _get_group_cfg(group_id)
     return {
         "group_id": group_id,
@@ -125,7 +145,12 @@ def get_group_cfg(group_id):
                 POLICY_KEYS, policy_values, strict=True
             )
         },
-        "join_policy": {"mode": join_mode, "reject_reason": join_reason},
+        "join_policy": {
+            "mode": join_mode,
+            "reject_reason": join_reason,
+            "verify_failure_limit": verify_failure_limit,
+            "verify_failure_action": verify_failure_action,
+        },
     }
 
 

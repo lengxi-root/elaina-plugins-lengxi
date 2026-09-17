@@ -25,6 +25,7 @@ from .join import (
 from .join import (
     join_review_buttons as _join_review_buttons,
 )
+from .kick import cmd_kick_member
 from .menu import cmd_category, cmd_gm_off, cmd_gm_on, cmd_show_panel
 from .menu import make_toggle as _make_toggle
 from .mute import (
