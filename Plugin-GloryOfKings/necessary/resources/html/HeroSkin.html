@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <style>
+
+    /* ---- Elaina 浅色主题 (与 账号池/帮助/主页 同一套) ---- */
+    :root {
+        --gold: #b67d22;
+        --gold-soft: rgba(182, 125, 34, 0.12);
+        --blue: #2b7fd1;
+        --green: #15a37c;
+        --purple: #7559e8;
+        --rose: #df4f6c;
+        --text: #232b36;
+        --muted: rgba(35, 43, 54, 0.55);
+        --card: #ffffff;
+        --card-line: rgba(25, 35, 55, 0.10);
+    }
+    body { background: #e9edf3 !important; color: var(--text) !important; }
+
+        :root {
+            --gold: #b67d22;
+            --gold-soft: rgba(182, 125, 34, 0.12);
+            --blue: #2b7fd1;
+            --text: #232b36;
+            --muted: rgba(35, 43, 54, 0.55);
+            --card: #ffffff;
+            --card-line: rgba(25, 35, 55, 0.10);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body { width: 1500px; padding: 28px; font-family: inherit; color: var(--text); background: #e9edf3; -webkit-font-smoothing: antialiased; }
+
+        .page {
+            position: relative;
+            border-radius: 26px;
+            overflow: hidden;
+            padding: 42px 46px 40px;
+            background: radial-gradient(860px 500px at 10% -12%, rgba(182, 125, 34, 0.10), transparent 60%),
+                radial-gradient(720px 460px at 110% 14%, rgba(43, 127, 209, 0.10), transparent 58%),
+                linear-gradient(160deg, #ffffff 0%, #f6f8fb 52%, #eef2f7 100%);
+            border: 1px solid rgba(182, 125, 34, 0.22);
+            box-shadow: 0 22px 60px rgba(25, 35, 55, 0.10);
+        }
+
+        .bg-deco { position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.8; }
+        .page > *:not(.bg-deco) { position: relative; z-index: 1; }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding-bottom: 24px;
+            margin-bottom: 28px;
+            border-bottom: 1px solid rgba(182, 125, 34, 0.25);
+        }
+
+        .brand {
+            width: 60px; height: 60px; flex: 0 0 60px;
+            border-radius: 17px;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(150deg, rgba(182, 125, 34, 0.18), rgba(182, 125, 34, 0.04));
+            border: 1px solid rgba(182, 125, 34, 0.4);
+        }
+
+        .brand svg { width: 34px; height: 34px; }
+
+        .title-wrap { flex: 1; }
+
+        .title-wrap h1 {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            background: linear-gradient(92deg, #d99e2e, #9c6510);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .title-wrap .sub { margin-top: 6px; font-size: 14px; color: var(--muted); }
+
+        .count {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--gold);
+            background: var(--gold-soft);
+            border: 1px solid rgba(182, 125, 34, 0.3);
+        }
+
+        .count svg { width: 15px; height: 15px; }
+
+        .skins { display: grid; gap: 18px; grid-template-columns: repeat(3, 1fr); }
+        .skin-img { max-height: 200px; object-fit: cover; }
+
+        .skin {
+            background: var(--card);
+            border: 1px solid var(--card-line);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 6px 20px rgba(25, 35, 55, 0.10);
+        }
+
+        .skin-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+        }
+
+        .skin-no {
+            width: 30px; height: 30px; flex: 0 0 30px;
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 15px; font-weight: 700;
+            color: #232b36; background: var(--gold);
+        }
+
+        .skin-name { font-size: 18px; font-weight: 700; color: var(--text); }
+        .skin-name: empty { display: none; }
+        .skin-name: empty + .placeholder { display: inline; }
+        .placeholder { display: none; font-size: 18px; font-weight: 700; color: var(--muted); }
+
+        .skin-img { width: 100%; height: auto; display: block; }
+
+        .footer { margin-top: 26px; text-align: center; font-size: 12.5px; color: var(--muted); }
+
+    /* 删掉页面背景：页面不铺底色也不留边，面板(第二层)直接铺满整张图 */
+    html body { padding: 0 !important; background: none !important; }
+</style>
+</head>
+
+<body>
+    <div class="page">
+        <svg class="bg-deco" viewBox="0 0 920 600" preserveAspectRatio="xMidYMid slice" xmlns="http: //www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="ln" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#b67d22" stop-opacity="0.16"/>
+                    <stop offset="1" stop-color="#2b7fd1" stop-opacity="0.10"/>
+                </linearGradient>
+            </defs>
+            <g fill="none" stroke="url(#ln)" stroke-width="1.2">
+                <path d="M-40 480 L260 220 L470 410 L740 150 L1000 410"/>
+                <path d="M-40 560 L230 330 L500 560 L770 330 L1000 560"/>
+            </g>
+            <g fill="#b67d22" opacity="0.06">
+                <circle cx="800" cy="90" r="140"/>
+                <circle cx="110" cy="540" r="110"/>
+            </g>
+        </svg>
+
+        <div class="header">
+            <div class="brand">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#b67d22" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 16l4-9 5 4 5-6 4 11z"/>
+                    <path d="M3 16v3h18v-3"/>
+                </svg>
+            </div>
+            <div class="title-wrap">
+                <h1>{{heroName}} · 皮肤图鉴</h1>
+                <div class="sub">全部已上线皮肤一览</div>
+            </div>
+            <span class="count">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+                    <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+                </svg>
+                {{skinData.length}} 款
+            </span>
+        </div>
+
+        <div class="skins">
+            {{each skinData skin}}
+            <div class="skin">
+                <div class="skin-head">
+                    <span class="skin-no">{{skin.index}}</span>
+                    <span class="skin-name">{{skin.name}}</span>
+                    <span class="placeholder">皮肤 {{skin.index}}</span>
+                </div>
+                <img class="skin-img" src="{{skin.url}}" alt="{{skin.name}}">
+            </div>
+            {{/each}}
+        </div>
+    </div>
+</body>
+
+</html>

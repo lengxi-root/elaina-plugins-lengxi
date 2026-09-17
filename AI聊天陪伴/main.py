@@ -22,7 +22,7 @@ __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
     "description": "支持多人格、人物集、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -40,6 +40,7 @@ MESSAGE_EVENTS = [
 _locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
 _last_group_reply: dict[str, float] = {}
 _group_reply_times: dict[str, deque[float]] = {}
+_personality_cache: dict[str, tuple[float, str]] = {}
 _capability_task: asyncio.Task | None = None
 _last_prune = 0.0
 
@@ -100,9 +101,19 @@ async def _reply_chat_result(event, text: str, current: dict) -> None:
 
 
 async def _personality_for(event, current: dict) -> dict | None:
-    personality_id = await asyncio.to_thread(
-        store.get_personality, user_context_scope(event)
-    )
+    scope = user_context_scope(event)
+    now = time.monotonic()
+    cached = _personality_cache.get(scope)
+    if cached is not None and now - cached[0] < 600:
+        personality_id = cached[1]
+    else:
+        personality_id = await asyncio.to_thread(store.get_personality, scope)
+        _personality_cache[scope] = (now, personality_id)
+        if len(_personality_cache) > 4096:
+            cutoff = now - 3600
+            for key, (seen_at, _value) in list(_personality_cache.items()):
+                if seen_at < cutoff:
+                    _personality_cache.pop(key, None)
     return config.active_personality(
         current, personality_id
     ) or config.active_personality(current)
@@ -156,9 +167,9 @@ async def _gentle_blocked_response(event, current: dict, source: str = "user_inp
     return await central.gentle_safety_reply(current, personality, context, source)
 
 
-async def reply_for_event(event, text: str) -> str:
+async def reply_for_event(event, text: str, current: dict | None = None) -> str:
     """完成一轮对话。失败时撤销刚写入的用户消息。"""
-    current = config.load()
+    current = current or config.load()
     personality = await _personality_for(event, current)
     if not central.available():
         raise RuntimeError(central.status()["message"])
@@ -285,6 +296,7 @@ async def cleanup() -> None:
     unregister_page(PAGE_KEY)
     await asyncio.to_thread(store.close)
     _locks.clear()
+    _personality_cache.clear()
     _last_group_reply.clear()
     _group_reply_times.clear()
 
@@ -307,9 +319,10 @@ async def _watch_ai_service() -> None:
 async def help_command(event, _match) -> None:
     current = config.load()
     personality = await _personality_for(event, current)
-    character_set = current.get("character_sets", {}).get(
-        current.get("active_character_set", ""), {}
-    )
+    personality_id = str((personality or {}).get("_id") or current.get("active_personality") or "")
+    active_sets = current.get("active_character_sets", {})
+    active_set_id = active_sets.get(personality_id, "") if isinstance(active_sets, dict) else ""
+    character_set = current.get("character_sets", {}).get(active_set_id, {})
     character_set_name = (
         character_set.get("name", "未使用")
         if character_set.get("enabled", True)
@@ -331,7 +344,7 @@ async def help_command(event, _match) -> None:
         "/ai forget - 清空个人长期记忆\n"
         "当前接口：由中央 AI 模块管理\n"
         f"当前人格：{personality['name'] if personality else '未配置'}\n"
-        f"当前人物集：{character_set_name}\n"
+        f"当前人格人物集：{character_set_name}\n"
         f"可用人格：{personalities}",
     )
 
@@ -367,9 +380,9 @@ async def personality_command(event, match) -> None:
     if personality is None:
         await _reply_to_user(event, "人格不存在。发送 /ai 查看可用人格。")
         return
-    await asyncio.to_thread(
-        store.set_personality, user_context_scope(event), personality_id
-    )
+    scope = user_context_scope(event)
+    await asyncio.to_thread(store.set_personality, scope, personality_id)
+    _personality_cache[scope] = (time.monotonic(), personality_id)
     await _reply_to_user(event, f"你的陪伴人格已切换为「{personality['name']}」。")
 
 
@@ -445,7 +458,7 @@ async def forget_command(event, _match) -> None:
     priority=-50,
     event_types=MESSAGE_EVENTS,
     ignore_at_check=True,
-    fallback=lambda _event: config.load().get("fallback_reply", True),
+    fallback=lambda _event: config.get_value("fallback_reply", True),
 )
 async def chat_message(event, _match) -> None:
     global _last_prune
@@ -489,7 +502,7 @@ async def chat_message(event, _match) -> None:
         await _reply_to_user(event, await _gentle_blocked_response(event, current))
         return
     try:
-        reply = await reply_for_event(event, text)
+        reply = await reply_for_event(event, text, current)
         if reply.strip():
             await _reply_chat_result(event, reply, current)
     except Exception as error:

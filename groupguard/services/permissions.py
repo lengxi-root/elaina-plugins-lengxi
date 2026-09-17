@@ -166,6 +166,10 @@ async def check_has_full_msg(event, state=None):
 async def ensure_admin_env(event, *, member_role=None):
     """群管指令前置检查：机器人能力、用户权限和机器人管理权限。"""
     action = current_action(event, "permission_check")
+    if member_role is None:
+        member_role = str(getattr(event, "member_role", "") or "").strip().lower()
+        if member_role not in ("admin", "owner", "member"):
+            member_role = await get_event_member_role(event)
     if not is_group_admin(event, member_role):
         return await _deny_admin_env(
             event, action, "operator_denied", "user_no_permission"

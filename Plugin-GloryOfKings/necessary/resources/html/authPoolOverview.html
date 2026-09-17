@@ -1,0 +1,325 @@
+<style>
+    :root {
+        --gold: #b67d22;
+        --gold-soft: rgba(182, 125, 34, 0.12);
+        --blue: #2b7fd1;
+        --green: #15a37c;
+        --purple: #7559e8;
+        --rose: #df4f6c;
+        --cyan: #0ea5b7;
+        --emerald: #109e6a;
+        --red: #df4f6c;
+        --text: #232b36;
+        --muted: rgba(35, 43, 54, 0.55);
+        --card: #ffffff;
+        --card-line: rgba(25, 35, 55, 0.10);
+        --soft: #fbfcfe;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body { width: 1040px; padding: 28px; font-family: inherit; color: var(--text); background: #e9edf3; -webkit-font-smoothing: antialiased; }
+
+    .page {
+        position: relative;
+        border-radius: 26px;
+        overflow: hidden;
+        padding: 42px 46px 36px;
+        background: radial-gradient(900px 520px at 12% -10%, rgba(182, 125, 34, 0.10), transparent 60%),
+            radial-gradient(760px 480px at 108% 16%, rgba(43, 127, 209, 0.10), transparent 58%),
+            linear-gradient(160deg, #ffffff 0%, #f6f8fb 52%, #eef2f7 100%);
+        border: 1px solid rgba(182, 125, 34, 0.22);
+        box-shadow: 0 22px 60px rgba(25, 35, 55, 0.10);
+    }
+
+    .bg-deco { position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.8; }
+    .page > *:not(.bg-deco) { position: relative; z-index: 1; }
+
+    /* header */
+    .header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding-bottom: 24px;
+        margin-bottom: 26px;
+        border-bottom: 1px solid rgba(182, 125, 34, 0.25);
+    }
+
+    .brand {
+        width: 60px; height: 60px; flex: 0 0 60px;
+        border-radius: 17px;
+        display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(150deg, rgba(182, 125, 34, 0.18), rgba(182, 125, 34, 0.04));
+        border: 1px solid rgba(182, 125, 34, 0.4);
+    }
+
+    .brand svg { width: 33px; height: 33px; }
+
+    .title-wrap { flex: 1; }
+
+    .title-wrap h1 {
+        font-size: 32px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        background: linear-gradient(92deg, #d99e2e, #9c6510);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    .title-wrap .sub { margin-top: 6px; font-size: 14px; color: var(--muted); }
+    .meta { text-align: right; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+
+    /* summary */
+    .summary {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 14px;
+        margin-bottom: 24px;
+    }
+
+    .sum {
+        position: relative;
+        background: var(--card);
+        border: 1px solid var(--card-line);
+        border-radius: 15px;
+        padding: 18px 12px;
+        text-align: center;
+        overflow: hidden;
+        box-shadow: 0 6px 20px rgba(25, 35, 55, 0.10);
+    }
+
+    .sum-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+    .sum-val { font-size: 26px; font-weight: 800; }
+
+    .tone-blue { color: var(--blue); }
+    .tone-cyan { color: var(--cyan); }
+    .tone-green { color: var(--green); }
+    .tone-purple { color: var(--purple); }
+    .tone-emerald { color: var(--emerald); }
+    .tone-red { color: var(--red); }
+
+    /* panel */
+    .panel {
+        background: var(--card);
+        border: 1px solid var(--card-line);
+        border-radius: 20px;
+        padding: 24px;
+        margin-bottom: 22px;
+        box-shadow: 0 6px 20px rgba(25, 35, 55, 0.10);
+    }
+
+    .panel: last-child { margin-bottom: 0; }
+
+    .panel-head {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        margin-bottom: 18px;
+    }
+
+    .panel-ico {
+        width: 34px; height: 34px; flex: 0 0 34px;
+        border-radius: 10px;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(43, 127, 209, 0.12); color: var(--blue);
+    }
+
+    .panel-ico.share { background: var(--gold-soft); color: var(--gold); }
+    .panel-ico svg { width: 19px; height: 19px; }
+    .panel-head h2 { font-size: 19px; font-weight: 700; color: var(--text); }
+    .panel-head .panel-meta { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+
+    .owners { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+    .owner-card {
+        background: var(--soft);
+        border: 1px solid var(--card-line);
+        border-radius: 15px;
+        padding: 16px;
+    }
+
+    .owner-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 13px;
+        border-bottom: 1px dashed rgba(25, 35, 55, 0.10);
+        padding-bottom: 12px;
+    }
+
+    .owner-name { font-size: 16px; font-weight: 800; color: var(--text); margin-bottom: 5px; }
+    .owner-meta { font-size: 12px; color: var(--muted); }
+    .count-row { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+    .count-pill {
+        padding: 3px 9px;
+        border-radius: 7px;
+        font-size: 11px;
+        font-weight: 700;
+        background: #ffffff;
+    }
+
+    .count-pill.green { color: var(--green); background: rgba(21, 163, 124, 0.12); }
+    .count-pill.red { color: var(--red); background: rgba(223, 79, 108, 0.12); }
+    .count-pill.blue { color: var(--blue); background: rgba(43, 127, 209, 0.12); }
+
+    .uid-list { display: grid; gap: 8px; }
+
+    .uid-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-radius: 11px;
+        background: #fff;
+        border: 1px solid var(--card-line);
+    }
+
+    .uid-row.current {
+        border-color: rgba(182, 125, 34, 0.45);
+        background: rgba(182, 125, 34, 0.07);
+    }
+
+    .uid-id { font-size: 14px; font-weight: 700; color: var(--text); }
+    .uid-sub { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+    .uid-sub svg { width: 11px; height: 11px; color: var(--gold); }
+    .uid-row.current .uid-id { color: var(--gold); }
+    .uid-row.current .uid-sub { color: var(--gold); }
+
+    .badge { padding: 4px 9px; border-radius: 7px; font-size: 11px; font-weight: 700; }
+    .badge.valid { background: rgba(21, 163, 124, 0.12); color: var(--green); }
+    .badge.invalid { background: rgba(223, 79, 108, 0.12); color: var(--red); }
+    .badge.none { background: #ffffff; color: var(--muted); }
+
+    .unowned-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .empty { color: var(--muted); font-size: 14px; }
+
+    /* 删掉页面背景：页面不铺底色也不留边，面板(第二层)直接铺满整张图 */
+    html body { padding: 0 !important; background: none !important; }
+</style>
+
+<body>
+    <div class="page">
+        <svg class="bg-deco" viewBox="0 0 1040 700" preserveAspectRatio="xMidYMid slice" xmlns="http: //www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="ln" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#b67d22" stop-opacity="0.16"/>
+                    <stop offset="1" stop-color="#2b7fd1" stop-opacity="0.10"/>
+                </linearGradient>
+            </defs>
+            <g fill="none" stroke="url(#ln)" stroke-width="1.2">
+                <path d="M-40 560 L300 260 L520 460 L820 160 L1120 460"/>
+                <path d="M-40 640 L260 380 L560 640 L860 380 L1120 640"/>
+            </g>
+            <g fill="#b67d22" opacity="0.06">
+                <circle cx="880" cy="110" r="150"/>
+                <circle cx="110" cy="620" r="120"/>
+            </g>
+        </svg>
+
+        <div class="header">
+            <div class="brand">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#b67d22" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V5l8-3z"/>
+                    <path d="M9 12l2 2 4-4"/>
+                </svg>
+            </div>
+            <div class="title-wrap">
+                <h1>登录态账号池总览</h1>
+                <div class="sub">用户鉴权信息统计</div>
+            </div>
+            <div class="meta">
+                <div>{{timestamp}}</div>
+            </div>
+        </div>
+
+        <div class="summary">
+            {{each overviewCards item}}
+            <div class="sum tone-{{item.tone}}">
+                <div class="sum-label">{{item.label}}</div>
+                <div class="sum-val tone-{{item.tone}}">{{item.value}}</div>
+            </div>
+            {{/each}}
+        </div>
+
+        <div class="panel">
+            <div class="panel-head">
+                <div class="panel-ico">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.5 2.7-5.5 6-5.5s6 2 6 5.5"/>
+                        <path d="M16 7.5a3 3 0 010 5M19 5a6 6 0 010 10"/>
+                    </svg>
+                </div>
+                <h2>QQ 归属审计</h2>
+                {{if omittedOwnerCount > 0}}
+                <div class="panel-meta">仅展示前 60 个 QQ, 已省略 {{omittedOwnerCount}} 个</div>
+                {{/if}}
+            </div>
+
+            {{if ownerSections && ownerSections.length}}
+            <div class="owners">
+                {{each ownerSections owner}}
+                <div class="owner-card">
+                    <div class="owner-top">
+                        <div>
+                            <div class="owner-name">QQ {{owner.maskedQqId}}</div>
+                            <div class="owner-meta">当前 {{owner.currentMaskedCampId}}</div>
+                        </div>
+                        <div class="count-row">
+                            <div class="count-pill blue">Token {{owner.tokenCount}}</div>
+                            {{if owner.validTokenCount}}<div class="count-pill green">{{owner.validTokenCount}} 有效</div>{{/if}}
+                            {{if owner.invalidTokenCount}}<div class="count-pill red">{{owner.invalidTokenCount}} 失效</div>{{/if}}
+                        </div>
+                    </div>
+                    <div class="uid-list">
+                        {{each owner.uidEntries item}}
+                        <div class="uid-row {{item.isCurrent ? 'current' : ''}}">
+                            <div>
+                                <div class="uid-id">{{item.maskedCampUserId}}</div>
+                                <div class="uid-sub">
+                                    {{if item.isCurrent}}
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg>
+                                    当前默认
+                                    {{else}}已绑定{{/if}}
+                                </div>
+                            </div>
+                            <div class="badge {{item.badgeClass}}">{{item.badgeText}}</div>
+                        </div>
+                        {{/each}}
+                    </div>
+                </div>
+                {{/each}}
+            </div>
+            {{else}}
+            <div class="empty">暂无数据</div>
+            {{/if}}
+        </div>
+
+        {{if unownedAccounts && unownedAccounts.length}}
+        <div class="panel">
+            <div class="panel-head">
+                <div class="panel-ico share">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/>
+                        <path d="M8.3 10.8l7.4-3.6M8.3 13.2l7.4 3.6"/>
+                    </svg>
+                </div>
+                <h2>未绑定属主账号</h2>
+            </div>
+            <div class="unowned-list">
+                {{each unownedAccounts item}}
+                <div class="uid-row">
+                    <div>
+                        <div class="uid-id">{{item.maskedCampUserId}}</div>
+                        <div class="uid-sub">{{item.nickname}}</div>
+                    </div>
+                    <div class="badge {{item.statusClass}}">Token</div>
+                </div>
+                {{/each}}
+            </div>
+        </div>
+        {{/if}}
+    </div>
+</body>

@@ -6,11 +6,20 @@ from ...storage import api as db
 from ...services import state, verification as verify
 from ...services.panels import show_category, show_gm_panel
 from ...services.permissions import ensure_admin_env
-from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
+from .common import (
+    HANDLER_OPTIONS,
+    INTERACTION_HANDLER_OPTIONS,
+    begin_action,
+    finish_action,
+    trace_phase,
+)
 
 
 @handler(
-    r"^/?群管菜单\s*$", name="群管菜单", desc="查看群管控制面板", **HANDLER_OPTIONS
+    r"^/?群管菜单\s*$",
+    name="群管菜单",
+    desc="查看群管控制面板",
+    **INTERACTION_HANDLER_OPTIONS,
 )
 async def cmd_show_panel(event, match):
     begin_action(event, "view_menu")

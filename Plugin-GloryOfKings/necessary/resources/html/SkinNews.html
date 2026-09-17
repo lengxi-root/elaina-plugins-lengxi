@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>皮肤上新</title>
+    <style>
+
+    /* ---- Elaina 浅色主题 (与 账号池/帮助/主页 同一套) ---- */
+    :root {
+        --gold: #b67d22;
+        --gold-soft: rgba(182, 125, 34, 0.12);
+        --blue: #2b7fd1;
+        --green: #15a37c;
+        --purple: #7559e8;
+        --rose: #df4f6c;
+        --text: #232b36;
+        --muted: rgba(35, 43, 54, 0.55);
+        --card: #ffffff;
+        --card-line: rgba(25, 35, 55, 0.10);
+    }
+    body { background: #e9edf3 !important; color: var(--text) !important; }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body { font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif; width: 1000px; background: #e9edf3; color: #232b36; padding: 36px; }
+
+        .page-head {
+            margin-bottom: 14px;
+            display: flex;
+            align-items: baseline;
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+
+        .page-title {
+            font-size: 32px;
+            font-weight: bold;
+            color: #232b36;
+        }
+
+        .page-sub {
+            font-size: 16px;
+            color: #6b7688;
+        }
+
+        .stats-card {
+            background: #ffffff;
+            border: 1px solid rgba(25, 35, 55, 0.10);
+            border-radius: 16px;
+            padding: 22px 24px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #232b36;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title: :before {
+            content: '';
+            width: 4px;
+            height: 18px;
+            background: #f5d76e;
+            border-radius: 2px;
+        }
+
+        .section-title.soon: :before { background: #109e6a; }
+        .section-title.today: :before { background: #ff5b7c; }
+
+        /* 一条皮肤：左边横版封面（官网 fmlb_4536 是 16:9 的横图），右边文字 */
+        .skin {
+            display: flex;
+            gap: 16px;
+            padding: 14px;
+            background: #ffffff;
+            border: 1px solid rgba(25, 35, 55, 0.10);
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .skin: last-child {
+            margin-bottom: 0;
+        }
+
+        /* 今天上线的那条加金边，扫一眼就知道「今天能买」 */
+        .skin.is-today {
+            background: rgba(182, 125, 34, 0.08);
+            border-color: rgba(245, 215, 110, 0.45);
+        }
+
+        .skin-cover {
+            height: 120px;
+            width: 200px;
+            height: 112px;
+            border-radius: 10px;
+            object-fit: cover;
+            background: #ffffff;
+            flex-shrink: 0;
+        }
+
+        .skin-body{ flex: 1;
+            min-width: 0 }
+
+        .skin-top {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .skin-hero-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 7px;
+            object-fit: cover;
+            background: #ffffff;
+            flex-shrink: 0;
+        }
+
+        .skin-name {
+            font-size: 20px;
+            font-weight: bold;
+            color: #232b36;
+        }
+
+        .skin-hero {
+            font-size: 15px;
+            color: #6b7688;
+        }
+
+        /* 品质用行内色块，颜色由 JS 按品质给（QUALITY_COLOR），未知品质回落成灰 */
+        .skin-quality {
+            font-size: 13px;
+            font-weight: bold;
+            border-radius: 6px;
+            padding: 2px 9px;
+            background: #ffffff;
+        }
+
+        .skin-date {
+            font-size: 15px;
+            font-weight: bold;
+            color: #b67d22;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        .skin-date .tag {
+            font-size: 13px;
+            font-weight: normal;
+            color: #6b7688;
+            margin-right: 5px;
+        }
+
+        .skin-intro {
+            font-size: 15px;
+            color: #5b6675;
+            line-height: 1.5;
+            margin-top: 8px;
+        }
+
+        .skin-get {
+            font-size: 14px;
+            color: #6b7688;
+            line-height: 1.45;
+            margin-top: 6px;
+        }
+
+        .empty {
+            font-size: 16px;
+            color: #6b7688;
+        }
+
+        .footer {
+            margin-top: 14px;
+            text-align: center;
+            font-size: 14px;
+            color: #6b7688;
+        }
+    </style>
+    <link rel="stylesheet" href="{{_res_path}}css/ElainaTheme.css">
+    <style>
+
+/* ---- 3:2 长图: 卡片内区块双列, 页头/四格/页脚整行 ---- */
+/* ---- 3:2 长图: 皮肤卡三列瀑布, 小标题横跨 ---- */
+.stats-card { display: block; columns: 3; column-gap: 14px; }
+/* 窄列里横排卡片会把文字挤成竖条: 图片在上、文字在下 */
+.skin { display: block; }
+.skin-cover { width: 100%; height: 118px; margin-bottom: 10px; }
+/* 皮肤介绍动辄三四行, 截两行让卡片高度可控 */
+.skin-intro {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.stats-card .section-title { column-span: all; }
+.skin { break-inside: avoid; }
+
+    /* 删掉页面背景：页面不铺底色也不留边，面板(第二层)直接铺满整张图 */
+    html body { padding: 0 !important; background: none !important; }
+
+    /* 与其它页面一致: 内容外面套一层页面面板 */
+    .page {
+        position: relative;
+        border-radius: 26px;
+        overflow: hidden;
+        padding: 40px 44px 34px;
+        background: radial-gradient(860px 500px at 10% -12%, rgba(182, 125, 34, 0.10), transparent 60%),
+            radial-gradient(720px 460px at 88% 8%, rgba(43, 127, 209, 0.10), transparent 58%),
+            linear-gradient(160deg, #ffffff 0%, #f7f9fc 55%, #eef2f7 100%);
+        border: 1px solid rgba(182, 125, 34, 0.22);
+        box-shadow: 0 22px 60px rgba(25, 35, 55, 0.10);
+    }
+</style>
+</head>
+
+<body>
+<div class="page">
+    <div class="page-head">
+        <span class="page-title">皮肤上新</span>
+        <span class="page-sub">{{dateText}}{{if pushMode}} · 上新提醒{{/if}}</span>
+    </div>
+
+    {{if todayList.length}}
+    <div class="stats-card">
+        <div class="section-title today">今日上线</div>
+        {{each todayList s}}
+        <div class="skin is-today">
+            <img class="skin-cover" src="{{s.cover}}" alt="{{s.name}}" onerror="this.style.visibility='hidden'">
+            <div class="skin-body">
+                <div class="skin-top">
+                    {{if s.heroAvatar}}<img class="skin-hero-avatar" src="{{s.heroAvatar}}" alt="" onerror="this.style.visibility='hidden'">{{/if}}
+                    <span class="skin-name">{{s.name}}</span>
+                    <span class="skin-hero">{{s.hero}}</span>
+                    {{if s.quality}}<span class="skin-quality" style="color:  {{s.color}}">{{s.quality}}</span>{{/if}}
+                    <span class="skin-date"><span class="tag">上线</span>{{s.dateText}}</span>
+                </div>
+                {{if s.intro}}<div class="skin-intro">{{s.intro}}</div>{{/if}}
+                {{if s.getWay}}<div class="skin-get">获取方式：{{s.getWay}}</div>{{/if}}
+            </div>
+        </div>
+        {{/each}}
+    </div>
+    {{/if}}
+
+    {{if upcoming.length}}
+    <div class="stats-card">
+        <div class="section-title soon">即将上线</div>
+        {{each upcoming s}}
+        <div class="skin">
+            <img class="skin-cover" src="{{s.cover}}" alt="{{s.name}}" onerror="this.style.visibility='hidden'">
+            <div class="skin-body">
+                <div class="skin-top">
+                    {{if s.heroAvatar}}<img class="skin-hero-avatar" src="{{s.heroAvatar}}" alt="" onerror="this.style.visibility='hidden'">{{/if}}
+                    <span class="skin-name">{{s.name}}</span>
+                    <span class="skin-hero">{{s.hero}}</span>
+                    {{if s.quality}}<span class="skin-quality" style="color:  {{s.color}}">{{s.quality}}</span>{{/if}}
+                    <span class="skin-date"><span class="tag">{{s.countdown}}</span>{{s.dateText}}</span>
+                </div>
+                {{if s.intro}}<div class="skin-intro">{{s.intro}}</div>{{/if}}
+                {{if s.getWay}}<div class="skin-get">获取方式：{{s.getWay}}</div>{{/if}}
+            </div>
+        </div>
+        {{/each}}
+    </div>
+    {{/if}}
+
+    {{if recent.length}}
+    <div class="stats-card">
+        <div class="section-title">最近上线</div>
+        {{each recent s}}
+        <div class="skin">
+            <img class="skin-cover" src="{{s.cover}}" alt="{{s.name}}" onerror="this.style.visibility='hidden'">
+            <div class="skin-body">
+                <div class="skin-top">
+                    {{if s.heroAvatar}}<img class="skin-hero-avatar" src="{{s.heroAvatar}}" alt="" onerror="this.style.visibility='hidden'">{{/if}}
+                    <span class="skin-name">{{s.name}}</span>
+                    <span class="skin-hero">{{s.hero}}</span>
+                    {{if s.quality}}<span class="skin-quality" style="color:  {{s.color}}">{{s.quality}}</span>{{/if}}
+                    <span class="skin-date"><span class="tag">{{s.countdown}}</span>{{s.dateText}}</span>
+                </div>
+                {{if s.intro}}<div class="skin-intro">{{s.intro}}</div>{{/if}}
+                {{if s.getWay}}<div class="skin-get">获取方式：{{s.getWay}}</div>{{/if}}
+            </div>
+        </div>
+        {{/each}}
+    </div>
+    {{/if}}
+
+    {{if !todayList.length && !upcoming.length && !recent.length}}
+    <div class="stats-card">
+        <div class="empty">官网资料库里暂时没有带上线日期的皮肤数据</div>
+    </div>
+    {{/if}}
+
+    <div class="footer">GloryOfKings-Plugin · 数据来自王者荣耀官网资料库</div>
+</div>
+</body>
+
+</html>

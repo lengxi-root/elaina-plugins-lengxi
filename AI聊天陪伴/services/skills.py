@@ -27,6 +27,7 @@ _ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 _ROOT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills"
 )
+_discover_cache: tuple[int, list[dict[str, str]]] | None = None
 
 
 def _frontmatter(text: str) -> dict[str, str]:
@@ -44,8 +45,15 @@ def _frontmatter(text: str) -> dict[str, str]:
 
 
 def discover() -> list[dict[str, str]]:
+    global _discover_cache
     if not os.path.isdir(_ROOT):
         return []
+    try:
+        signature = os.stat(_ROOT).st_mtime_ns
+    except OSError:
+        return []
+    if _discover_cache is not None and _discover_cache[0] == signature:
+        return [dict(item) for item in _discover_cache[1]]
     result = []
     for skill_id in sorted(os.listdir(_ROOT)):
         if not _ID_RE.fullmatch(skill_id):
@@ -66,7 +74,8 @@ def discover() -> list[dict[str, str]]:
                 "description": meta.get("description") or "本地 LLM 技能",
             }
         )
-    return result
+    _discover_cache = (signature, result)
+    return [dict(item) for item in result]
 
 
 def enabled_catalog(enabled_ids: list[str]) -> list[dict[str, str]]:
@@ -129,6 +138,8 @@ def create_skill(skill_id: str, name: str, description: str, content: str) -> di
         with open(temporary, "w", encoding="utf-8", newline="\n") as file:
             file.write(text)
         os.replace(temporary, target)
+        global _discover_cache
+        _discover_cache = None
     except Exception:
         try:
             if os.path.exists(temporary):

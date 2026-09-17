@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <style>
+
+    /* ---- Elaina 浅色主题 (与 账号池/帮助/主页 同一套) ---- */
+    :root {
+        --gold: #b67d22;
+        --gold-soft: rgba(182, 125, 34, 0.12);
+        --blue: #2b7fd1;
+        --green: #15a37c;
+        --purple: #7559e8;
+        --rose: #df4f6c;
+        --text: #232b36;
+        --muted: rgba(35, 43, 54, 0.55);
+        --card: #ffffff;
+        --card-line: rgba(25, 35, 55, 0.10);
+    }
+    body { background: #e9edf3 !important; color: var(--text) !important; }
+
+        :root {
+            --gold: #b67d22;
+            --gold-soft: rgba(182, 125, 34, 0.12);
+            --blue: #2b7fd1;
+            --text: #232b36;
+            --muted: rgba(35, 43, 54, 0.55);
+            --card: #ffffff;
+            --card-line: rgba(25, 35, 55, 0.10);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body { width: 1800px; padding: 28px; font-family: inherit; color: var(--text); background: #e9edf3; -webkit-font-smoothing: antialiased; }
+
+        .page {
+            position: relative;
+            border-radius: 26px;
+            overflow: hidden;
+            padding: 42px 46px 40px;
+            background: radial-gradient(900px 520px at 10% -12%, rgba(182, 125, 34, 0.10), transparent 60%),
+                radial-gradient(760px 480px at 110% 14%, rgba(43, 127, 209, 0.10), transparent 58%),
+                linear-gradient(160deg, #ffffff 0%, #f6f8fb 52%, #eef2f7 100%);
+            border: 1px solid rgba(182, 125, 34, 0.22);
+            box-shadow: 0 22px 60px rgba(25, 35, 55, 0.10);
+        }
+
+        .bg-deco { position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.8; }
+        .page > *:not(.bg-deco) { position: relative; z-index: 1; }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding-bottom: 24px;
+            margin-bottom: 26px;
+            border-bottom: 1px solid rgba(182, 125, 34, 0.25);
+        }
+
+        .brand {
+            width: 60px; height: 60px; flex: 0 0 60px;
+            border-radius: 17px;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(150deg, rgba(182, 125, 34, 0.18), rgba(182, 125, 34, 0.04));
+            border: 1px solid rgba(182, 125, 34, 0.4);
+        }
+
+        .brand svg { width: 34px; height: 34px; }
+
+        .title-wrap { flex: 1; }
+
+        .title-wrap h1 {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            background: linear-gradient(92deg, #d99e2e, #9c6510);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .title-wrap .sub { margin-top: 6px; font-size: 14px; color: var(--muted); }
+
+        .count {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--gold);
+            background: var(--gold-soft);
+            border: 1px solid rgba(182, 125, 34, 0.3);
+        }
+
+        .count svg { width: 15px; height: 15px; }
+
+        /* ---------- stats ---------- */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 14px;
+            margin-bottom: 30px;
+        }
+
+        .stat {
+            background: var(--card);
+            border: 1px solid var(--card-line);
+            border-radius: 16px;
+            padding: 18px 10px;
+            text-align: center;
+            box-shadow: 0 6px 20px rgba(25, 35, 55, 0.10);
+        }
+
+        .stat .num {
+            font-size: 26px;
+            font-weight: 800;
+            color: var(--text);
+            line-height: 1.1;
+        }
+
+        .stat .lbl { margin-top: 8px; font-size: 13px; color: var(--muted); }
+
+        .stat.sr .num { color: #ff366c; }
+        .stat.spp .num { color: #d99e2e; }
+        .stat.sp .num { color: #b67d22; }
+
+        /* ---------- skins ---------- */
+        .skins {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 18px;
+        }
+
+        .skin {
+            background: var(--card);
+            border: 1px solid var(--card-line);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 6px 18px rgba(25, 35, 55, 0.10);
+        }
+
+        .skin-pic {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            overflow: hidden;
+            background: #d9dee6;
+        }
+
+        .skin-pic img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .badge {
+            position: absolute;
+            top: 10px; left: 10px;
+            min-width: 34px;
+            padding: 3px 9px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 800;
+            color: #232b36;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(25, 35, 55, 0.10);
+        }
+
+        .skin-info { padding: 11px 12px 13px; }
+
+        .skin-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .skin-hero {
+            margin-top: 4px;
+            font-size: 12.5px;
+            color: var(--muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .footer { margin-top: 28px; text-align: center; font-size: 12.5px; color: var(--muted); }
+
+    /* 删掉页面背景：页面不铺底色也不留边，面板(第二层)直接铺满整张图 */
+    html body { padding: 0 !important; background: none !important; }
+</style>
+</head>
+
+<body>
+    <div class="page">
+        <svg class="bg-deco" viewBox="0 0 1180 640" preserveAspectRatio="xMidYMid slice" xmlns="http: //www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="ln" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#b67d22" stop-opacity="0.16"/>
+                    <stop offset="1" stop-color="#2b7fd1" stop-opacity="0.10"/>
+                </linearGradient>
+            </defs>
+            <g fill="none" stroke="url(#ln)" stroke-width="1.2">
+                <path d="M-40 500 L320 240 L560 440 L880 160 L1240 440"/>
+                <path d="M-40 580 L300 350 L620 580 L920 350 L1240 580"/>
+            </g>
+            <g fill="#b67d22" opacity="0.06">
+                <circle cx="1000" cy="100" r="150"/>
+                <circle cx="120" cy="560" r="120"/>
+            </g>
+        </svg>
+
+        <div class="header">
+            <div class="brand">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#b67d22" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 16l4-9 5 4 5-6 4 11z"/>
+                    <path d="M3 16v3h18v-3"/>
+                </svg>
+            </div>
+            <div class="title-wrap">
+                <h1>个人皮肤墙</h1>
+                <div class="sub">营地ID: {{campId}} · 已拥有皮肤一览</div>
+            </div>
+            <span class="count">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+                    <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+                </svg>
+                {{skinNum}} 款
+            </span>
+        </div>
+
+        <div class="stats">
+            <div class="stat"><div class="num">{{owned}}</div><div class="lbl">已拥有</div></div>
+            <div class="stat"><div class="num">{{notForSell}}</div><div class="lbl">非卖品</div></div>
+            <div class="stat"><div class="num">{{totalValue}}</div><div class="lbl">总价值(点券)</div></div>
+            <div class="stat sr"><div class="num">{{srNum}}</div><div class="lbl">SR</div></div>
+            <div class="stat spp"><div class="num">{{sppNum}}</div><div class="lbl">S++</div></div>
+            <div class="stat sp"><div class="num">{{spNum}}</div><div class="lbl">S+</div></div>
+        </div>
+
+        <div class="skins">
+            {{each skins skin}}
+            <div class="skin">
+                <div class="skin-pic">
+                    <span class="badge" style="background:  {{skin.levelColor}}">{{skin.level}}</span>
+                    <img src="{{skin.img}}" alt="{{skin.title}}">
+                </div>
+                <div class="skin-info">
+                    <div class="skin-title">{{skin.title}}</div>
+                    <div class="skin-hero">{{skin.heroTitle}}</div>
+                </div>
+            </div>
+            {{/each}}
+        </div>
+
+        <div class="footer">数据来源: 王者营地 · 仅展示已拥有皮肤 (最多按品质排序)</div>
+    </div>
+</body>
+
+</html>

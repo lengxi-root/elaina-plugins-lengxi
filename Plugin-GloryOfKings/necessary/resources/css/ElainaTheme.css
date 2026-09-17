@@ -1,0 +1,184 @@
+/* elaina-light */
+@charset "UTF-8";
+
+/* Elaina 原有资源主题：浅灰背景、白色卡片、YS 字体。 */
+@font-face {
+  font-family: YS;
+  src: url(../font/HYWH-65W.woff) format("woff");
+  font-display: swap;
+}
+
+:root {
+  --item-bg-color: #ffffff;
+  --elaina-bg: #efefef;
+  --elaina-card: #ffffff;
+  --elaina-text: #333333;
+  --elaina-muted: #666666;
+  --elaina-border: #7e7e7e;
+  --elaina-accent: #4caf50;
+}
+
+html, body { font-family: YS, Arial, "Microsoft YaHei", sans-serif !important; color: var(--elaina-text) !important; background: var(--elaina-bg) !important; }
+
+body { margin: 0 !important; padding: 30px !important; width: 1050px !important; transform: scale(3) !important; transform-origin: 0 0 !important; box-sizing: border-box; }
+
+body: :before {
+  display: none !important;
+}
+
+.card,
+.panel,
+.section,
+.info-card,
+.stats-card,
+.report-card,
+.rank-card,
+.skin-card,
+.list-card,
+.hero-head,
+.hero-card,
+.trend-card,
+.season-card,
+.build,
+.rune-set,
+.relation-card,
+.tier-block,
+.podium,
+.list,
+.self-block,
+.skin,
+.who-row,
+.vs-side,
+.cmp-row,
+.hero-row,
+.mode-pill,
+.day-row {
+  color: var(--elaina-text) !important;
+  background: var(--elaina-card) !important;
+  border-color: var(--elaina-border) !important;
+  box-shadow: 0 2px 10px rgba(25, 35, 55, 0.10) !important;
+}
+
+.card,
+.panel,
+.section,
+.info-card,
+.stats-card,
+.report-card,
+.rank-card,
+.skin-card,
+.list-card,
+.hero-card,
+.trend-card,
+.season-card,
+.build,
+.rune-set,
+.relation-card,
+.tier-block,
+.podium,
+.list,
+.self-block,
+.skin,
+.who-row,
+.vs-side,
+.cmp-row,
+.hero-row,
+.mode-pill,
+.day-row {
+  border-radius: 12px !important;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+.title,
+.page-title,
+.section-title,
+.card-title,
+.hero-name,
+.username,
+.name {
+  color: var(--elaina-text) !important;
+}
+
+p,
+small,
+.desc,
+.sub,
+.muted,
+.meta,
+.label,
+.hint,
+.note,
+.who-meta,
+.qua-name,
+.qua-num {
+  color: var(--elaina-muted) !important;
+}
+
+a,
+.accent,
+.highlight,
+.value,
+.win-rate,
+.stat-val.up,
+.day-wl .win,
+.qua-num b {
+  color: var(--elaina-accent) !important;
+}
+
+.badge,
+.tag,
+.chip,
+.status,
+.role,
+.rank-tag {
+  color: var(--elaina-text) !important;
+  background: #e8e8e8 !important;
+  border-color: #c8c8c8 !important;
+}
+
+button,
+.btn,
+input,
+select,
+textarea {
+  font-family: inherit !important;
+  color: var(--elaina-text) !important;
+  background: #ffffff !important;
+  border-color: #bdbdbd !important;
+}
+
+hr,
+.divider,
+.card-header,
+.section-header {
+  border-color: var(--elaina-border) !important;
+}
+
+.progress,
+.qua-track,
+.bar-track,
+.meter-track {
+  background: #e5e5e5 !important;
+}
+
+.progress > *,
+.qua-track span,
+.bar-fill,
+.meter-fill {
+  background: var(--elaina-accent) !important;
+}
+
+/* 覆盖新增模板中的深色半透明面板，保持原有资源的统一观感。 */
+[class*="panel"],
+[class*="card"],
+[class*="section"],
+[class*="item"] {
+  border-color: #d0d0d0 !important;
+}
+
+/* 删掉页面背景：页面不铺底色也不留边，面板(第二层)直接铺满整张图 */
+    html body { padding: 0 !important; background: none !important; }

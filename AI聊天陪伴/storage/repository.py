@@ -18,10 +18,15 @@ def connect(data_dir: str) -> None:
         if _connection is not None:
             return
         _connection = sqlite3.connect(
-            os.path.join(data_dir, "context.db"), check_same_thread=False
+            os.path.join(data_dir, "context.db"),
+            check_same_thread=False,
+            cached_statements=256,
         )
         _connection.row_factory = sqlite3.Row
         _connection.execute("PRAGMA journal_mode=WAL")
+        _connection.execute("PRAGMA synchronous=NORMAL")
+        _connection.execute("PRAGMA busy_timeout=5000")
+        _connection.execute("PRAGMA temp_store=MEMORY")
         _connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS messages (
@@ -32,6 +37,8 @@ def connect(data_dir: str) -> None:
                 created_at REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_ai_context_scope ON messages(scope, id);
+            CREATE INDEX IF NOT EXISTS idx_ai_context_expiry ON messages(scope, created_at, id);
+            CREATE INDEX IF NOT EXISTS idx_ai_context_created ON messages(created_at);
             CREATE TABLE IF NOT EXISTS conversation_settings (
                 scope TEXT PRIMARY KEY,
                 personality_id TEXT NOT NULL,

@@ -5,11 +5,16 @@ import re
 from core.plugin.decorators import handler
 
 from ...services.panels import show_mute_panel
-from ...services.permissions import get_bot_group_state, get_operable_members
+from ...services.permissions import (
+    get_bot_group_state,
+    get_event_member_role,
+    get_operable_members,
+)
 from ...services.server_time import MuteTimeRetry, build_mute_members
 from ...services.utils import reply_at
 from .common import (
     HANDLER_OPTIONS,
+    INTERACTION_HANDLER_OPTIONS,
     active_action,
     api_error,
     api_pair,
@@ -22,7 +27,10 @@ from .common import (
 async def ensure_mute_operator(event):
     """校验命令发起者和机器人的群管理权限。"""
     action = active_action(event, "mute_permission")
-    if event.member_role not in ("admin", "owner"):
+    member_role = str(getattr(event, "member_role", "") or "").strip().lower()
+    if member_role not in ("admin", "owner", "member"):
+        member_role = await get_event_member_role(event)
+    if member_role not in ("admin", "owner"):
         trace_phase(
             event,
             action,
@@ -244,7 +252,7 @@ async def cmd_unmute_member(event, match):
     r"^/?(?:禁言列表|查看禁言列表|查看列表|群禁言状态)\s*$",
     name="禁言列表",
     desc="查看本群禁言列表",
-    **HANDLER_OPTIONS,
+    **INTERACTION_HANDLER_OPTIONS,
 )
 async def cmd_mute_status(event, match):
     begin_action(event, "mute_list")

@@ -1,0 +1,369 @@
+<style>
+    :root {
+        --gold: #b67d22;
+        --gold-soft: rgba(182, 125, 34, 0.12);
+        --blue: #2b7fd1;
+        --green: #15a37c;
+        --purple: #7559e8;
+        --rose: #df4f6c;
+        --text: #232b36;
+        --muted: rgba(35, 43, 54, 0.55);
+        --card: #ffffff;
+        --card-line: rgba(25, 35, 55, 0.10);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body { /* 三列紧凑版: 画布收窄到 1180, 与面板三列正好匹配, 图不再横向撑大 */ width: 1180px; padding: 20px; font-family: inherit; color: var(--text); background: #e9edf3; -webkit-font-smoothing: antialiased; }
+
+    .page {
+        position: relative;
+        border-radius: 20px;
+        overflow: hidden;
+        padding: 22px 24px 20px;
+        background: radial-gradient(900px 520px at 12% -10%, rgba(182, 125, 34, 0.10), transparent 60%),
+            radial-gradient(760px 480px at 108% 16%, rgba(43, 127, 209, 0.10), transparent 58%),
+            linear-gradient(160deg, #ffffff 0%, #f6f8fb 52%, #eef2f7 100%);
+        border: 1px solid rgba(182, 125, 34, 0.22);
+        box-shadow: 0 22px 60px rgba(25, 35, 55, 0.10);
+    }
+
+    .bg-deco {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0.8;
+    }
+
+    .page > *:not(.bg-deco) { position: relative; z-index: 1; }
+
+    /* ---------- header ---------- */
+    .header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-bottom: 13px;
+        margin-bottom: 13px;
+        border-bottom: 1px solid rgba(182, 125, 34, 0.25);
+    }
+
+    .brand {
+        width: 42px;
+        height: 42px;
+        flex: 0 0 42px;
+        border-radius: 11px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(150deg, rgba(182, 125, 34, 0.18), rgba(182, 125, 34, 0.04));
+        border: 1px solid rgba(182, 125, 34, 0.4);
+    }
+
+    .brand svg { width: 24px; height: 24px; }
+
+    .title-wrap { flex: 1; }
+
+    .title-wrap h1 {
+        font-size: 23px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        background: linear-gradient(92deg, #d99e2e, #9c6510);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    .title-wrap .sub {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.5px;
+    }
+
+    .meta {
+        text-align: right;
+        font-size: 11.5px;
+        color: var(--muted);
+        line-height: 1.8;
+    }
+
+    .meta .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        color: var(--gold);
+        background: var(--gold-soft);
+        border: 1px solid rgba(182, 125, 34, 0.3);
+        font-size: 12px;
+    }
+
+    .meta .tag svg { width: 13px; height: 13px; }
+
+    /* ---------- grid ---------- */
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .panel {
+        background: var(--card);
+        border: 1px solid var(--card-line);
+        border-radius: 15px;
+        padding: 13px 15px 6px;
+        box-shadow: 0 6px 20px rgba(25, 35, 55, 0.10);
+    }
+
+    .panel.full { grid-column: 1 / -1; }
+
+    .panel-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 9px;
+    }
+
+    .panel-ico {
+        width: 25px;
+        height: 25px;
+        flex: 0 0 25px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .panel-ico svg { width: 14px; height: 14px; }
+
+    .ico-acc { background: rgba(117, 89, 232, 0.12); color: var(--purple); }
+    .ico-qry { background: rgba(43, 127, 209, 0.12); color: var(--blue); }
+    .ico-sys { background: rgba(21, 163, 124, 0.12); color: var(--green); }
+    .ico-log { background: rgba(223, 79, 108, 0.12); color: var(--rose); }
+
+    .panel-head h2 {
+        font-size: 15.5px;
+        font-weight: 700;
+        color: var(--text);
+    }
+
+    .cmd {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6.5px 0;
+        border-bottom: 1px dashed rgba(25, 35, 55, 0.10);
+    }
+
+    .panel .cmd: last-child { border-bottom: none; }
+
+    .dot {
+        width: 6px;
+        height: 6px;
+        flex: 0 0 6px;
+        border-radius: 50%;
+        background: var(--gold);
+        box-shadow: 0 0 0 3px var(--gold-soft);
+    }
+
+    .cmd-text {
+        font-size: 13.5px;
+        font-weight: 700;
+        color: var(--gold);
+        white-space: nowrap;
+    }
+
+    .cmd-desc {
+        /* 介绍紧跟在指令后面 (原先 margin-left: auto 会把它推到行尾, 中间留一大片空白) */
+        margin-left: 2px;
+        text-align: left;
+        font-size: 11.5px;
+        color: var(--muted);
+    }
+
+    .cmd-desc: :before { content: "·"; margin-right: 5px; color: #232b36; }
+
+    .two-col { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 14px; }
+
+
+
+    .two-col .cmd { border-bottom: none; }
+
+    .footer {
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--muted);
+    }
+
+    .footer svg { width: 16px; height: 16px; color: var(--gold); flex: 0 0 16px; }
+
+    /* 删掉页面背景：页面不铺底色也不留边，面板(第二层)直接铺满整张图 */
+    html body { padding: 0 !important; background: none !important; }
+</style>
+
+<body>
+    <div class="page">
+        <svg class="bg-deco" viewBox="0 0 1600 760" preserveAspectRatio="xMidYMid slice" xmlns="http: //www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="ln" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#b67d22" stop-opacity="0.16"/>
+                    <stop offset="1" stop-color="#2b7fd1" stop-opacity="0.10"/>
+                </linearGradient>
+            </defs>
+            <g fill="none" stroke="url(#ln)" stroke-width="1.2">
+                <path d="M-40 620 L420 260 L700 460 L1120 160 L1680 460"/>
+                <path d="M-40 700 L340 400 L760 700 L1180 400 L1680 700"/>
+            </g>
+            <g fill="#b67d22" opacity="0.06">
+                <circle cx="1360" cy="120" r="160"/>
+                <circle cx="120" cy="660" r="120"/>
+            </g>
+        </svg>
+
+        <div class="header">
+            <div class="brand">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#b67d22" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+                    <path d="M3 7l4 4 5-7 5 7 4-4-2 12H5L3 7z"/>
+                    <circle cx="3" cy="6" r="1.4" fill="#b67d22"/>
+                    <circle cx="21" cy="6" r="1.4" fill="#b67d22"/>
+                    <circle cx="12" cy="3" r="1.4" fill="#b67d22"/>
+                    <line x1="6" y1="20" x2="18" y2="20"/>
+                </svg>
+            </div>
+            <div class="title-wrap">
+                <h1>王者荣耀 · 指令菜单</h1>
+                <div class="sub">营地战绩 / 英雄查询 / 登录态托管 一站式助手</div>
+            </div>
+            <div class="meta">
+                <div>{{generatedAt}}</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-acc">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>
+                        </svg>
+                    </div>
+                    <h2>账号管理</h2>
+                </div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者绑定 [营地ID]</span><span class="cmd-desc">添加营地账号</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者我的ID</span><span class="cmd-desc">查看已绑账号列表</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者切换 [序号]</span><span class="cmd-desc">切换默认账号</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者删除 [序号]</span><span class="cmd-desc">解除账号绑定</span></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-qry">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 19V10"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M3 19h18"/>
+                        </svg>
+                    </div>
+                    <h2>数据查询</h2>
+                </div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者主页</span><span class="cmd-desc">个人主页概览（含英雄战力）</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者战绩 [序号]</span><span class="cmd-desc">战绩列表 / 单局详情</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者查人 [昵称]</span><span class="cmd-desc">通过游戏昵称查询营地ID</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">查战力 [英雄名]</span><span class="cmd-desc">英雄最低战力区域</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">查皮肤 [英雄名]</span><span class="cmd-desc">英雄皮肤图鉴</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者皮肤墙 [营地ID]</span><span class="cmd-desc">个人已拥有皮肤一览</span></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-qry">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/>
+                        </svg>
+                    </div>
+                    <h2>战绩 / 皮肤</h2>
+                </div>
+
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者日报/周报/月报</span><span class="cmd-desc">个人战绩总结报告</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者战绩报告</span><span class="cmd-desc">战绩日报的别名</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者群日报/周报/月报</span><span class="cmd-desc">本群成员战绩排行</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者缺皮肤 [英雄名]</span><span class="cmd-desc">反查还差哪些皮肤</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者皮肤资讯</span><span class="cmd-desc">查看皮肤资讯</span></div>
+                <div class="cmd"><span class="dot"></span><span class="cmd-text">王者谁在游戏</span><span class="cmd-desc">查看当前游戏中的好友</span></div>
+            
+            </div>
+            <div class="panel full">
+                <div class="panel-head">
+                    <div class="panel-ico ico-qry">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 19V5M4 19h16"/><path d="M8 16l3-4 3 2 5-7"/>
+                        </svg>
+                    </div>
+                    <h2>英雄 / 排行 / 赛季</h2>
+                </div>
+                <div class="two-col">
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者英雄列表</span><span class="cmd-desc">常用英雄榜(场次/战力)</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者英雄攻略 [英雄名]</span><span class="cmd-desc">出装、铭文与对线建议</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者英雄梯度榜</span><span class="cmd-desc">查看当前英雄梯度</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者英雄勋章墙</span><span class="cmd-desc">查看英雄勋章</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者我的英雄列表</span><span class="cmd-desc">查看个人英雄数据</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者段位榜</span><span class="cmd-desc">绑定用户排位排行</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者排位排名 [刷新]</span><span class="cmd-desc">本群/全服排位排行榜</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者巅峰排名 [刷新]</span><span class="cmd-desc">本群/全服巅峰分排行</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者排位趋势</span><span class="cmd-desc">查看排位趋势</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者分数趋势</span><span class="cmd-desc">查看分数趋势</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者巅峰赛数据</span><span class="cmd-desc">查看巅峰赛数据</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者赛季页面</span><span class="cmd-desc">查看当前赛季信息</span></div>
+                </div>
+            </div>
+
+
+            <div class="panel full">
+                <div class="panel-head">
+                    <div class="panel-ico ico-sys">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3.2"/>
+                            <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>
+                        </svg>
+                    </div>
+                    <h2>推送 / 系统</h2>
+                </div>
+                <div class="two-col">
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者推送 开/关/状态</span><span class="cmd-desc">群内新对局自动推送</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者帮助</span><span class="cmd-desc">查看本帮助面板</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者清理图片缓存</span><span class="cmd-desc">让菜单等重新渲染</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者黑名单管理</span><span class="cmd-desc">拉黑/解黑用户</span></div>
+                </div>
+            </div>
+
+            <div class="panel full">
+                <div class="panel-head">
+                    <div class="panel-ico ico-log">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3"/><path d="M16 5l3 3"/><path d="M14 7l3 3"/>
+                        </svg>
+                    </div>
+                    <h2>登录态 / 账号池</h2>
+                </div>
+                <div class="two-col">
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者wx登录</span><span class="cmd-desc">扫码登录, token 失效自动回退</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者wx全局登录</span><span class="cmd-desc">主人: 设为全局默认登录态</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者QQ登录</span><span class="cmd-desc">使用手机 QQ 扫码登录</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者QQ全局登录</span><span class="cmd-desc">主人: QQ 登录并设为全局</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者账号池</span><span class="cmd-desc">主人: 登录态总览看板</span></div>
+                    <div class="cmd"><span class="dot"></span><span class="cmd-text">王者清理失效</span><span class="cmd-desc">主人: 清理失效登录态</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/>
+            </svg>
+            提示: 如遇登录状态失效, 请重新扫码或联系主人处理。
+        </div>
+    </div>
+</body>
