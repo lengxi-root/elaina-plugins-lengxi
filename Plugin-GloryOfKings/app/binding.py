@@ -13,6 +13,7 @@ _ID_GUIDE_BTN = [[{'text': '营地ID获取方式', 'link': _ID_GUIDE}]]
 
 _PARSED_FUNCS = [
     {"cmd": "王者绑定 [营地ID]", "example": "示例: 王者绑定 123456789"},
+    {"cmd": "王者wx登录 / 王者QQ登录", "example": "扫码登录, token 失效自动回退"},
     {"cmd": "王者我的ID", "example": "示例: 王者我的ID"},
     {"cmd": "王者切换 [序号]", "example": "示例: 王者切换 2"},
     {"cmd": "王者删除 [序号]", "example": "示例: 王者删除 2"},

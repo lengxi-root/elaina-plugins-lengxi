@@ -1,4 +1,9 @@
-"""王者荣耀战绩插件 — 营地ID绑定 / 主页 / 战绩 / 战力 / 皮肤 / 群战绩订阅推送"""
+"""王者荣耀战绩插件 — 营地ID绑定 / 主页 / 战绩 / 战力 / 皮肤 / 群战绩订阅推送
+
+运行环境: 最低 Python 3.11。别用 3.12+ 才合法的写法 —— f-string 内同引号嵌套、
+表达式内反斜杠、替换字段内换行/注释, 以及 itertools.batched、Path.walk、
+PEP 695 (type 语句 / def f[T]) 之类; 本机是新版解释器编译通过不代表线上 3.11 能跑。
+"""
 
 from core.plugin.decorators import on_load, on_unload
 from core.plugin.context import ctx
@@ -8,7 +13,7 @@ __plugin_meta__ = {
     "author": "冷曦",
     "description": ("王者荣耀: 营地ID绑定(多账号) + 主页/战绩/单局详情/英雄战力/皮肤查询 "
                     "+ 群战绩订阅推送"),
-    "version": "1.0.0",
+    "version": "1.1.0",
     "github": "https://github.com/lengxi-root/elaina-plugins-lengxi",
 }
 

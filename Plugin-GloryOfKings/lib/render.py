@@ -35,9 +35,6 @@ _READY_JS = (
 _READY_TIMEOUT_MS = 6000
 
 
-# 图床上传目录前缀。
-_COS_DIR = "meme/"
-
 # 固定菜单的图床直链缓存: key -> (url, w, h, expire_ts)。
 _LINK_CACHE: dict[str, tuple[str, int, int, float]] = {}
 
@@ -58,21 +55,10 @@ def _cache_put(key: str, url: str, w: int, h: int, ttl: int) -> None:
         _LINK_CACHE[key] = (url, w, h, time.time() + ttl)
 
 
-def clear_image_cache(keyword: str = "") -> dict:
-    """清理渲染图片缓存, 让下一次出图重新渲染/上传。"""
-    global _resmap_cache
-    if keyword:
-        hit = [k for k in list(_LINK_CACHE) if keyword in k]
-        for k in hit:
-            _LINK_CACHE.pop(k, None)
-        return {"link": len(hit), "resmap": False, "remote": 0, "keyword": keyword}
-
-    link_n = len(_LINK_CACHE)
-    _LINK_CACHE.clear()
-    _resmap_cache = None
-    remote_n = len(_remote_img_cache)
-    _remote_img_cache.clear()
-    return {"link": link_n, "resmap": True, "remote": remote_n, "keyword": ""}
+def _cache_drop(key: str) -> None:
+    """丢掉一条直链缓存 (直链失效时用, 下次重新渲染上传)"""
+    if key:
+        _LINK_CACHE.pop(key, None)
 
 
 _MIME = {
@@ -532,7 +518,11 @@ async def render_template(template: str, data: dict,
 
 
 async def _render_and_host(template: str, data: dict, name_hint: str = ""):
-    """渲染并尝试上传图床。返回 (img, w, h, url|None); 失败返回 None。"""
+    """渲染并上传图床。返回 (img, w, h, url|None); 渲染失败返回 None。
+
+    上传走图床模块的 upload_any(): 按各图床在模块配置里的 priority 从小到大依次尝试,
+    全部失败或模块不可用时 url 为 None, 由调用方回退成直接发图。
+    """
     tag = name_hint or "wzry"
     shot = await render_template(template, data, tag)
     if not shot:
@@ -543,36 +533,37 @@ async def _render_and_host(template: str, data: dict, name_hint: str = ""):
         w, h = size
     url = None
     hosting = _get_module("image_hosting")
-    if hosting and hosting.is_cos_available():
+    if hosting:
         try:
             fname = f"wzry_{name_hint or 'card'}_{int(time.time())}.jpg"
-            r = await hosting.upload_cos(img, fname, custom_path=_COS_DIR)
-            if r and r.get("file_url"):
-                url = r["file_url"]
+            url = await hosting.upload_any(img, fname)
         except Exception:
-            pass
+            url = None
     return img, w, h, url
 
 
 async def send_html(event, template: str, data: dict, caption: str = "",
                     buttons=None, name_hint: str = "",
                     cache_key: str = "", cache_ttl: int = 0) -> bool:
-    """渲染模板并发送。优先图床 markdown (带尺寸), 否则直接发字节图。"""
+    """渲染模板并发送。优先图床 markdown (带尺寸), 发不出去就回退字节图。"""
     if cache_key:
         cached = _cache_get(cache_key)
         if cached:
             url, w, h = cached
-            await event.reply(f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons)
-            return True
+            if await event.reply(f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons):
+                return True
+            # 直链发不出去 (图床挂了 / 平台不认): 丢掉缓存, 重新渲染并重新上传
+            _cache_drop(cache_key)
     res = await _render_and_host(template, data, name_hint)
     if not res:
         return False
     img, w, h, url = res
-    if url:
-        await event.reply(f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons)
+    if url and await event.reply(
+            f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons):
+        # 只缓存发成功了的直链, 免得坏链被复用 12 小时
         _cache_put(cache_key, url, w, h, cache_ttl)
-    else:
-        await event.reply_image(img, caption or "王者荣耀")
+        return True
+    await event.reply_image(img, caption or "王者荣耀")
     return True
 
 

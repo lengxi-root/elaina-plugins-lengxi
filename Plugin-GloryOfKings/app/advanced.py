@@ -400,29 +400,6 @@ async def cmd_rank_alias(event, match):
     await _rank(event, "rank", not getattr(event, "is_group", False), False)
 
 
-# ==================== 渲染缓存 ====================
-
-@handler(r'^王者清理图片缓存\s*(\S*)$', name='王者清理图片缓存',
-         desc='清理渲染图片缓存, 菜单等下次出图重新渲染', priority=1)
-async def cmd_clear_image_cache(event, match):
-    """清三处缓存: 图床直链 (菜单这类 cache_key 图)、本地资源映射、远程图片。"""
-    keyword = (match.group(1) or "").strip()
-    if keyword in ("菜单", "帮助", "help"):
-        keyword = "help"
-    result = render.clear_image_cache(keyword)
-    if keyword:
-        return await event.reply(
-            f"<@{event.user_id}> 已清理 {result['link']} 条匹配「{keyword}」的图片缓存, "
-            "下次发送将重新渲染")
-    parts = [f"图床直链 {result['link']} 条"]
-    if result["resmap"]:
-        parts.append("本地资源映射")
-    if result["remote"]:
-        parts.append(f"远程图片 {result['remote']} 条")
-    await event.reply(f"<@{event.user_id}> 已清理图片缓存（{'、'.join(parts)}），"
-                      "菜单、看板等下次出图将重新渲染")
-
-
 # ==================== 其余扩展 ====================
 
 @handler(r'^王者(?:英雄列表|常用英雄|英雄战力榜)\s*(\S+)?$', name='王者英雄列表',

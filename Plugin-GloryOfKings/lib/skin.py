@@ -201,7 +201,8 @@ def build_hero_view(hero: str, skins: list, owned: set, name: str) -> dict:
 def _skin_line(conf: dict) -> str:
     tier = pick_tier_text(conf.get("classTypeName"))
     price = int(conf.get("iPrice") or 0)
-    return (f"{conf.get('szTitle') or f'皮肤{conf.get('iSkinId')}'}"
+    title = conf.get("szTitle") or f"皮肤{conf.get('iSkinId')}"
+    return (title
             + (f"[{tier}]" if tier else "") + (f" {price}点券" if price > 0 else ""))
 
 
