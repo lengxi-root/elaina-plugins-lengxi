@@ -178,11 +178,12 @@ def official_message_event(event_type, payload, event_id, self_id, *, group_id='
 
         content = re.sub(r'<@![^>]+>\s*', '', content).strip()
     source_group_id = str(payload.get('group_id') or '')
+    author = payload.get('author') if isinstance(payload.get('author'), dict) else {}
     user_id = str(
-        payload.get('author', {}).get('id')
-        or payload.get('author', {}).get('member_openid')
-        or payload.get('author', {}).get('user_openid')
+        author.get('member_openid')
+        or author.get('user_openid')
         or payload.get('user_openid')
+        or author.get('id')
         or ''
     )
     message_id = str(payload.get('id') or '')
@@ -197,12 +198,18 @@ def official_message_event(event_type, payload, event_id, self_id, *, group_id='
         'message': [{'type': 'text', 'data': {'text': content}}],
         'raw_message': content,
         'font': 0,
-        'sender': {'user_id': user_id, 'nickname': '', 'card': ''},
-        '_qqbot_source': {
-            'id': message_id,
-            'event_id': str(event_id or ''),
-            'group_openid': source_group_id,
-            'user_openid': user_id,
+        'sender': {
+            'user_id': user_id,
+            'nickname': str(author.get('username') or author.get('nickname') or ''),
+            'card': str(author.get('member_name') or ''),
+        },
+        '_extra': {
+            'qqbot_source': {
+                'id': message_id,
+                'event_id': str(event_id or ''),
+                'group_openid': source_group_id,
+                'user_openid': user_id,
+            },
         },
     }
     if message_type == 'group':
