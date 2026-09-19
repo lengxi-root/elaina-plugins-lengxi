@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import aiohttp
+
 from core.plugins import ApiCallRequest, bypass_api_interceptors, get_api
 
 from ..storage import repository as store
@@ -27,7 +28,6 @@ from .policy import (
     extract_text,
     find_rule,
     group_target,
-    official_message_event,
     official_message_supported,
 )
 from .qqbot import OfficialBotApiError, OfficialBotBridge, send_result
@@ -280,10 +280,6 @@ async def handle_gateway_event(event_type, payload, event_id):
             )
             return
 
-    if event_type in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE", "C2C_MESSAGE_CREATE"}:
-        await inject_gateway_message(event_type, payload, event_id)
-        return
-
     if event_type != "INTERACTION_CREATE":
         return
     group_openid = str(payload.get("group_openid") or payload.get("group_id") or "")
@@ -314,39 +310,6 @@ def available_self_id(preferred=""):
     except Exception:
         pass
     return str(preferred or "")
-
-
-async def inject_gateway_message(event_type, payload, event_id):
-    try:
-        from core.plugins import get_app
-        from core.protocols.onebot.contract import Channel
-
-        app = get_app()
-        if app is None:
-            return
-        openid = str(payload.get("group_id") or "")
-        group_id = _group_id_by_openid(openid) if openid else ""
-        data = official_message_event(
-            event_type,
-            payload,
-            event_id,
-            available_self_id(),
-            group_id=group_id,
-        )
-        accepted = bool(data) and await app.ingest_event(
-            data,
-            str(data.get("self_id") or ""),
-            source=Channel.INJECTED,
-        )
-        if not accepted:
-            runtime.add_log("warning", "官机入站消息注入失败：框架事件队列不可用")
-            return
-        target = group_id or openid or str(data.get("user_id") or "")
-        runtime.add_log(
-            "info", f"官机入站消息已转发到框架插件: {event_type}, 目标={target}"
-        )
-    except Exception as exc:
-        runtime.add_log("warning", f"官机入站消息转发失败: {exc}")
 
 
 def _group_id_by_openid(group_openid):

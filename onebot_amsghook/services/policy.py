@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from copy import deepcopy
 
 EXTERNAL_CALLER = 'OneBot 外部调用'
@@ -157,64 +156,6 @@ def button_click_params(group_id, mapping, appid='', msg_seq=''):
         'callback_data': str(mapping.get('callback_data') or ''),
         'msg_seq': str(msg_seq or ''),
     }
-
-
-def official_message_event(event_type, payload, event_id, self_id, *, group_id=''):
-    """将 QQ 官方机器人消息转换为框架可分发的 OneBot v11 消息事件。"""
-    if event_type not in {'GROUP_AT_MESSAGE_CREATE', 'GROUP_MESSAGE_CREATE', 'C2C_MESSAGE_CREATE'}:
-        return None
-    payload = payload if isinstance(payload, dict) else {}
-    message_type = 'group' if event_type in {'GROUP_AT_MESSAGE_CREATE', 'GROUP_MESSAGE_CREATE'} else 'private'
-    raw_content = payload.get('content') or payload.get('message')
-    if isinstance(raw_content, list):
-        raw_content = ''.join(
-            str(item.get('text') or item.get('content') or '')
-            if isinstance(item, dict) else str(item or '')
-            for item in raw_content
-        )
-    content = str(raw_content or '').strip()
-    if message_type == 'group':
-        import re
-
-        content = re.sub(r'<@![^>]+>\s*', '', content).strip()
-    source_group_id = str(payload.get('group_id') or '')
-    author = payload.get('author') if isinstance(payload.get('author'), dict) else {}
-    user_id = str(
-        author.get('member_openid')
-        or author.get('user_openid')
-        or payload.get('user_openid')
-        or author.get('id')
-        or ''
-    )
-    message_id = str(payload.get('id') or '')
-    data = {
-        'time': int(time.time()),
-        'self_id': str(self_id or ''),
-        'post_type': 'message',
-        'message_type': message_type,
-        'sub_type': 'normal',
-        'message_id': message_id,
-        'user_id': user_id,
-        'message': [{'type': 'text', 'data': {'text': content}}],
-        'raw_message': content,
-        'font': 0,
-        'sender': {
-            'user_id': user_id,
-            'nickname': str(author.get('username') or author.get('nickname') or ''),
-            'card': str(author.get('member_name') or ''),
-        },
-        '_extra': {
-            'qqbot_source': {
-                'id': message_id,
-                'event_id': str(event_id or ''),
-                'group_openid': source_group_id,
-                'user_openid': user_id,
-            },
-        },
-    }
-    if message_type == 'group':
-        data['group_id'] = str(group_id or source_group_id)
-    return data
 
 
 def caller_name(source_plugin):
