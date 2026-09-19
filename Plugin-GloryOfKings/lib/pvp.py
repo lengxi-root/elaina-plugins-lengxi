@@ -244,7 +244,7 @@ async def _gather(*coros):
     return await asyncio.gather(*coros)
 
 
-async def get_camp_build(api, hero_id, requester_qq: str = ""):
+async def get_camp_build(api, hero_id):
     """营地官方的核心装备 + 铭文 (带真实胜率/出场率)。要登录态, 失败返回 None。"""
     key = f"pvp:campbuild:{hero_id}"
     hit = _cache_get(key)
@@ -255,8 +255,8 @@ async def get_camp_build(api, hero_id, requester_qq: str = ""):
     try:
         import asyncio
         equip_res, fringe_res = await asyncio.gather(
-            api.get_hero_best_equip(hero_id, requester_qq=requester_qq),
-            api.get_hero_fringe_data(hero_id, requester_qq=requester_qq),
+            api.get_hero_best_equip(hero_id),
+            api.get_hero_fringe_data(hero_id),
             return_exceptions=True,
         )
         if isinstance(equip_res, Exception):

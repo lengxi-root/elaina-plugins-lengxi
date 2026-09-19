@@ -35,6 +35,18 @@ def _fmt_ts(ts) -> str:
 _ONLINE_MAP = {0: "离线", 1: "在线", 2: "游戏中"}
 
 
+def online_state(profile: dict):
+    """资料卡里当前角色的在线状态 (0 离线 / 1 在线 / 2 游戏中); 取不到返回 None。"""
+    data = (profile or {}).get("data") or {}
+    role_id = str(data.get("targetRoleId") or "")
+    role = next((r for r in (data.get("roleList") or [])
+                 if str(r.get("roleId")) == role_id), None)
+    try:
+        return int((role or {}).get("gameOnline"))
+    except (TypeError, ValueError):
+        return None
+
+
 def build_homepage_data(profile: dict) -> tuple[dict | None, str]:
     """主页资料。返回 (data, err); err 非空表示失败 (含隐藏主页等提示)。"""
     rc = profile.get("returnCode")

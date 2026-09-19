@@ -2,15 +2,20 @@
 
 from html import escape as _esc
 
-from core.plugin.decorators import handler
+from ..lib.handlers import handler
 from ..lib import render, data as D
 from ..lib.api import AuthFailure
 
 _ID_GUIDE = ("https://raw.gitcode.com/Kevin1217/resources/files/master/"
              "resources/img/example/王者营地ID获取.png")
 _ID_GUIDE_BTN = [[{'text': '营地ID获取方式', 'link': _ID_GUIDE}]]
-_AUTH_TIP = ("查询失败: 营地登录态暂不可用（自动 token 被风控且登录池无可用账号）\n"
-             "可发送 王者wx登录 扫码补充登录态后重试")
+_AUTH_TIP = ("查询失败: 营地登录态暂不可用\n"
+             "可发送 王者QQ全局登录 扫码后重试")
+# 登录态失效时附带的快捷按钮: 点一下等于发送对应的全局登录指令
+_AUTH_BUTTONS = [[
+    {'text': '微信登录', 'data': '王者wx全局登录', 'enter': True, 'style': 1},
+    {'text': 'QQ登录', 'data': '王者QQ全局登录', 'enter': True, 'style': 1},
+]]
 
 
 def _get_runtime():
@@ -44,9 +49,9 @@ async def cmd_homepage(event, match):
 
     await event.reply(f"<@{event.user_id}> 正在查询王者主页，请稍候…")
     try:
-        profile = await rt.api.get_profile(camp_id, requester_qq=str(event.user_id))
+        profile = await rt.api.get_profile(camp_id)
     except AuthFailure:
-        return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}")
+        return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}", buttons=_AUTH_BUTTONS)
     except Exception:
         return await event.reply(f"<@{event.user_id}> 获取数据失败,请稍后重试")
 
@@ -58,7 +63,7 @@ async def cmd_homepage(event, match):
         rt.db.update_role_name(str(event.user_id), camp_id, pdata["roleName"])
 
     # 常用英雄(战力)行: 单独一次请求, 失败会让整行战力消失, 所以重试一次并记日志
-    pdata["heroList"] = await _homepage_heroes(rt, camp_id, profile, str(event.user_id), pdata)
+    pdata["heroList"] = await _homepage_heroes(rt, camp_id, profile, pdata)
 
     btns = [[{'text': '📜 战绩', 'data': f"王者战绩 {camp_id}", 'enter': True, 'style': 1}]]
     ok = await render.send_html(event, "MyKingHomepage.html", pdata,
@@ -70,14 +75,14 @@ async def cmd_homepage(event, match):
 
 # ==================== 战绩列表 / 单局详情 ====================
 
-async def _homepage_heroes(rt, camp_id: str, profile: dict, qq: str, pdata: dict) -> list:
+async def _homepage_heroes(rt, camp_id: str, profile: dict, pdata: dict) -> list:
     """主页的常用英雄(战力)行; 失败重试一次, 再失败退回资料里自带的英雄列表。"""
     import asyncio
     role_id = (profile.get("data") or {}).get("targetRoleId") or "0"
     for attempt in range(2):
         try:
             hero_resp = await rt.api.get_profile_hero_list(
-                camp_id, role_id=str(role_id), requester_qq=qq)
+                camp_id, role_id=str(role_id))
             items = D.build_hero_list_for_homepage(hero_resp)
             if items:
                 return items
@@ -125,9 +130,9 @@ async def cmd_battle(event, match):
 
     await event.reply(f"<@{event.user_id}> 正在查询战绩，请稍候…")
     try:
-        resp = await rt.api.get_more_battle_list(camp_id, requester_qq=str(event.user_id))
+        resp = await rt.api.get_more_battle_list(camp_id)
     except AuthFailure:
-        return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}")
+        return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}", buttons=_AUTH_BUTTONS)
     except Exception:
         return await event.reply(f"<@{event.user_id}> 战绩查询异常，请稍后重试")
 
@@ -144,10 +149,9 @@ async def cmd_battle(event, match):
         try:
             d = await rt.api.get_battle_detail(
                 camp_id, battle.get("battleType"), battle.get("gameSvrId"),
-                battle.get("relaySvrId"), target_role_id, battle.get("gameSeq"),
-                requester_qq=str(event.user_id))
+                battle.get("relaySvrId"), target_role_id, battle.get("gameSeq"))
         except AuthFailure:
-            return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}")
+            return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}", buttons=_AUTH_BUTTONS)
         except Exception:
             return await event.reply(f"<@{event.user_id}> 获取单场战绩详情失败")
         detail, err = D.build_detail_data(d.get("data") or {})
@@ -187,10 +191,9 @@ async def cmd_search_nickname(event, match):
 
     await event.reply(f"<@{event.user_id}> 正在搜索玩家，请稍候…")
     try:
-        players = await rt.api.search_player_by_nickname(
-            nickname, requester_qq=str(event.user_id))
+        players = await rt.api.search_player_by_nickname(nickname)
     except AuthFailure:
-        return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}")
+        return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}", buttons=_AUTH_BUTTONS)
     except Exception:
         return await event.reply(f"<@{event.user_id}> 搜索失败，请稍后重试")
 

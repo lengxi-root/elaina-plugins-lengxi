@@ -3,8 +3,9 @@
 import asyncio
 import time
 
-from core.plugin.decorators import handler
-from ..lib import render, data as D
+from ..lib.handlers import handler
+from ..lib import render
+from ..lib import requester, data as D
 from ..lib.api import AuthFailure
 
 _POLL_INTERVAL = 600   # 轮询周期 (秒)
@@ -13,6 +14,18 @@ _API_INTERVAL = 2      # 两次请求最小间隔 (秒)
 _MAX_NEW = 10          # 单次最多渲染的新对局数
 # 错峰窗口: 把所有营地ID的检查均匀分散在轮询周期内 (留 10% 余量),
 _SPREAD_WINDOW = _POLL_INTERVAL * 0.9
+
+# 谁在游戏订阅: 每 5 分钟查一遍本群账号的在线状态, 只在"开始游戏"那一下播报
+_PLAY_ALL = "*"            # play_subs.camp_id 用 '*' 表示盯本群全部订阅账号
+_PLAY_INTERVAL = 300       # 检查周期 (秒)
+_PLAY_MAX_CAMPS = 25       # 单群单轮最多查几个账号
+_PLAY_API_INTERVAL = 1.2   # 两次资料请求之间的间隔 (秒)
+
+_PLAY_USAGE = ("用法:\n"
+               "订阅谁在游戏 —— 盯本群全部账号\n"
+               "订阅谁在游戏 123456789 —— 只盯指定营地ID (4 位以内当绑定序号)\n"
+               "订阅谁在游戏 关 [营地ID] —— 取消\n"
+               "订阅谁在游戏 状态 —— 看本群订阅")
 
 _GROUP_ONLY = "该功能仅限群聊使用，请在群内发送哦~"
 _NO_UNSUB_PERM = "该订阅由其他成员创建，你暂无本群管理权限，无权操作该命令。"
@@ -112,31 +125,111 @@ async def cmd_push(event, match):
         return await event.reply(f"<@{event.user_id}> 已取消营地ID {camp_id} 的订阅")
 
 
+def _play_camp_arg(rt, qq: str, arg: str) -> tuple[str, str]:
+    """解析谁在游戏的营地ID参数: 5 位以上当营地ID, 4 位以内当绑定序号。返回 (camp_id, err)"""
+    if len(arg) >= 5:
+        return arg, ""
+    binds = rt.db.list_bindings(qq)
+    idx = int(arg)
+    if not 1 <= idx <= len(binds):
+        return "", f"你没有第 {idx} 个绑定的营地ID, 发送 王者我的ID 查看列表"
+    return str(binds[idx - 1]["camp_id"]), ""
+
+
+@handler(r'^订阅谁在游戏\s*(开|关|状态|on|off)?\s*(\S*)$', name='订阅谁在游戏',
+         desc='订阅谁在游戏: 每5分钟检查本群账号, 有人开始游戏就播报')
+async def cmd_play_sub(event, match):
+    rt = _get_runtime()
+    if not rt:
+        return
+    if not getattr(event, "is_group", False) or not getattr(event, "group_id", None):
+        return await event.reply(f"<@{event.user_id}> {_GROUP_ONLY}")
+
+    action = (match.group(1) or "开").lower()
+    arg = (match.group(2) or "").strip()
+    gid, qq = str(event.group_id), str(event.user_id)
+    minutes = _PLAY_INTERVAL // 60
+
+    if action == "状态":
+        rows = rt.db.get_play_subs(gid)
+        if not rows:
+            return await event.reply(f"<@{event.user_id}> 本群还没有订阅谁在游戏\n{_PLAY_USAGE}")
+        lines = []
+        for i, s in enumerate(rows, 1):
+            if str(s.get("camp_id")) == _PLAY_ALL:
+                lines.append(f"{i}. 本群全部账号")
+            else:
+                name = s.get("role_name") or ""
+                lines.append(f"{i}. {s['camp_id']}" + (f" {name}" if name else ""))
+        return await event.reply(
+            f"<@{event.user_id}> 本群谁在游戏订阅 ({len(rows)} 条, 每 {minutes} 分钟检查一次):\n"
+            + "\n".join(lines))
+
+    if action in ("关", "off"):
+        if arg and arg.isdigit():
+            camp_id, err = _play_camp_arg(rt, qq, arg)
+            if err:
+                return await event.reply(f"<@{event.user_id}> {err}")
+            if not rt.db.remove_play_sub(gid, camp_id):
+                return await event.reply(f"<@{event.user_id}> 本群没有订阅营地ID {camp_id}")
+            return await event.reply(f"<@{event.user_id}> 已取消营地ID {camp_id} 的谁在游戏订阅")
+        removed = rt.db.remove_play_subs(gid)
+        if not removed:
+            return await event.reply(f"<@{event.user_id}> 本群还没有订阅谁在游戏")
+        return await event.reply(f"<@{event.user_id}> 已取消本群 {removed} 条谁在游戏订阅")
+
+    # 开
+    if not await _has_proactive_message(event):
+        return await _reply_proactive_required(event)
+    if arg:
+        if not arg.isdigit():
+            return await event.reply(f"<@{event.user_id}> 营地ID要写数字\n{_PLAY_USAGE}")
+        camp_id, err = _play_camp_arg(rt, qq, arg)
+        if err:
+            return await event.reply(f"<@{event.user_id}> {err}")
+        role_name = next((b.get("role_name") or "" for b in rt.db.list_bindings(qq)
+                          if str(b["camp_id"]) == str(camp_id)), "")
+    else:
+        camp_id, role_name = _PLAY_ALL, ""
+    appid = str(getattr(event, "appid", "") or "")
+    if not rt.db.add_play_sub(gid, camp_id, role_name, subscriber=qq, appid=appid):
+        return await event.reply(f"<@{event.user_id}> 已经订阅过了")
+    scope = "本群全部账号" if camp_id == _PLAY_ALL else f"营地ID {camp_id}"
+    return await event.reply(
+        f"<@{event.user_id}> 已订阅 {scope} 的谁在游戏提醒\n"
+        f"每 {minutes} 分钟检查一次, 有人开始游戏就播报 (只在进游戏那一下提醒)")
+
+
 # ==================== 调度器 ====================
 
 class PushScheduler:
-    """战绩推送调度器 — main.py on_load 时启动"""
+    """战绩推送 + 谁在游戏提醒 调度器 — main.py on_load 时启动"""
 
-    __slots__ = ("_rt", "_task", "_stop")
+    __slots__ = ("_rt", "_task", "_play_task", "_stop")
 
     def __init__(self, runtime):
         self._rt = runtime
         self._task: asyncio.Task | None = None
+        self._play_task: asyncio.Task | None = None
         self._stop = asyncio.Event()
 
     async def start(self):
         self._stop.clear()
         self._task = asyncio.create_task(self._loop())
+        self._play_task = asyncio.create_task(self._play_loop())
 
     async def stop(self):
         self._stop.set()
-        if self._task:
-            self._task.cancel()
+        for attr in ("_task", "_play_task"):
+            task = getattr(self, attr)
+            if not task:
+                continue
+            task.cancel()
             try:
-                await self._task
+                await task
             except (asyncio.CancelledError, Exception):
                 pass
-            self._task = None
+            setattr(self, attr, None)
 
     async def _loop(self):
         # 启动后短暂延迟后立即做首次检查, 不再等一个完整轮询周期
@@ -175,11 +268,11 @@ class PushScheduler:
         for camp_id, groups in camp_groups.items():
             if self._stop.is_set():
                 return
-            # 从订阅记录中取一个 subscriber 作为 requester_qq, 便于账号池回退鉴权
-            subscriber = next(
-                (s for *_, s in groups if s), "")
+            # 用这个营地订阅者的登录态去拉 (没订阅者或没登录态就回落全局)
+            subscriber = next((s for *_, s in groups if s), "")
             try:
-                await self._check_camp(camp_id, groups, subscriber)
+                with requester.scoped(subscriber):
+                    await self._check_camp(camp_id, groups)
             except Exception:
                 pass
             await asyncio.sleep(spacing)
@@ -193,11 +286,9 @@ class PushScheduler:
             out.append(item)
         return out
 
-    async def _check_camp(self, camp_id: str, groups: list,
-                           requester_qq: str = ""):
+    async def _check_camp(self, camp_id: str, groups: list):
         try:
-            resp = await self._rt.api.get_more_battle_list(
-                camp_id, requester_qq=requester_qq)
+            resp = await self._rt.api.get_more_battle_list(camp_id)
         except AuthFailure:
             return
         except Exception:
@@ -215,7 +306,7 @@ class PushScheduler:
         if not newest_id:
             return
 
-        for group_id, role_name, last_id, appid, subscriber, *_ in groups:
+        for group_id, role_name, last_id, appid, *_ in groups:
             if self._stop.is_set():
                 return
             # 与订阅入口保持一致：仅向已开启主动消息且仍在群内的群推送。
@@ -231,13 +322,12 @@ class PushScheduler:
                 self._rt.db.set_sub_last_battle(group_id, camp_id, newest_id)
                 continue
             ok = await self._push(group_id, camp_id, role_name, new_battles,
-                                  battle_list, appid, requester_qq=subscriber or requester_qq)
+                                  battle_list, appid)
             if ok:
                 self._rt.db.set_sub_last_battle(group_id, camp_id, newest_id)
 
     async def _push(self, group_id: str, camp_id: str, role_name: str,
-                    new_battles: list, battle_list: dict, appid: str = "",
-                    requester_qq: str = "") -> bool:
+                    new_battles: list, battle_list: dict, appid: str = "") -> bool:
         """单局推当局详情图; 多局合成一条消息、一张列表图 (不逐局推)。"""
         sender = self._rt.get_sender_for(appid)
         if not sender:
@@ -247,7 +337,7 @@ class PushScheduler:
                      "enter": True, "style": 1}]]
 
         if len(new_battles) == 1:
-            detail = await self._fetch_detail(camp_id, new_battles[0], requester_qq)
+            detail = await self._fetch_detail(camp_id, new_battles[0])
             if detail:
                 try:
                     return await render.send_html_to_group(
@@ -270,15 +360,118 @@ class PushScheduler:
         except Exception:
             return False
 
-    async def _fetch_detail(self, camp_id: str, battle: dict, requester_qq: str = ""):
+    async def _fetch_detail(self, camp_id: str, battle: dict):
         """拉单局详情并转成模板数据; 任一步失败返回 None。"""
         try:
             target_role_id = D.parse_target_role_id(battle)
             resp = await self._rt.api.get_battle_detail(
                 camp_id, battle.get("battleType"), battle.get("gameSvrId"),
-                battle.get("relaySvrId"), target_role_id, battle.get("gameSeq"),
-                requester_qq=requester_qq)
+                battle.get("relaySvrId"), target_role_id, battle.get("gameSeq"))
             detail, err = D.build_detail_data((resp or {}).get("data") or {})
             return detail if not err else None
         except Exception:
             return None
+
+    # ==================== 谁在游戏提醒 ====================
+
+    async def _play_loop(self):
+        """每 _PLAY_INTERVAL 秒查一遍订阅账号的在线状态。"""
+        try:
+            await asyncio.wait_for(self._stop.wait(), timeout=_INITIAL_DELAY)
+            return
+        except asyncio.TimeoutError:
+            pass
+        except asyncio.CancelledError:
+            return
+
+        while not self._stop.is_set():
+            try:
+                await self._check_play_all()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                pass
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=_PLAY_INTERVAL)
+                return
+            except asyncio.TimeoutError:
+                pass
+            except asyncio.CancelledError:
+                return
+
+    async def _check_play_all(self):
+        rows = self._rt.db.get_all_play_subs()
+        if not rows:
+            return
+        by_group: dict = {}
+        for row in rows:
+            gid = str(row.get("group_id") or "")
+            if gid:
+                by_group.setdefault(gid, []).append(row)
+        for gid, subs in by_group.items():
+            if self._stop.is_set():
+                return
+            try:
+                await self._check_play_group(gid, subs)
+            except Exception:
+                pass
+
+    def _play_targets(self, gid: str, subs: list) -> dict:
+        """本群要盯的账号 {营地ID: 展示名}: 指定ID + ('*' 行 → 本群全部订阅账号)。"""
+        group_subs = {str(s.get("camp_id")): str(s.get("role_name") or "")
+                      for s in self._rt.db.get_group_subs(gid)}
+        names = {str(b.get("camp_id")): str(b.get("role_name") or "")
+                 for b in self._rt.db.get_all_bindings()}
+        targets: dict = {}
+        watch_all = False
+        for sub in subs:
+            camp = str(sub.get("camp_id") or "")
+            if camp == _PLAY_ALL:
+                watch_all = True
+            elif camp:
+                targets.setdefault(camp, str(sub.get("role_name") or "")
+                                   or group_subs.get(camp, "") or names.get(camp, ""))
+        if watch_all:
+            for camp, name in group_subs.items():
+                if camp:
+                    targets.setdefault(camp, name or names.get(camp, ""))
+        return targets
+
+    async def _check_play_group(self, gid: str, subs: list):
+        """查本群订阅账号的在线状态; 从"不在游戏"变成"游戏中"就播报一次。"""
+        targets = self._play_targets(gid, subs)
+        if not targets or not self._rt.is_full_access(gid):
+            return
+        appid = next((str(s.get("appid") or "") for s in subs if s.get("appid")), "")
+        subscriber = next((str(s.get("subscriber") or "") for s in subs if s.get("subscriber")), "")
+        sender = self._rt.get_sender_for(appid)
+        if not sender:
+            return
+
+        for camp, name in list(targets.items())[:_PLAY_MAX_CAMPS]:
+            if self._stop.is_set():
+                return
+            state = None
+            try:
+                with requester.scoped(subscriber):
+                    state = D.online_state(await self._rt.api.get_profile(camp))
+            except Exception:
+                state = None
+            if state is not None:
+                prev = self._rt.db.get_play_state(gid, camp)
+                # 只在"进游戏"那一下播报; 首次观测 (-1) 只记基线, 免得刚订阅就刷一屏
+                if state == 2 and prev in (0, 1):
+                    await self._push_play(sender, gid, name or camp, camp)
+                self._rt.db.set_play_state(gid, camp, state)
+            await asyncio.sleep(_PLAY_API_INTERVAL)
+
+    async def _push_play(self, sender, group_id: str, name: str, camp_id: str):
+        """播报「谁开始游戏了」— 文本 + 查看战绩按钮。"""
+        buttons = [[{"text": "📜 查看战绩", "data": f"王者战绩 {camp_id}",
+                     "enter": True, "style": 1}]]
+        try:
+            ok, _, _ = await sender.send_to_group(
+                group_id, f"🎮 {name} 开始游戏了\n营地ID: {camp_id}", buttons=buttons)
+            return bool(ok)
+        except Exception:
+            return False

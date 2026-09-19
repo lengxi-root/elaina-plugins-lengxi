@@ -37,6 +37,26 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT DEFAULT ''
 );
+
+-- 谁在游戏订阅: camp_id 为 '*' 表示盯本群全部订阅账号, 否则只盯指定营地ID
+CREATE TABLE IF NOT EXISTS play_subs (
+    group_id   TEXT NOT NULL,
+    camp_id    TEXT NOT NULL,
+    role_name  TEXT DEFAULT '',
+    subscriber TEXT DEFAULT '',
+    appid      TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (group_id, camp_id)
+);
+
+-- 谁在游戏观测到的在线状态 (-1 = 还没基线), 用来只在"开始游戏"那一下播报
+CREATE TABLE IF NOT EXISTS play_states (
+    group_id   TEXT NOT NULL,
+    camp_id    TEXT NOT NULL,
+    state      INTEGER DEFAULT -1,
+    updated_at TEXT DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (group_id, camp_id)
+);
 """
 
 
@@ -219,6 +239,76 @@ class PluginDB:
             self._conn.execute(
                 "UPDATE subscriptions SET last_battle_id=? "
                 "WHERE group_id=? AND camp_id=?", (last_battle_id, group_id, camp_id))
+            self._conn.commit()
+
+    # ==================== 谁在游戏订阅 ====================
+
+    def add_play_sub(self, group_id: str, camp_id: str, role_name: str = "",
+                     subscriber: str = "", appid: str = "") -> bool:
+        """新增一条谁在游戏订阅 (camp_id='*' 表示盯本群全部账号); 已存在返回 False。"""
+        with self._lock:
+            exists = self._conn.execute(
+                "SELECT 1 FROM play_subs WHERE group_id=? AND camp_id=?",
+                (group_id, camp_id)).fetchone()
+            if exists:
+                return False
+            self._conn.execute(
+                "INSERT INTO play_subs (group_id, camp_id, role_name, subscriber, appid) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (group_id, camp_id, role_name, subscriber, str(appid or "")))
+            self._conn.commit()
+            return True
+
+    def remove_play_sub(self, group_id: str, camp_id: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM play_subs WHERE group_id=? AND camp_id=?",
+                (group_id, camp_id))
+            self._conn.execute(
+                "DELETE FROM play_states WHERE group_id=? AND camp_id=?",
+                (group_id, camp_id))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def remove_play_subs(self, group_id: str) -> int:
+        """取消本群全部谁在游戏订阅, 返回取消条数。"""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM play_subs WHERE group_id=?", (group_id,))
+            self._conn.execute(
+                "DELETE FROM play_states WHERE group_id=?", (group_id,))
+            self._conn.commit()
+            return cur.rowcount
+
+    def get_play_subs(self, group_id: str) -> list:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM play_subs WHERE group_id=? ORDER BY created_at",
+                (group_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_all_play_subs(self) -> list:
+        """全部谁在游戏订阅 (轮询用)。"""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM play_subs").fetchall()
+        return [dict(r) for r in rows]
+
+    def get_play_state(self, group_id: str, camp_id: str) -> int:
+        """上次观测到的在线状态 (0 离线 / 1 在线 / 2 游戏中); 没观测过返回 -1。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT state FROM play_states WHERE group_id=? AND camp_id=?",
+                (group_id, camp_id)).fetchone()
+        return int(row["state"]) if row else -1
+
+    def set_play_state(self, group_id: str, camp_id: str, state: int):
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO play_states (group_id, camp_id, state, updated_at) "
+                "VALUES (?, ?, ?, datetime('now','localtime')) "
+                "ON CONFLICT(group_id, camp_id) DO UPDATE SET "
+                "state=excluded.state, updated_at=excluded.updated_at",
+                (group_id, camp_id, int(state)))
             self._conn.commit()
 
     # ==================== 设置 ====================

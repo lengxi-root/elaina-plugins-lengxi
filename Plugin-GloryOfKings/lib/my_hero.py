@@ -47,19 +47,18 @@ async def _hero_image(hero: dict, fallbacks: list) -> str:
 
 # ==================== 我的英雄 ====================
 
-async def fetch_history_power(api, camp_id: str, requester_qq: str) -> dict:
+async def fetch_history_power(api, camp_id: str) -> dict:
     """历史最高战力 + 历史口径称号 (seasonId=0 就是营地的「历史赛季」)。"""
     result = {"ok": False, "byHero": {}}
     try:
-        profile = await api.get_profile(camp_id, requester_qq=requester_qq)
+        profile = await api.get_profile(camp_id)
         role_id = str(((profile or {}).get("data") or {}).get("targetRoleId") or "")
     except Exception:
         return result
     if not role_id:
         return result
     try:
-        res = await api.get_season_usually_hero_list(role_id, requester_qq=requester_qq,
-                                                     season_id=0)
+        res = await api.get_season_usually_hero_list(role_id, season_id=0)
         for item in ((res or {}).get("data") or {}).get("list") or []:
             hero_id = str(item.get("heroId") or "")
             if not hero_id:
@@ -73,15 +72,15 @@ async def fetch_history_power(api, camp_id: str, requester_qq: str) -> dict:
     return result
 
 
-async def build_my_hero_view(api, camp_id: str, requester_qq: str, limit: int = SHOW_COUNT) -> dict | None:
+async def build_my_hero_view(api, camp_id: str, limit: int = SHOW_COUNT) -> dict | None:
     """我的英雄模板变量; 无数据返回 None"""
-    res = await api.get_game_hero_list(camp_id, requester_qq=requester_qq)
+    res = await api.get_game_hero_list(camp_id)
     played = [h for h in ((res or {}).get("data") or {}).get("heroList") or []
               if _int(h.get("playNum")) > 0]
     if not played:
         return None
 
-    history = await fetch_history_power(api, camp_id, requester_qq)
+    history = await fetch_history_power(api, camp_id)
     merged = []
     for hero in played:
         hit = history["byHero"].get(str(hero.get("heroId"))) or {}
@@ -163,8 +162,7 @@ async def fetch_hero_medals(api, role_id: str, heroes: list, ctx: dict) -> dict:
         try:
             res = await api.get_hero_record_details(
                 role_id, hero.get("heroId"), role_name=ctx.get("role_name") or "",
-                server_id=str(ctx.get("server_id") or ""),
-                requester_qq=ctx.get("bot_user_id") or "")
+                server_id=str(ctx.get("server_id") or ""))
             items = ((res or {}).get("data") or {}).get("medalList")
             items = items if isinstance(items, list) else []
             _medal_cache[f"medal:{role_id}:{hero_id}"] = (items, time.time())

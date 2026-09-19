@@ -2,10 +2,10 @@
 
 import asyncio
 
-from core.plugin.decorators import handler
+from ..lib.handlers import handler
 from ..lib import render, data as D
 from ..lib.api import AuthFailure
-from .query import _need_id, _AUTH_TIP
+from .query import _need_id, _AUTH_TIP, _AUTH_BUTTONS
 
 _MAX_SKIN_PROBE = 40  # 探测皮肤大图的最大序号
 
@@ -94,9 +94,9 @@ async def cmd_my_skins(event, match):
 
     await event.reply(f"<@{event.user_id}> 正在查询皮肤墙，请稍候…")
     try:
-        skin_info = await rt.api.get_skin_list(camp_id, requester_qq=str(event.user_id))
+        skin_info = await rt.api.get_skin_list(camp_id)
     except AuthFailure:
-        return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}")
+        return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}", buttons=_AUTH_BUTTONS)
     except Exception:
         return await event.reply(f"<@{event.user_id}> 皮肤墙查询异常，请稍后重试")
 

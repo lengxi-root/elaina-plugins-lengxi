@@ -5,8 +5,9 @@ import json
 import re
 import time
 
-from core.plugin.decorators import handler
+from ..lib.handlers import handler
 from ..lib import render
+from ..lib import requester
 from ..lib import data as D
 from ..lib import report as R
 from ..lib import rank as RK
@@ -16,6 +17,7 @@ from ..lib import pvp as PVP
 from ..lib import my_hero as MH
 from ..lib import hero_tier as HT
 from ..lib.api import AuthFailure
+from .query import _AUTH_TIP, _AUTH_BUTTONS
 
 
 def _rt():
@@ -98,7 +100,7 @@ async def _battle_report(event, kind: str, arg: str = ""):
     now_ms = time.time() * 1000
     try:
         collected = await rt.archive.collect_battles(
-            rt.api, camp, str(event.user_id), info["from_sec"],
+            rt.api, camp, info["from_sec"],
             max_pages=REPORT_PAGES[kind], to_sec=info["to_sec"])
     except Exception as e:
         return await event.reply(f"<@{event.user_id}> 取战绩失败: {e}")
@@ -178,9 +180,11 @@ async def _group_report(event, kind: str):
     covered_from = 0
     for camp, sub in targets:
         try:
-            collected = await rt.archive.collect_battles(
-                rt.api, camp, str(sub.get("subscriber") or event.user_id),
-                info["from_sec"], max_pages=GROUP_PAGES[kind], to_sec=info["to_sec"])
+            # 用该账号订阅者的登录态去拉 (没有就回落全局)
+            with requester.scoped(sub.get("subscriber") or event.user_id):
+                collected = await rt.archive.collect_battles(
+                    rt.api, camp, info["from_sec"],
+                    max_pages=GROUP_PAGES[kind], to_sec=info["to_sec"])
         except Exception:
             # 单个成员失败 (登录态失效/频控) 不能让整份群报挂掉, 跳过就是少一行
             continue
@@ -264,9 +268,9 @@ async def cmd_skin_missing(event, match):
             return
 
     try:
-        data = await rt.api.get_skin_list(camp, requester_qq=qq)
-    except AuthFailure as e:
-        return await event.reply(f"<@{event.user_id}> 查询失败: {e}")
+        data = await rt.api.get_skin_list(camp)
+    except AuthFailure:
+        return await event.reply(f"<@{event.user_id}> {_AUTH_TIP}", buttons=_AUTH_BUTTONS)
     except Exception as e:
         return await event.reply(f"<@{event.user_id}> 查询失败: {e}")
 
@@ -415,7 +419,7 @@ async def hero_list(event, match):
         return await event.reply(f"<@{event.user_id}> {err}")
 
     try:
-        profile = await rt.api.get_profile(camp, requester_qq=qq)
+        profile = await rt.api.get_profile(camp)
     except Exception as e:
         return await event.reply(f"<@{event.user_id}> 查询失败: {e}")
     data = profile.get("data") or {}
@@ -426,9 +430,9 @@ async def hero_list(event, match):
                  if str(r.get("roleId")) == role_id), None) or {}
 
     try:
-        picked = await HL.fetch_season_heroes(rt.api, role_id, qq)
+        picked = await HL.fetch_season_heroes(rt.api, role_id)
         if not picked["heroes"]:
-            picked = await HL.fetch_career_heroes(rt.api, camp, role_id, qq)
+            picked = await HL.fetch_career_heroes(rt.api, camp, role_id)
     except Exception as e:
         return await event.reply(f"<@{event.user_id}> 查询英雄列表失败: {e}")
     if not picked["heroes"]:
@@ -489,7 +493,7 @@ async def hero_guide(event, match):
         return await event.reply(f"<@{event.user_id}> 「{guide['hero']['name']}」的资料页暂时没有"
                                  "可用内容, 可能官网刚改版, 请稍后再试")
 
-    camp_build = await PVP.get_camp_build(rt.api, guide["hero"]["ename"], requester_qq=qq)
+    camp_build = await PVP.get_camp_build(rt.api, guide["hero"]["ename"])
     view = PVP.build_guide_view(guide, camp_build)
     ok = await render.send_html(event, "HeroGuide.html", view,
                                caption=f"<@{event.user_id}> {view['heroName']} 英雄攻略",
@@ -507,8 +511,7 @@ async def hero_tier(event, match):
     filters = HT.parse_filter((match.group(1) or "").strip())
     try:
         res = await rt.api.get_rank_list(segment=filters["segment"],
-                                         position=filters["position"],
-                                         requester_qq=str(event.user_id))
+                                         position=filters["position"])
     except Exception as e:
         return await event.reply(f"<@{event.user_id}> 英雄梯度榜查询失败: {e}")
     if not ((res or {}).get("data") or {}).get("list"):
@@ -550,12 +553,12 @@ async def medal(event, match):
     scan = min(max(scan or MH.SCAN_COUNT, 1), MH.MAX_SCAN)
 
     try:
-        profile = await rt.api.get_profile(camp, requester_qq=qq)
+        profile = await rt.api.get_profile(camp)
         pdata = profile.get("data") or {}
         role_id = str(pdata.get("targetRoleId") or "")
         role = next((r for r in (pdata.get("roleList") or [])
                      if str(r.get("roleId")) == role_id), None) or {}
-        hero_res = await rt.api.get_game_hero_list(camp, requester_qq=qq)
+        hero_res = await rt.api.get_game_hero_list(camp)
         played = [h for h in ((hero_res or {}).get("data") or {}).get("heroList") or []
                   if MH._int(h.get("playNum")) > 0]
     except Exception as e:
@@ -576,7 +579,6 @@ async def medal(event, match):
     medals = await MH.fetch_hero_medals(rt.api, role_id, picked, {
         "role_name": role.get("roleName") or "",
         "server_id": role.get("serverId") or "",
-        "bot_user_id": qq,
     })
     name = str(role.get("roleName") or "").strip() or str(camp)
     view = MH.build_wall_view(name, picked, medals, len(picked), len(played))
@@ -632,8 +634,8 @@ async def trends(event,match):
     rt=_rt(); cid=await _cid(event,rt)
     if not cid:return
     try:
-        p=await rt.api.get_profile(cid, requester_qq=str(event.user_id)); profile_data = p.get('data') if isinstance(p, dict) and isinstance(p.get('data'), dict) else p; role=((profile_data or {}).get('targetRoleId') or '0')
-        raw=await rt.api.get_fight_data(role, requester_qq=str(event.user_id), game_battle_type=3)
+        p=await rt.api.get_profile(cid); profile_data = p.get('data') if isinstance(p, dict) and isinstance(p.get('data'), dict) else p; role=((profile_data or {}).get('targetRoleId') or '0')
+        raw=await rt.api.get_fight_data(role, game_battle_type=3)
         data=D.build_rank_trend_view(raw, p)
     except Exception as e: return await _reply(event,'排位/分数趋势不可用',str(e))
     await _render_or_reply(event, 'RankTrend.html', '排位/分数趋势', data, 'rank-trend')
@@ -643,14 +645,14 @@ async def peak(event,match):
     rt=_rt(); cid=await _cid(event,rt)
     if not cid:return
     try:
-        p=await rt.api.get_profile(cid, requester_qq=str(event.user_id)); profile_data = p.get('data') if isinstance(p, dict) and isinstance(p.get('data'), dict) else p; role=((profile_data or {}).get('targetRoleId') or '0')
+        p=await rt.api.get_profile(cid); profile_data = p.get('data') if isinstance(p, dict) and isinstance(p.get('data'), dict) else p; role=((profile_data or {}).get('targetRoleId') or '0')
         results = await asyncio.gather(*(
-            rt.api.get_fight_data(role, requester_qq=str(event.user_id), game_battle_type=10, branch_type=i)
+            rt.api.get_fight_data(role, game_battle_type=10, branch_type=i)
             for i in range(6)
         ), return_exceptions=True)
         results = [x if isinstance(x, dict) else {} for x in results]
         try:
-            season_data = await rt.api.get_season_page(role, requester_qq=str(event.user_id))
+            season_data = await rt.api.get_season_page(role)
         except Exception:
             season_data = {}
         data = D.build_peak_view(results, season_data, p)
@@ -662,14 +664,78 @@ async def season(event,match):
     rt=_rt(); cid=await _cid(event,rt)
     if not cid:return
     try:
-        p=await rt.api.get_profile(cid, requester_qq=str(event.user_id)); profile_data = p.get('data') if isinstance(p, dict) and isinstance(p.get('data'), dict) else p; role=((profile_data or {}).get('targetRoleId') or '0')
-        raw = await rt.api.get_season_page(role, requester_qq=str(event.user_id))
+        p=await rt.api.get_profile(cid); profile_data = p.get('data') if isinstance(p, dict) and isinstance(p.get('data'), dict) else p; role=((profile_data or {}).get('targetRoleId') or '0')
+        raw = await rt.api.get_season_page(role)
         data = D.build_season_view(raw, p)
     except Exception as e: return await _reply(event,'赛季页面不可用',str(e))
     await _render_or_reply(event, 'SeasonPage.html', '赛季页面', data, 'season')
 
-@handler(r'^王者谁在游戏$',name='王者谁在游戏',desc='谁在游戏')
-async def who(event,match): await _reply(event,'谁在游戏','暂未发现正在游戏的好友。')
+# ==================== 谁在游戏 ====================
+
+WHO_MAX_TARGETS = 20   # 一次最多查几个账号 (每个账号一次资料请求)
+WHO_INTERVAL = 1.0     # 账号之间的间隔秒数, 控制请求频率
+
+
+def _who_targets(rt, event) -> list:
+    """要查的账号 [(营地ID, 展示名)]: 群里=本群订阅账号, 私聊=自己绑定的账号。"""
+    out: dict = {}
+    if getattr(event, "is_group", False) and getattr(event, "group_id", None):
+        for sub in rt.db.get_group_subs(str(event.group_id)):
+            camp = str(sub.get("camp_id") or "")
+            if camp:
+                out.setdefault(camp, str(sub.get("role_name") or camp))
+    else:
+        for bind in rt.db.list_bindings(str(event.user_id)):
+            camp = str(bind.get("camp_id") or "")
+            if camp:
+                out.setdefault(camp, str(bind.get("role_name") or camp))
+    return list(out.items())
+
+
+@handler(r'^王者谁在游戏$', name='王者谁在游戏',
+         desc='已绑定/本群账号谁在游戏中 (含在线)', priority=1)
+async def who(event, match):
+    """逐个查资料卡的在线状态, 报出谁在游戏中 / 谁在线。"""
+    rt = _rt()
+    if not rt:
+        return
+    targets = _who_targets(rt, event)
+    if not targets:
+        hint = ("本群还没有订阅账号, 绑定营地ID后发送 王者推送 开 就会进入统计"
+                if getattr(event, "is_group", False)
+                else "你还没有绑定营地ID, 请先发送 王者绑定 营地ID")
+        return await event.reply(f"<@{event.user_id}> {hint}")
+
+    total = len(targets)
+    targets = targets[:WHO_MAX_TARGETS]
+    await event.reply(f"<@{event.user_id}> 正在查询 {len(targets)} 个账号的在线状态, "
+                      f"约需 {max(2, int(len(targets) * WHO_INTERVAL))} 秒, 请稍候...")
+
+    playing, online, failed = [], [], 0
+    for camp, name in targets:
+        state = None
+        try:
+            state = D.online_state(await rt.api.get_profile(camp))
+        except Exception:
+            failed += 1
+        if state == 2:
+            playing.append(name)
+        elif state == 1:
+            online.append(name)
+        await asyncio.sleep(WHO_INTERVAL)
+
+    lines = []
+    if playing:
+        lines.append("🎮 正在游戏: " + "、".join(playing))
+    if online:
+        lines.append("🟢 在线: " + "、".join(online))
+    if not lines:
+        lines.append("现在没人在游戏中")
+    if total > len(targets):
+        lines.append(f"（共 {total} 个账号, 只查了前 {len(targets)} 个）")
+    if failed:
+        lines.append(f"（{failed} 个账号查询失败）")
+    await event.reply(f"<@{event.user_id}> " + "\n".join(lines))
 
 @handler(r'^王者(?:皮肤资讯|皮肤上新|新皮肤|皮肤日历)$', name='王者皮肤资讯',
          desc='皮肤日历 (今日/即将/最近上线)', priority=1)

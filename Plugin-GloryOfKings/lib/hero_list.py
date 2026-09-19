@@ -59,25 +59,24 @@ def _int(value) -> int:
         return 0
 
 
-async def _season_page(api, role_id: str, season_id: int, requester_qq: str) -> dict:
+async def _season_page(api, role_id: str, season_id: int) -> dict:
     try:
-        res = await api.get_season_page(str(role_id), season_id=season_id,
-                                        requester_qq=requester_qq)
+        res = await api.get_season_page(str(role_id), season_id=season_id)
     except Exception:
         return {}
     return (res or {}).get("data") or {}
 
 
-async def fetch_season_heroes(api, role_id: str, requester_qq: str) -> dict:
+async def fetch_season_heroes(api, role_id: str) -> dict:
     """当前赛季排位 + 巅峰常用英雄, 按 heroId 合并去重后取战力前 5。"""
-    first = await _season_page(api, role_id, 0, requester_qq)
+    first = await _season_page(api, role_id, 0)
     history = first.get("historyList") or []
     current = history[0] if history else {}
     season_id = _int(current.get("seasonId"))
     if not season_id:
         return {"heroes": [], "scopeName": "", "showModes": True}
 
-    season = await _season_page(api, role_id, season_id, requester_qq)
+    season = await _season_page(api, role_id, season_id)
     behavior = season.get("behavior") or {}
 
     merged: dict = {}
@@ -110,11 +109,10 @@ async def fetch_season_heroes(api, role_id: str, requester_qq: str) -> dict:
     return {"heroes": heroes, "scopeName": current.get("seasonName") or "", "showModes": True}
 
 
-async def fetch_career_heroes(api, camp_id: str, role_id: str, requester_qq: str) -> dict:
+async def fetch_career_heroes(api, camp_id: str, role_id: str) -> dict:
     """赛季没打过排位/巅峰时的兜底: 生涯累计前 5, 只有一组场次/胜率。"""
     try:
-        res = await api.get_profile_hero_list(camp_id, role_id=str(role_id),
-                                              requester_qq=requester_qq)
+        res = await api.get_profile_hero_list(camp_id, role_id=str(role_id))
     except Exception:
         return {"heroes": [], "scopeName": "生涯累计", "showModes": False}
     heroes = []

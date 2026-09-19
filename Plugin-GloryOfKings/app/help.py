@@ -2,7 +2,7 @@
 
 import time
 
-from core.plugin.decorators import handler
+from ..lib.handlers import handler
 from ..lib import render
 
 _HELP_TEXT = """王者荣耀 · 指令菜单
@@ -12,7 +12,7 @@ _HELP_TEXT = """王者荣耀 · 指令菜单
 【排行】<qqbot-cmd-input text='王者段位榜' /> | <qqbot-cmd-input text='王者排位排名' /> | <qqbot-cmd-input text='王者巅峰排名' /> | <qqbot-cmd-input text='王者排位趋势' /> | <qqbot-cmd-input text='王者分数趋势' /> | <qqbot-cmd-input text='王者巅峰赛数据' /> | <qqbot-cmd-input text='王者赛季页面' />
 【报告】<qqbot-cmd-input text='王者日报' /> | <qqbot-cmd-input text='王者周报' /> | <qqbot-cmd-input text='王者月报' /> | <qqbot-cmd-input text='王者群日报' /> | <qqbot-cmd-input text='王者群周报' /> | <qqbot-cmd-input text='王者群月报' />
 【战绩/皮肤】<qqbot-cmd-input text='王者缺皮肤 ' show='王者缺皮肤 英雄名' /> | <qqbot-cmd-input text='王者皮肤资讯' />
-【推送/系统】<qqbot-cmd-input text='王者推送 开' /> | <qqbot-cmd-input text='王者推送 关' /> | <qqbot-cmd-input text='王者推送 状态' />
+【推送/系统】<qqbot-cmd-input text='王者推送 开' /> | <qqbot-cmd-input text='王者推送 关' /> | <qqbot-cmd-input text='王者推送 状态' /> | <qqbot-cmd-input text='订阅谁在游戏 ' show='订阅谁在游戏 营地ID' />
 【登录/账号池】<qqbot-cmd-input text='王者wx全局登录' /> | <qqbot-cmd-input text='王者QQ全局登录' /> | <qqbot-cmd-input text='王者账号池' /> | <qqbot-cmd-input text='王者清理失效' />
 【帮助】<qqbot-cmd-input text='王者帮助' />（也支持 王者荣耀帮助 / 王者菜单）"""
 
@@ -28,6 +28,6 @@ async def cmd_help(event, match):
     data = {"generatedAt": time.strftime("%Y/%m/%d %H:%M:%S")}
     # 帮助菜单内容固定, 缓存图床直链 12 小时, 命中则跳过渲染+上传
     ok = await render.send_html(event, "help.html", data, name_hint="help",
-                               cache_key="help-v11", cache_ttl=12 * 3600)
+                               cache_key="help-v15", cache_ttl=12 * 3600)
     if not ok:
         await event.reply(_HELP_TEXT)

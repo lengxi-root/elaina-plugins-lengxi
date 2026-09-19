@@ -147,7 +147,7 @@ class BattleArchive:
 
     # -------------------- 采集 --------------------
 
-    async def collect_battles(self, api, camp_id, requester_qq: str, from_sec: int,
+    async def collect_battles(self, api, camp_id, from_sec: int,
                               max_pages: int = 12, to_sec: int = 0) -> dict:
         """取 [from_sec, to_sec] 的战绩: 实拉第一页保证库是新的, 不够才翻页补。"""
         key = str(camp_id or "")
@@ -163,8 +163,7 @@ class BattleArchive:
 
         for page in range(max_pages):
             try:
-                res = await api.get_more_battle_list(key, requester_qq=requester_qq,
-                                                     last_time=last_time)
+                res = await api.get_more_battle_list(key, last_time=last_time)
             except Exception:
                 break
             if not isinstance(res, dict) or _int(res.get("returnCode")) != 0:

@@ -6,6 +6,8 @@ import os
 import re
 import time
 
+from . import requester
+
 SNAPSHOT_TTL = 12 * 3600 * 1000
 RATE_LIMIT_RETRY = 2
 RATE_LIMIT_BACKOFF = 3.0
@@ -142,18 +144,19 @@ class RankSnapshot:
 
 async def collect_rank_data(api, snapshot: RankSnapshot, targets: list,
                             force: bool = False, ttl: int = SNAPSHOT_TTL) -> dict:
-    """逐个拉 profile 采集排名数据 (targets: [(camp_id, requester_qq)])。"""
+    """逐个拉 profile 采集排名数据 (targets: [(营地ID, 属主QQ)], 用属主登录态拉, 分摊风控)。"""
     old = snapshot.read()
     if not force and old["updatedAt"] and time.time() * 1000 - old["updatedAt"] < ttl \
             and old["entries"]:
         return {**old, "fromCache": True}
 
     entries = {}
-    for camp_id, requester in targets:
+    for camp_id, owner in targets:
         info = None
         for attempt in range(RATE_LIMIT_RETRY + 1):
             try:
-                profile = await api.get_profile(camp_id, requester_qq=requester)
+                with requester.scoped(owner):
+                    profile = await api.get_profile(camp_id)
             except Exception:
                 break
             code = int((profile or {}).get("returnCode") or 0)

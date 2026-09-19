@@ -12,6 +12,7 @@ from urllib.parse import unquote
 import aiohttp
 
 from . import crypto
+from . import requester
 from .auth import POOL_AUTH_DEFAULTS, _PUB_N, _PUB_E
 
 _MAIN = "https://kohcamp.qq.com"
@@ -184,10 +185,9 @@ class WzryAPI:
 
     # ==================== 通用请求 ====================
 
-    async def _auth_request(self, endpoint: str, body: dict,
-                            retries: int = 2, requester_qq: str = "") -> dict:
-        """统一走登录态账号池签名请求。"""
-        return await self._pool_request(endpoint, body, requester_qq, retries)
+    async def _auth_request(self, endpoint: str, body: dict, retries: int = 2) -> dict:
+        """统一走全局登录态签名请求。"""
+        return await self._pool_request(endpoint, body, retries)
 
     # ==================== 登录态账号池请求 ====================
 
@@ -240,15 +240,14 @@ class WzryAPI:
         return base64.b64encode(
             crypto.rsa_public_encrypt(payload, _PUB_N, _PUB_E)).decode("ascii")
 
-    async def _pool_request(self, endpoint: str, body: dict,
-                            requester_qq: str, retries: int = 2) -> dict:
-        """遍历登录态账号池候选签名请求, 全部失效才抛 AuthFailure。"""
+    async def _pool_request(self, endpoint: str, body: dict, retries: int = 2) -> dict:
+        """用账号池签名请求 (本人登录态优先, 再全局), 全部失效才抛 AuthFailure。"""
         store = self._auth_store
         if store is None:
-            raise AuthFailure("未配置登录态账号池, 请先使用【王者wx登录】扫码登录")
-        candidates = store.get_auth_candidates(requester_qq=requester_qq)
+            raise AuthFailure("未配置登录态, 请先发送 王者wx全局登录 扫码")
+        candidates = store.get_auth_candidates(requester_qq=requester.current())
         if not candidates:
-            raise AuthFailure("未找到可用的营地登录态, 请先使用【王者wx登录】扫码登录")
+            raise AuthFailure("未找到可用的全局登录态, 请先发送 王者wx全局登录 扫码")
         url = f"{_MAIN}{endpoint}"
         last_err = ""
         request_body = json.dumps(body, separators=(",", ":"))
@@ -335,7 +334,7 @@ class WzryAPI:
 
             if auth_failed:
                 continue
-        raise AuthFailure(last_err or "登录态账号池均不可用, 请重新扫码登录")
+        raise AuthFailure(last_err or "全局登录态不可用, 请重新发送 王者wx全局登录 扫码")
 
     @staticmethod
     def _decode_header_value(value: str) -> str:
@@ -354,7 +353,7 @@ class WzryAPI:
 
     # ==================== 业务接口 ====================
 
-    async def get_profile(self, camp_id: str, requester_qq: str = "") -> dict:
+    async def get_profile(self, camp_id: str) -> dict:
         """主页/资料 (营地ID)"""
         return await self._auth_request("/game/koh/profile", {
             "targetUserId": str(camp_id),
@@ -362,10 +361,9 @@ class WzryAPI:
             "resVersion": "3",
             "recommendPrivacy": "0",
             "apiVersion": "2",
-        }, requester_qq=requester_qq)
+        })
 
-    async def get_more_battle_list(self, camp_id: str, requester_qq: str = "",
-                                   last_time: int = 0) -> dict:
+    async def get_more_battle_list(self, camp_id: str, last_time: int = 0) -> dict:
         """战绩列表 (营地ID)。第一页 30 场, 之后每页 10 场; 翻页传上一页最后一场的 dtEventTime"""
         return await self._auth_request("/game/morebattlelist", {
             "lastTime": int(last_time or 0),
@@ -373,11 +371,11 @@ class WzryAPI:
             "apiVersion": 5,
             "friendUserId": str(camp_id),
             "option": 0,
-        }, requester_qq=requester_qq)
+        })
 
     async def get_battle_detail(self, camp_id: str, battle_type, game_svr: str,
                                 relay_svr: str, target_role_id: str,
-                                game_seq: str, requester_qq: str = "") -> dict:
+                                game_seq: str) -> dict:
         """单局详情"""
         return await self._auth_request("/game/battledetail", {
             "recommendPrivacy": 0,
@@ -387,31 +385,29 @@ class WzryAPI:
             "targetRoleId": str(target_role_id),
             "gameSeq": str(game_seq),
             "friendUserId": str(camp_id),
-        }, requester_qq=requester_qq)
+        })
 
     # -------- 资料卡英雄列表 (需鉴权) --------
 
-    async def get_profile_hero_list(self, camp_id: str, role_id: str = "0",
-                                    requester_qq: str = "") -> dict:
+    async def get_profile_hero_list(self, camp_id: str, role_id: str = "0") -> dict:
         """资料卡常用英雄列表 (含 heroFightPower)"""
         return await self._auth_request("/game/profile/herolist", {
             "targetUserId": str(camp_id),
             "recommendPrivacy": 0,
             "targetRoleId": str(role_id),
-        }, requester_qq=requester_qq)
+        })
 
     # -------- 昵称搜索 (需鉴权) --------
 
-    async def search_player_by_nickname(self, nickname: str,
-                                        requester_qq: str = "") -> list:
+    async def search_player_by_nickname(self, nickname: str) -> list:
         """通过游戏昵称搜索玩家, 返回 [{uid, name, region, level, avatar, dw}]"""
         body = _build_search_protobuf(nickname)
         store = self._auth_store
         if store is None:
-            raise AuthFailure("未配置登录态账号池")
-        candidates = store.get_auth_candidates(requester_qq=requester_qq)
+            raise AuthFailure("未配置登录态, 请先发送 王者wx全局登录 扫码")
+        candidates = store.get_auth_candidates(requester_qq=requester.current())
         if not candidates:
-            raise AuthFailure("未找到可用的营地登录态")
+            raise AuthFailure("未找到可用的全局登录态, 请先发送 王者wx全局登录 扫码")
 
         last_err = ""
         for acc in candidates:
@@ -434,14 +430,14 @@ class WzryAPI:
 
     # -------- 个人皮肤墙 (需鉴权) --------
 
-    async def get_skin_list(self, camp_id: str, requester_qq: str = "") -> dict:
+    async def get_skin_list(self, camp_id: str) -> dict:
         """个人皮肤墙 — 拉取某营地账号已拥有的皮肤列表。"""
         store = self._auth_store
         if store is None:
-            raise AuthFailure("未配置登录态账号池, 请先使用【王者wx登录】扫码登录")
-        candidates = store.get_auth_candidates(requester_qq=requester_qq)
+            raise AuthFailure("未配置登录态, 请先发送 王者wx全局登录 扫码")
+        candidates = store.get_auth_candidates(requester_qq=requester.current())
         if not candidates:
-            raise AuthFailure("未找到可用的营地登录态, 请先使用【王者wx登录】扫码登录")
+            raise AuthFailure("未找到可用的全局登录态, 请先发送 王者wx全局登录 扫码")
 
         url = f"{_GAME}/play/h5getheroskinlist"
         last_err = ""
@@ -503,37 +499,37 @@ class WzryAPI:
                 continue
             store.mark_auth_success(acc.get("userId"))
             return data.get("data") or {}
-        raise AuthFailure(last_err or "登录态账号池均不可用, 请重新扫码登录")
+        raise AuthFailure(last_err or "全局登录态不可用, 请重新发送 王者wx全局登录 扫码")
 
     # -------- 扩展接口（与原版 GloryOfKings 对齐） --------
 
-    async def get_season_page(self, role_id: str, season_id: int = 0, requester_qq: str = "") -> dict:
-        return await self._auth_request("/game/seasonpage", {"recommendPrivacy": 0, "seasonId": season_id, "roleId": str(role_id)}, requester_qq=requester_qq)
+    async def get_season_page(self, role_id: str, season_id: int = 0) -> dict:
+        return await self._auth_request("/game/seasonpage", {"recommendPrivacy": 0, "seasonId": season_id, "roleId": str(role_id)})
 
-    async def get_fight_data(self, role_id: str, requester_qq: str = "", game_battle_type: int = 10, branch_type: int = 0, date_type: int = 2) -> dict:
-        return await self._auth_request("/game/getfightdata", {"recommendPrivacy": 0, "dateType": date_type, "roleId": str(role_id), "roleFriendId": 0, "branchType": branch_type, "source": 1, "gameBattleType": game_battle_type, "card": 0}, requester_qq=requester_qq)
+    async def get_fight_data(self, role_id: str, game_battle_type: int = 10, branch_type: int = 0, date_type: int = 2) -> dict:
+        return await self._auth_request("/game/getfightdata", {"recommendPrivacy": 0, "dateType": date_type, "roleId": str(role_id), "roleFriendId": 0, "branchType": branch_type, "source": 1, "gameBattleType": game_battle_type, "card": 0})
 
-    async def get_rank_list(self, segment: int = 3, position: int = 0, requester_qq: str = "") -> dict:
-        return await self._auth_request("/hero/getdetailranklistbyid", {"bottomTab": "", "rankId": 0, "segment": segment, "position": position, "recommendPrivacy": 0}, requester_qq=requester_qq)
+    async def get_rank_list(self, segment: int = 3, position: int = 0) -> dict:
+        return await self._auth_request("/hero/getdetailranklistbyid", {"bottomTab": "", "rankId": 0, "segment": segment, "position": position, "recommendPrivacy": 0})
 
-    async def get_hero_record_details(self, role_id: str, hero_id: int, role_name: str = "", server_id: str = "", requester_qq: str = "") -> dict:
-        return await self._auth_request("/gametoolbox/hero/record/pagedetails", {"roleId": str(role_id), "heroid": int(hero_id), "roleName": role_name, "h5Get": 1, "serverId": server_id}, requester_qq=requester_qq)
+    async def get_hero_record_details(self, role_id: str, hero_id: int, role_name: str = "", server_id: str = "") -> dict:
+        return await self._auth_request("/gametoolbox/hero/record/pagedetails", {"roleId": str(role_id), "heroid": int(hero_id), "roleName": role_name, "h5Get": 1, "serverId": server_id})
 
-    async def get_hero_best_equip(self, hero_id: int, requester_qq: str = "") -> dict:
-        return await self._auth_request("/gametoolbox/equip/hero/getherobestequip", {"heroId": int(hero_id)}, requester_qq=requester_qq)
+    async def get_hero_best_equip(self, hero_id: int) -> dict:
+        return await self._auth_request("/gametoolbox/equip/hero/getherobestequip", {"heroId": int(hero_id)})
 
-    async def get_hero_fringe_data(self, hero_id: int, requester_qq: str = "") -> dict:
-        return await self._auth_request("/gametoolbox/hero/getherofringedata", {"heroId": int(hero_id)}, requester_qq=requester_qq)
+    async def get_hero_fringe_data(self, hero_id: int) -> dict:
+        return await self._auth_request("/gametoolbox/hero/getherofringedata", {"heroId": int(hero_id)})
 
-    async def get_season_usually_hero_list(self, role_id: str, requester_qq: str = "", season_id: int = 0) -> dict:
-        return await self._auth_request("/hero/getseasonusaullyherolist", {"recommendPrivacy": 0, "seasonId": season_id, "roleId": str(role_id)}, requester_qq=requester_qq)
+    async def get_season_usually_hero_list(self, role_id: str, season_id: int = 0) -> dict:
+        return await self._auth_request("/hero/getseasonusaullyherolist", {"recommendPrivacy": 0, "seasonId": season_id, "roleId": str(role_id)})
 
-    async def get_game_hero_list(self, camp_id: str, requester_qq: str = "") -> dict:
+    async def get_game_hero_list(self, camp_id: str) -> dict:
         # 游戏侧表单接口，复用皮肤墙的 token/userid 账号池
         store = self._auth_store
-        if store is None: raise AuthFailure("未配置登录态账号池")
-        candidates = store.get_auth_candidates(requester_qq=requester_qq)
-        if not candidates: raise AuthFailure("未找到可用的营地登录态")
+        if store is None: raise AuthFailure("未配置登录态, 请先发送 王者wx全局登录 扫码")
+        candidates = store.get_auth_candidates(requester_qq=requester.current())
+        if not candidates: raise AuthFailure("未找到可用的全局登录态, 请先发送 王者wx全局登录 扫码")
         url = f"{_GAME}/play/h5getherolist"
         for acc in candidates:
             token, uid = str(acc.get("token", "")), str(acc.get("userId", ""))
@@ -550,7 +546,7 @@ class WzryAPI:
                     payload = data
                 return {"returnCode": data.get("returnCode", 0), "data": payload}
             except Exception: continue
-        raise AuthFailure("登录态账号池均不可用")
+        raise AuthFailure("全局登录态不可用, 请重新发送 王者wx全局登录 扫码")
 
     async def get_pvp_skin_list(self) -> list:
         session = await self._get_session()

@@ -3,7 +3,7 @@
 import time
 import asyncio
 
-from core.plugin.decorators import handler
+from ..lib.handlers import handler
 from ..lib import render, auth as A
 from ..lib import qq_login as QQ
 
@@ -85,7 +85,7 @@ async def _poll_and_finish(event, sender, qq, session_info, is_global):
             await _safe_reply(
                 sender, event,
                 f"全局登录态设置成功\n营地: {nickname} ({_mask(user_id)})\n"
-                f"已设为全局默认, 所有查询在自动 token 失效时回退到该账号")
+                f"已设为全局默认, 之后所有查询都用这个登录态")
         else:
             account = {**account, "ownerBotUserId": qq, "resetAuthState": True}
             rt.auth.upsert_account(account)
@@ -93,7 +93,7 @@ async def _poll_and_finish(event, sender, qq, session_info, is_global):
             await _safe_reply(
                 sender, event,
                 f"<@{qq}> 扫码登录成功\n营地: {nickname} ({_mask(user_id)})\n"
-                f"已记入你的登录态并绑定营地ID, 自动 token 失效时将回退到该账号")
+                f"已绑定该营地ID, 之后查询优先用这个登录态")
     except Exception as e:
         await _safe_reply(sender, event, f"<@{qq}> 登录成功但保存登录态失败: {e}")
 

@@ -166,11 +166,13 @@ class AuthStore:
             _s(a.get("userId")),
         ))
 
-    def get_auth_candidates(self, target_user_id: str = "",
-                            requester_qq: str = "", *,
-                            include_target: bool = True,
-                            include_global: bool = True) -> list:
-        """返回可用候选账号 (深拷贝), 顺序: 全局 → 目标(个人兜底)。"""
+    def get_auth_candidates(self, requester_qq: str = "") -> list:
+        """返回可用候选账号 (深拷贝), 顺序: 本人的营地账号 → 全局登录态。
+
+        requester_qq 是发起查询的 QQ: 他个人扫码登录过 (王者wx登录 / 王者QQ登录) 就优先用
+        他自己那个账号; 没有 (或已失效) 再回落到全局登录态 (王者wx全局登录 / 王者QQ全局登录
+        写入的账号)。
+        """
         with self._lock:
             accounts = self._pool["accounts"]
             out: list = []
@@ -185,15 +187,14 @@ class AuthStore:
                 seen.add(uid)
                 out.append(json.loads(json.dumps(acc)))
 
-            if include_global:
-                for acc in self._sort_by_priority(
-                        [a for a in accounts.values() if a.get("isGlobalDefault")]):
-                    push(acc)
-            if include_target and requester_qq:
+            if requester_qq:
                 for acc in self._sort_by_priority(
                         [a for a in accounts.values()
                          if _s(a.get("ownerBotUserId")) == _s(requester_qq)]):
                     push(acc)
+            for acc in self._sort_by_priority(
+                    [a for a in accounts.values() if a.get("isGlobalDefault")]):
+                push(acc)
             return out
 
     # -------- 写入 --------
