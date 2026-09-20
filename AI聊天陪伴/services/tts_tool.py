@@ -97,7 +97,8 @@ async def synthesize(text: str, voice_id: int, config: dict) -> bytes | None:
             ) as response:
                 if response.status != 200:
                     return None
-                data = await response.json(content_type=None)
+                # 接口未声明 charset；默认解码会把中文角色名解析成乱码。
+                data = await response.json(encoding="utf-8", content_type=None)
             if not isinstance(data, dict) or data.get("code") != 200:
                 return None
             voice_path = str(data.get("voice_path") or "")
@@ -183,7 +184,8 @@ async def fetch_voices(token: str = "") -> list[dict]:
             timeout=timeout, headers=_headers()
         ) as session, session.get(url, params=params) as response:
             if response.status == 200:
-                data = await response.json(content_type=None)
+                # 角色目录接口未声明 charset，显式按 UTF-8 读取中文名称。
+                data = await response.json(encoding="utf-8", content_type=None)
             else:
                 data = None
         if isinstance(data, dict) and data.get("code") == 200:
@@ -198,7 +200,12 @@ async def fetch_voices(token: str = "") -> list[dict]:
 
 
 def _voice_label(item: dict) -> str:
-    name = str(item.get("voice_name") or "").strip()
+    name = str(
+        item.get("voice_name")
+        or item.get("name")
+        or item.get("voiceName")
+        or ""
+    ).strip()
     return name.split("|")[0].strip() or name
 
 
@@ -211,13 +218,22 @@ async def search_voices(keyword: str, token: str = "", limit: int = 30) -> list[
     result = []
     for item in rows:
         name = _voice_label(item)
-        tags = " ".join(
-            str(tag.get("tag_name") or "")
-            for tag in item.get("tags") or []
-            if isinstance(tag, dict)
-        )
+        raw_tags = item.get("tags") or []
+        if isinstance(raw_tags, str):
+            tags = raw_tags.strip()
+        elif isinstance(raw_tags, list):
+            tags = " ".join(
+                str(tag.get("tag_name") or tag.get("name") or "")
+                if isinstance(tag, dict)
+                else str(tag or "")
+                for tag in raw_tags
+            ).strip()
+        else:
+            tags = ""
         if folded in name.casefold() or folded in tags.casefold():
-            result.append({"id": item.get("id"), "name": name, "tags": tags})
+            voice_id = item.get("id") or item.get("voice_id") or item.get("voiceId")
+            if name and voice_id is not None:
+                result.append({"id": voice_id, "name": name, "tags": tags})
         if len(result) >= limit:
             break
     return result
