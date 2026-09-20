@@ -125,7 +125,8 @@
     }
 
     select,
-    .search {
+    .search,
+    .number {
       height: 36px;
       color: var(--text);
       border: 1px solid var(--line);
@@ -139,8 +140,16 @@
       padding: 0 34px 0 10px;
     }
 
+    .number {
+      width: 88px;
+      padding: 0 8px;
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+    }
+
     select:focus,
-    .search:focus {
+    .search:focus,
+    .number:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 2px rgb(22 119 255 / 12%);
     }
@@ -259,6 +268,44 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .mode-tabs {
+      display: inline-flex;
+      padding: 3px;
+      gap: 3px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface-2);
+    }
+
+    .mode-tab {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      gap: 7px;
+      color: var(--muted);
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      font-size: 12px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .mode-tab:hover:not(.active):not(:disabled) {
+      color: var(--text);
+    }
+
+    .mode-tab.active {
+      color: var(--text);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .mode-tab.active .count {
+      color: var(--accent);
+    }
+
     .group-controls {
       padding: 12px;
       border-bottom: 1px solid var(--line);
@@ -359,6 +406,32 @@
       gap: 10px;
       border-top: 1px solid var(--line);
       background: var(--surface);
+    }
+
+    .level-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 58px;
+      padding: 10px 12px;
+      gap: 10px;
+      border-top: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+
+    .level-field {
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+      gap: 8px;
+    }
+
+    .level-fields {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      min-width: 0;
+      gap: 12px;
     }
 
     .toggle {
@@ -588,6 +661,34 @@
       white-space: nowrap;
     }
 
+    .level-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-self: end;
+      height: 26px;
+      padding: 0 9px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--surface-2);
+      font-size: 11px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .level-badge.warn {
+      color: var(--warning);
+      border-color: #f0ce8a;
+      background: var(--warning-soft);
+    }
+
+    .level-badge.critical {
+      color: var(--danger);
+      border-color: #e8a4a4;
+      background: var(--danger-soft);
+    }
+
     .state {
       display: grid;
       min-height: 320px;
@@ -693,13 +794,15 @@
       }
 
       .toolbar,
-      .compare-bar {
+      .compare-bar,
+      .level-bar {
         align-items: stretch;
         flex-direction: column;
       }
 
       .toolbar .btn,
-      .compare-bar .btn {
+      .compare-bar .btn,
+      .level-bar .btn {
         width: 100%;
       }
 
@@ -758,7 +861,8 @@
         grid-row: 2;
       }
 
-      .overlap-count {
+      .overlap-count,
+      .level-badge {
         grid-column: 4;
         grid-row: 1;
       }
@@ -807,7 +911,7 @@
         </span>
         <div>
           <h1>重复群成员</h1>
-          <div class="subtitle">群成员交集查询</div>
+          <div class="subtitle">群成员交集查询 · QQ 等级筛选</div>
         </div>
       </div>
       <div class="toolbar">
@@ -858,13 +962,41 @@
             开始对比
           </button>
         </div>
+        <div class="level-bar">
+          <div class="level-fields">
+            <label class="level-field">
+              <span class="field-label">QQ 等级低于</span>
+              <input class="number" id="levelThreshold" type="number" min="1" max="256" step="1" value="16"
+                inputmode="numeric" aria-label="QQ 等级阈值"
+                title="QQ 等级：星星 1 级、月亮 4 级、太阳 16 级、皇冠 64 级">
+            </label>
+            <label class="level-field">
+              <span class="field-label">抽查上限</span>
+              <input class="number" id="levelProbeLimit" type="number" min="0" max="500" step="10" value="30"
+                inputmode="numeric" aria-label="逐个补查人数上限"
+                title="部分协议端（QLinux/Lagrange）只能在“陌生人资料”接口逐个查 QQ 等级，QQ 会对该接口限流；0 表示只用列表自带的等级">
+            </label>
+          </div>
+          <button class="btn" id="levelScanButton" type="button" disabled>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6h16M7 12h10M10 18h4"/>
+            </svg>
+            检查等级
+          </button>
+        </div>
       </aside>
 
       <section class="panel result-panel">
         <div class="panel-head result-head">
-          <div class="panel-title">
-            对比结果
-            <span class="count" id="resultCount">0</span>
+          <div class="mode-tabs" id="modeTabs" role="tablist" aria-label="结果类型">
+            <button class="mode-tab active" id="overlapTab" type="button" role="tab" aria-selected="true" data-mode="overlap">
+              重复成员
+              <span class="count" id="overlapTabCount">0</span>
+            </button>
+            <button class="mode-tab" id="levelTab" type="button" role="tab" aria-selected="false" data-mode="level">
+              低等级成员
+              <span class="count" id="levelTabCount">0</span>
+            </button>
           </div>
           <div class="result-tools">
             <div class="search-wrap">
@@ -883,12 +1015,13 @@
           </div>
         </div>
         <div class="summary" id="summary">
-          <div class="metric"><strong class="metric-value" id="metricGroups">0</strong><span class="metric-label">成功对比群</span></div>
-          <div class="metric"><strong class="metric-value" id="metricRecords">0</strong><span class="metric-label">成员记录</span></div>
-          <div class="metric"><strong class="metric-value" id="metricUnique">0</strong><span class="metric-label">去重成员</span></div>
-          <div class="metric"><strong class="metric-value" id="metricDuplicates">0</strong><span class="metric-label">重复成员</span></div>
+          <div class="metric"><strong class="metric-value" id="metricGroups">0</strong><span class="metric-label" id="metricGroupsLabel">成功对比群</span></div>
+          <div class="metric"><strong class="metric-value" id="metricRecords">0</strong><span class="metric-label" id="metricRecordsLabel">成员记录</span></div>
+          <div class="metric"><strong class="metric-value" id="metricUnique">0</strong><span class="metric-label" id="metricUniqueLabel">去重成员</span></div>
+          <div class="metric"><strong class="metric-value" id="metricDuplicates">0</strong><span class="metric-label" id="metricDuplicatesLabel">重复成员</span></div>
         </div>
         <div class="notice" id="failedNotice"></div>
+        <div class="notice" id="levelNotice"></div>
         <div class="notice danger" id="actionNotice"></div>
         <div class="bulk-bar" id="bulkBar">
           <label class="bulk-select">
@@ -922,30 +1055,78 @@
       const API_ROOT = '/api/ext/group-member-overlap';
       const MAX_GROUPS = 50;
       const MAX_KICK_TARGETS = 200;
+      const MAX_QQ_LEVEL = 256;
+      const MAX_LEVEL_PROBES = 500;
       const state = {
         bots: [],
         groups: [],
         selected: new Set(),
+        mode: 'overlap',
         duplicates: [],
+        failedGroups: [],
+        stats: null,
+        levelMembers: [],
+        levelFailedGroups: [],
+        levelStats: null,
+        levelThreshold: 0,
+        levelProbeLimit: 0,
         selectedUsers: new Set(),
         selectedTargetGroups: new Set(),
-        stats: null,
         loadingGroups: false,
         comparing: false,
+        scanning: false,
         kicking: false,
       };
       const elements = Object.fromEntries(
         [
           'botSelect', 'refreshButton', 'selectedCount', 'selectVisibleButton',
           'clearButton', 'groupSearch', 'groupList', 'excludeSelf',
-          'compareButton', 'resultCount', 'resultSearch', 'exportButton',
+          'compareButton', 'levelThreshold', 'levelProbeLimit', 'levelScanButton',
+          'modeTabs', 'overlapTab', 'levelTab', 'overlapTabCount', 'levelTabCount',
+          'resultSearch', 'exportButton',
           'metricGroups', 'metricRecords', 'metricUnique', 'metricDuplicates',
-          'failedNotice', 'actionNotice', 'bulkBar', 'selectAllResults',
+          'metricGroupsLabel', 'metricRecordsLabel', 'metricUniqueLabel',
+          'metricDuplicatesLabel',
+          'failedNotice', 'levelNotice', 'actionNotice', 'bulkBar', 'selectAllResults',
           'selectedUserCount', 'targetGroups', 'rejectAdd', 'kickButton',
           'results', 'toast',
         ].map((id) => [id, document.getElementById(id)])
       );
       let toastTimer = null;
+
+      function busy() {
+        return state.comparing || state.scanning || state.kicking;
+      }
+
+      function activeMembers() {
+        return state.mode === 'level' ? state.levelMembers : state.duplicates;
+      }
+
+      function activeStats() {
+        return state.mode === 'level' ? state.levelStats : state.stats;
+      }
+
+      function activeFailedGroups() {
+        return state.mode === 'level' ? state.levelFailedGroups : state.failedGroups;
+      }
+
+      function levelTone(level) {
+        const value = Number(level) || 0;
+        if (value < 4) return 'critical';
+        return value < 16 ? 'warn' : '';
+      }
+
+      function levelTitle(level) {
+        const value = Number(level) || 0;
+        let rest = value;
+        const parts = [];
+        for (const [size, name] of [[64, '皇冠'], [16, '太阳'], [4, '月亮'], [1, '星星']]) {
+          const count = Math.floor(rest / size);
+          if (count) parts.push(count + ' ' + name);
+          rest %= size;
+        }
+        return 'QQ 等级 ' + value + (parts.length ? '（' + parts.join(' ') + '）' : '');
+      }
 
       function iconState(path) {
         return '<svg class="state-icon icon" viewBox="0 0 24 24" aria-hidden="true">' + path + '</svg>';
@@ -1024,10 +1205,17 @@
       }
 
       function renderGroupList() {
+        const blocked = busy();
         elements.selectedCount.textContent = String(state.selected.size);
-        elements.botSelect.disabled = state.bots.length === 0 || state.comparing || state.kicking;
-        elements.refreshButton.disabled = state.loadingGroups || state.comparing || state.kicking;
-        elements.compareButton.disabled = state.comparing || state.kicking || state.selected.size < 2;
+        elements.botSelect.disabled = state.bots.length === 0 || blocked;
+        elements.refreshButton.disabled = state.loadingGroups || blocked;
+        elements.compareButton.disabled = blocked || state.selected.size < 2;
+        elements.levelScanButton.disabled = blocked || state.selected.size < 1;
+        elements.levelScanButton.title = state.selected.size
+          ? ''
+          : '请先选择要检查的群';
+        elements.levelThreshold.disabled = blocked;
+        elements.levelProbeLimit.disabled = blocked;
         elements.clearButton.disabled = state.selected.size === 0;
         const groups = visibleGroups();
         elements.selectVisibleButton.disabled = !groups.length;
@@ -1084,19 +1272,44 @@
       }
 
       function updateSummary() {
-        const stats = state.stats || {};
-        elements.metricGroups.textContent = Number(stats.compared_groups || 0).toLocaleString();
+        const stats = activeStats() || {};
+        const level = state.mode === 'level';
+        elements.metricGroupsLabel.textContent = level ? '成功扫描群' : '成功对比群';
+        elements.metricRecordsLabel.textContent = '成员记录';
+        elements.metricUniqueLabel.textContent = '去重成员';
+        elements.metricDuplicatesLabel.textContent = level ? '低等级成员' : '重复成员';
+        elements.metricGroups.textContent = Number(
+          (level ? stats.scanned_groups : stats.compared_groups) || 0
+        ).toLocaleString();
         elements.metricRecords.textContent = Number(stats.member_records || 0).toLocaleString();
         elements.metricUnique.textContent = Number(stats.unique_members || 0).toLocaleString();
-        elements.metricDuplicates.textContent = Number(stats.duplicate_members || 0).toLocaleString();
+        elements.metricDuplicates.textContent = Number(
+          (level ? stats.matched_members : stats.duplicate_members) || 0
+        ).toLocaleString();
       }
 
-      function filteredDuplicates() {
+      function renderModeTabs() {
+        const level = state.mode === 'level';
+        const blocked = state.kicking || state.comparing || state.scanning;
+        elements.overlapTab.classList.toggle('active', !level);
+        elements.levelTab.classList.toggle('active', level);
+        elements.overlapTab.setAttribute('aria-selected', String(!level));
+        elements.levelTab.setAttribute('aria-selected', String(level));
+        elements.overlapTab.disabled = blocked;
+        elements.levelTab.disabled = blocked;
+        elements.overlapTabCount.textContent = String(state.duplicates.length);
+        elements.levelTabCount.textContent = String(state.levelMembers.length);
+      }
+
+      function filteredMembers() {
+        const members = activeMembers();
         const query = elements.resultSearch.value.trim().toLocaleLowerCase();
-        if (!query) return state.duplicates;
-        return state.duplicates.filter((member) =>
+        if (!query) return members;
+        const level = state.mode === 'level';
+        return members.filter((member) =>
           String(member.display_name).toLocaleLowerCase().includes(query) ||
           String(member.user_id).includes(query) ||
+          (level && String(member.qq_level).includes(query)) ||
           member.groups.some((group) =>
             groupName(group.group_id).toLocaleLowerCase().includes(query) ||
             String(group.card || group.nickname || '').toLocaleLowerCase().includes(query)
@@ -1105,7 +1318,7 @@
       }
 
       function selectedMembers() {
-        return state.duplicates.filter((member) => state.selectedUsers.has(String(member.user_id)));
+        return activeMembers().filter((member) => state.selectedUsers.has(String(member.user_id)));
       }
 
       function availableTargetGroups() {
@@ -1140,7 +1353,7 @@
         elements.bulkBar.className = 'bulk-bar' + (members.length ? ' show' : '');
         elements.selectedUserCount.textContent = String(members.length);
 
-        const visible = filteredDuplicates();
+        const visible = filteredMembers();
         elements.selectAllResults.checked = visible.length > 0 &&
           visible.every((member) => state.selectedUsers.has(String(member.user_id)));
         elements.selectAllResults.indeterminate = visible.some((member) =>
@@ -1158,7 +1371,7 @@
           : '<span class="field-label">选择用户后可选择目标群</span>';
 
         const operationCount = batchTargets().length;
-        elements.kickButton.disabled = state.kicking || state.comparing ||
+        elements.kickButton.disabled = busy() ||
           operationCount === 0 || operationCount > MAX_KICK_TARGETS;
         elements.kickButton.title = operationCount > MAX_KICK_TARGETS
           ? '一次最多执行 ' + MAX_KICK_TARGETS + ' 个移群操作'
@@ -1171,26 +1384,34 @@
       }
 
       function renderResults() {
+        const level = state.mode === 'level';
+        const members = filteredMembers();
+        renderModeTabs();
         updateSummary();
-        const members = filteredDuplicates();
-        elements.resultCount.textContent = String(members.length);
-        elements.exportButton.disabled = state.comparing || state.kicking || state.duplicates.length === 0;
+        renderFailedGroups();
+        renderLevelNotice();
+        elements.exportButton.disabled = busy() || activeMembers().length === 0;
         renderBulkBar();
 
-        if (state.comparing) {
-          elements.results.innerHTML = '<div class="state"><span class="spinner"></span><span>正在获取并对比群成员</span></div>';
+        if (level ? state.scanning : state.comparing) {
+          elements.results.innerHTML = '<div class="state"><span class="spinner"></span><span>' +
+            (level ? '正在获取群成员并检查 QQ 等级' : '正在获取并对比群成员') + '</span></div>';
           return;
         }
-        if (!state.stats) {
+        if (!activeStats()) {
           elements.results.innerHTML = '<div class="state">' +
-            iconState('<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>') +
-            '<span>暂无对比结果</span></div>';
+            iconState(level
+              ? '<circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>'
+              : '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>') +
+            '<span>' + (level ? '暂无等级筛选结果' : '暂无对比结果') + '</span></div>';
           return;
         }
-        if (!state.duplicates.length) {
+        if (!activeMembers().length) {
           elements.results.innerHTML = '<div class="state">' +
             iconState('<path d="m5 12 4 4L19 6"/>') +
-            '<span>所选群中没有重复成员</span></div>';
+            '<span>' + (level
+              ? '所选群中没有 QQ 等级低于 ' + state.levelThreshold + ' 级的成员'
+              : '所选群中没有重复成员') + '</span></div>';
           return;
         }
         if (!members.length) {
@@ -1209,6 +1430,11 @@
             '</span>';
           }).join('');
           const avatar = 'https://q1.qlogo.cn/g?b=qq&nk=' + encodeURIComponent(member.user_id) + '&s=100';
+          const tone = levelTone(member.qq_level);
+          const trailing = level
+            ? '<div class="level-badge' + (tone ? ' ' + tone : '') + '" title="' +
+                escapeHtml(levelTitle(member.qq_level)) + '">' + Number(member.qq_level) + ' 级</div>'
+            : '<div class="overlap-count">' + member.group_count + ' 个群</div>';
           return '<article class="result-row">' +
             '<input type="checkbox" data-user-id="' + escapeHtml(member.user_id) + '"' +
               (state.selectedUsers.has(String(member.user_id)) ? ' checked' : '') +
@@ -1219,22 +1445,59 @@
               '<div class="member-id" title="' + escapeHtml(member.display_name) + '">' + escapeHtml(member.display_name) + '</div>' +
             '</div>' +
             '<div class="group-tags">' + tags + '</div>' +
-            '<div class="overlap-count">' + member.group_count + ' 个群</div>' +
+            trailing +
           '</article>';
         }).join('');
       }
 
-      function renderFailedGroups(failedGroups) {
-        const failed = Array.isArray(failedGroups) ? failedGroups : [];
-        if (!failed.length) {
+      function renderFailedGroups() {
+        const failed = activeFailedGroups();
+        if (!Array.isArray(failed) || !failed.length) {
           elements.failedNotice.className = 'notice';
           elements.failedNotice.textContent = '';
           return;
         }
-        elements.failedNotice.textContent = '未参与对比：' + failed
+        elements.failedNotice.textContent = '未参与' +
+          (state.mode === 'level' ? '检查' : '对比') + '：' + failed
           .map((item) => groupName(String(item.group_id)) + '（' + item.message + '）')
           .join('；');
         elements.failedNotice.className = 'notice show';
+      }
+
+      function renderLevelNotice() {
+        const stats = state.levelStats || {};
+        const unknown = state.mode === 'level' ? Number(stats.unknown_level || 0) : 0;
+        if (!unknown) {
+          elements.levelNotice.className = 'notice';
+          elements.levelNotice.textContent = '';
+          return;
+        }
+        const sources = stats.level_sources || {};
+        const resolved = Object.values(sources)
+          .reduce((sum, value) => sum + (Number(value) || 0), 0);
+        const pending = Number(stats.probe_pending || 0);
+        let text = '有 ' + unknown + ' 名成员的 QQ 等级无法获取，未列入结果。';
+        if (resolved > 0) {
+          text += pending > 0
+            ? '本次逐个补查了 ' + Number(stats.level_probed || 0) + ' 人，还有 ' + pending +
+              ' 人未查（可调大“抽查上限”或稍后重新检查）。'
+            : '可稍后重新检查。';
+        } else if (stats.probe_stopped) {
+          text += 'QQ 已限制资料查询频率，本次已停止补查' +
+            (stats.probe_error ? '（' + stats.probe_error + '）' : '') +
+            '。该协议端只能在“陌生人资料”里逐个查等级，请稍后重试。';
+        } else if (Number(stats.probe_limit || 0) === 0) {
+          text += '当前只使用列表自带的等级，逐个补查已关闭（抽查上限 0）。';
+        } else {
+          text += '当前协议端可能没有返回 QQ 等级（已尝试群成员列表、好友列表、群成员资料、陌生人资料）。';
+          const fields = Object.entries(stats.sample_fields || {})
+            .map(([source, keys]) => source + '=[' + (Array.isArray(keys) ? keys.slice(0, 14).join(',') : '') + ']')
+            .join('；');
+          if (fields) text += '接口字段：' + fields + '。';
+          if (stats.probe_error) text += '最后错误：' + stats.probe_error;
+        }
+        elements.levelNotice.textContent = text;
+        elements.levelNotice.className = 'notice show';
       }
 
       function renderActionFailures(results) {
@@ -1251,13 +1514,14 @@
       }
 
       async function compare(options = {}) {
-        if (state.selected.size < 2 || state.comparing) return;
+        if (state.selected.size < 2 || busy()) return false;
+        state.mode = 'overlap';
         state.comparing = true;
         state.stats = null;
         state.duplicates = [];
+        state.failedGroups = [];
         state.selectedUsers.clear();
         state.selectedTargetGroups.clear();
-        renderFailedGroups([]);
         if (!options.preserveActionNotice) renderActionFailures([]);
         renderGroupList();
         renderResults();
@@ -1273,20 +1537,105 @@
           });
           state.stats = data.stats || {};
           state.duplicates = Array.isArray(data.duplicates) ? data.duplicates : [];
-          renderFailedGroups(data.failed_groups);
+          state.failedGroups = Array.isArray(data.failed_groups) ? data.failed_groups : [];
           if (!options.silent) {
             showToast('对比完成，共发现 ' + state.duplicates.length + ' 名重复成员');
           }
           return true;
         } catch (error) {
           state.stats = null;
-          renderFailedGroups(error.body?.failed_groups);
+          state.failedGroups = Array.isArray(error.body?.failed_groups) ? error.body.failed_groups : [];
           showToast(error.message, 'error');
           return false;
         } finally {
           state.comparing = false;
           renderGroupList();
           renderResults();
+        }
+      }
+
+      async function scanLevels(options = {}) {
+        const threshold = Number(options.threshold ?? elements.levelThreshold.value);
+        if (!Number.isInteger(threshold) || threshold < 1 || threshold > MAX_QQ_LEVEL) {
+          showToast('请输入 1 - ' + MAX_QQ_LEVEL + ' 之间的 QQ 等级', 'error');
+          return false;
+        }
+        const probeLimit = Number(options.probeLimit ?? elements.levelProbeLimit.value);
+        if (!Number.isInteger(probeLimit) || probeLimit < 0 || probeLimit > MAX_LEVEL_PROBES) {
+          showToast('抽查上限需在 0 - ' + MAX_LEVEL_PROBES + ' 之间（0 表示不逐个补查）', 'error');
+          return false;
+        }
+        if (!state.selected.size || busy()) return false;
+        localStorage.setItem('elainaqq_level_threshold', String(threshold));
+        localStorage.setItem('elainaqq_level_probe_limit', String(probeLimit));
+        state.mode = 'level';
+        state.scanning = true;
+        state.levelThreshold = threshold;
+        state.levelProbeLimit = probeLimit;
+        state.levelStats = null;
+        state.levelMembers = [];
+        state.levelFailedGroups = [];
+        state.selectedUsers.clear();
+        state.selectedTargetGroups.clear();
+        if (!options.preserveActionNotice) renderActionFailures([]);
+        renderGroupList();
+        renderResults();
+        try {
+          const data = await request(API_ROOT + '/level-scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              self_id: elements.botSelect.value,
+              group_ids: Array.from(state.selected),
+              threshold,
+              probe_limit: probeLimit,
+              exclude_self: elements.excludeSelf.checked,
+            }),
+          });
+          state.levelStats = data.stats || {};
+          state.levelMembers = Array.isArray(data.members) ? data.members : [];
+          state.levelFailedGroups = Array.isArray(data.failed_groups) ? data.failed_groups : [];
+          if (!options.silent) {
+            showToast('等级检查完成，共发现 ' + state.levelMembers.length +
+              ' 名低于 ' + threshold + ' 级的成员');
+          }
+          return true;
+        } catch (error) {
+          state.levelStats = null;
+          state.levelFailedGroups = Array.isArray(error.body?.failed_groups) ? error.body.failed_groups : [];
+          showToast(error.message, 'error');
+          return false;
+        } finally {
+          state.scanning = false;
+          renderGroupList();
+          renderResults();
+        }
+      }
+
+      function refreshActive(options = {}) {
+        return state.mode === 'level'
+          ? scanLevels({
+              ...options,
+              threshold: state.levelThreshold,
+              probeLimit: state.levelProbeLimit,
+            })
+          : compare(options);
+      }
+
+      function restoreLevelSettings() {
+        const savedThreshold = localStorage.getItem('elainaqq_level_threshold');
+        if (savedThreshold !== null) {
+          const value = Number(savedThreshold);
+          if (Number.isInteger(value) && value >= 1 && value <= MAX_QQ_LEVEL) {
+            elements.levelThreshold.value = String(value);
+          }
+        }
+        const savedLimit = localStorage.getItem('elainaqq_level_probe_limit');
+        if (savedLimit !== null) {
+          const value = Number(savedLimit);
+          if (Number.isInteger(value) && value >= 0 && value <= MAX_LEVEL_PROBES) {
+            elements.levelProbeLimit.value = String(value);
+          }
         }
       }
 
@@ -1301,7 +1650,8 @@
         const groupCount = state.selectedTargetGroups.size;
         const confirmed = window.confirm(
           '确认对 ' + userCount + ' 名用户执行 ' + targets.length +
-          ' 项移群操作？\\n涉及 ' + groupCount + ' 个目标群。'
+          ' 项移群操作？\n涉及 ' + groupCount + ' 个目标群。' +
+          (state.mode === 'level' ? '\n筛选条件：QQ 等级低于 ' + state.levelThreshold + ' 级。' : '')
         );
         if (!confirmed) return;
 
@@ -1322,7 +1672,7 @@
           state.selectedUsers.clear();
           state.selectedTargetGroups.clear();
           state.kicking = false;
-          await compare({ silent: true, preserveActionNotice: true });
+          await refreshActive({ silent: true, preserveActionNotice: true });
           const message = data.failed_count
             ? '移群完成：成功 ' + data.success_count + ' 项，失败 ' + data.failed_count + ' 项'
             : '移群完成，共成功 ' + data.success_count + ' 项';
@@ -1343,22 +1693,29 @@
       }
 
       function exportCsv() {
-        if (!state.duplicates.length) return;
-        const rows = [['QQ', '显示名称', '重复群数', '所在群', '群内名称']];
-        for (const member of state.duplicates) {
-          rows.push([
-            member.user_id,
-            member.display_name,
-            member.group_count,
-            member.groups.map((group) => groupName(group.group_id) + ' (' + group.group_id + ')').join('；'),
-            member.groups.map((group) => group.card || group.nickname || '').join('；'),
-          ]);
+        const members = activeMembers();
+        if (!members.length) return;
+        const level = state.mode === 'level';
+        const rows = [level
+          ? ['QQ', '显示名称', 'QQ 等级', '所在群数', '所在群', '群内名称']
+          : ['QQ', '显示名称', '重复群数', '所在群', '群内名称']];
+        for (const member of members) {
+          const groups = member.groups
+            .map((group) => groupName(group.group_id) + ' (' + group.group_id + ')')
+            .join('；');
+          const cards = member.groups
+            .map((group) => group.card || group.nickname || '')
+            .join('；');
+          rows.push(level
+            ? [member.user_id, member.display_name, member.qq_level, member.group_count, groups, cards]
+            : [member.user_id, member.display_name, member.group_count, groups, cards]);
         }
         const csv = '\ufeff' + rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
         const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
         const link = document.createElement('a');
         link.href = url;
-        link.download = '重复群成员_' + new Date().toISOString().slice(0, 10) + '.csv';
+        link.download = (level ? '低等级成员_' : '重复群成员_') +
+          new Date().toISOString().slice(0, 10) + '.csv';
         document.body.appendChild(link);
         link.click();
         link.remove();
@@ -1391,11 +1748,21 @@
         renderResults();
       });
       elements.selectAllResults.addEventListener('change', () => {
-        for (const member of filteredDuplicates()) {
+        for (const member of filteredMembers()) {
           const userId = String(member.user_id);
           if (elements.selectAllResults.checked) state.selectedUsers.add(userId);
           else state.selectedUsers.delete(userId);
         }
+        renderResults();
+      });
+      elements.modeTabs.addEventListener('click', (event) => {
+        const tab = event.target.closest('button[data-mode]');
+        if (!tab || busy()) return;
+        const mode = tab.dataset.mode === 'level' ? 'level' : 'overlap';
+        if (mode === state.mode) return;
+        state.mode = mode;
+        state.selectedUsers.clear();
+        state.selectedTargetGroups.clear();
         renderResults();
       });
       elements.targetGroups.addEventListener('change', (event) => {
@@ -1428,21 +1795,30 @@
       });
       elements.botSelect.addEventListener('change', () => {
         localStorage.setItem('elainaqq_bot', elements.botSelect.value);
+        state.mode = 'overlap';
         state.stats = null;
         state.duplicates = [];
+        state.failedGroups = [];
+        state.levelStats = null;
+        state.levelMembers = [];
+        state.levelFailedGroups = [];
         state.selectedUsers.clear();
         state.selectedTargetGroups.clear();
-        renderFailedGroups([]);
         renderActionFailures([]);
         renderResults();
         loadGroups();
       });
       elements.refreshButton.addEventListener('click', loadGroups);
-      elements.compareButton.addEventListener('click', compare);
+      elements.compareButton.addEventListener('click', () => compare());
+      elements.levelScanButton.addEventListener('click', () => scanLevels());
+      elements.levelThreshold.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') scanLevels();
+      });
       elements.kickButton.addEventListener('click', kickSelected);
       elements.exportButton.addEventListener('click', exportCsv);
 
       async function initialize() {
+        restoreLevelSettings();
         renderResults();
         try {
           if (await loadBots()) await loadGroups();

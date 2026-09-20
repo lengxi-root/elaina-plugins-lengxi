@@ -141,6 +141,10 @@ async def set_mapping(group_id, value):
             'bot_appid': str(value.get('bot_appid') or ''),
             'button_id': str(value.get('button_id') or '1'),
             'callback_data': str(value.get('callback_data') or ''),
+            # QLinux needs the original message sequence to address the
+            # inline-keyboard message after a restart. Preserve both names
+            # because older callers used message_seq.
+            'msg_seq': str(value.get('msg_seq') or value.get('message_seq') or ''),
             'updated_at': int(value.get('updated_at') or 0),
         }
         saved = deepcopy(_MAPPINGS)

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 
 import aiohttp
 
@@ -14,7 +15,6 @@ from . import network_tools
 _API_BASE = "https://api.ttson.cn"
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 _VOICES_CACHE_TTL = 600
-_MAX_AUDIO_BYTES = 20 * 1024 * 1024
 _voices_cache: dict[str, tuple[list[dict], float]] = {}
 
 
@@ -62,20 +62,12 @@ def _headers() -> dict:
     }
 
 
-def _looks_like_mp3(data: bytes) -> bool:
-    if len(data) <= 512:
-        return False
-    if data[:3] == b"ID3":
-        return True
-    return data[0] == 0xFF and (data[1] & 0xE0) == 0xE0
-
-
-async def synthesize(text: str, voice_id: int, config: dict) -> bytes | None:
-    """生成 MP3 音频，失败时返回 None。"""
+async def synthesize_url(text: str, voice_id: int, config: dict) -> str | None:
+    """申请由 QQ 服务器直接拉取的远程语音链接。"""
     token = str(config.get("tts_token") or "").strip()
     payload = {
         "voice_id": int(voice_id),
-        "text": str(text or "")[:1000],
+        "text": str(text or "")[:200],
         "format": "mp3",
         "to_lang": str(config.get("tts_to_lang") or "ZH"),
         "auto_translate": 1 if config.get("tts_auto_translate", True) else 0,
@@ -97,37 +89,23 @@ async def synthesize(text: str, voice_id: int, config: dict) -> bytes | None:
             ) as response:
                 if response.status != 200:
                     return None
-                # 接口未声明 charset；默认解码会把中文角色名解析成乱码。
                 data = await response.json(encoding="utf-8", content_type=None)
-            if not isinstance(data, dict) or data.get("code") != 200:
-                return None
-            voice_path = str(data.get("voice_path") or "")
-            base = f"{data.get('url')}:{data.get('port')}"
-            if not voice_path or base.startswith(":"):
-                return None
-            audio_url = f"{base}/flashsummary/retrieveFileData"
-            try:
-                audio_url = network_tools.validate_url(audio_url)
-            except network_tools.NetworkToolError:
-                return None
-            params = {"stream": "True", "voice_audio_path": voice_path}
-            if token:
-                params["token"] = token
-            connector = aiohttp.TCPConnector(
-                resolver=network_tools.SafeResolver(), ttl_dns_cache=0
-            )
-            async with aiohttp.ClientSession(
-                connector=connector, timeout=timeout, headers=_headers()
-            ) as audio_session, audio_session.get(
-                audio_url, params=params, allow_redirects=False
-            ) as audio_response:
-                if audio_response.status != 200:
-                    return None
-                audio = await audio_response.content.read(_MAX_AUDIO_BYTES + 1)
-    # TTS 失败时静默跳过。
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError):
         return None
-    return audio if len(audio) <= _MAX_AUDIO_BYTES and _looks_like_mp3(audio) else None
+    if not isinstance(data, dict) or data.get("code") != 200:
+        return None
+    voice_path = str(data.get("voice_path") or "")
+    base = f"{data.get('url')}:{data.get('port')}"
+    if not voice_path or base.startswith(":"):
+        return None
+    try:
+        url = network_tools.validate_url(f"{base}/flashsummary/retrieveFileData")
+    except network_tools.NetworkToolError:
+        return None
+    params = {"stream": "True", "voice_audio_path": voice_path}
+    if token:
+        params["token"] = token
+    return f"{url}?{urlencode(params)}"
 
 
 async def run(arguments: dict, context: dict, config: dict) -> dict:
@@ -141,15 +119,15 @@ async def run(arguments: dict, context: dict, config: dict) -> dict:
     event = (context or {}).get("event")
     if not text or not roles or event is None:
         return {"ok": True, "sent": False}
-    limit = int(config.get("tts_max_chars", 150))
+    limit = min(200, max(20, int(config.get("tts_max_chars", 150))))
     text = text[:limit]
     role_name = str(arguments.get("role") or "").strip()
     role = next((item for item in roles if item["name"] == role_name), roles[0])
     try:
-        audio = await synthesize(text, int(role["voice_id"]), config)
+        audio_url = await synthesize_url(text, int(role["voice_id"]), config)
     except Exception:  # noqa: BLE001 - 失败时静默跳过
         return {"ok": True, "sent": False}
-    if not audio:
+    if not audio_url:
         return {"ok": True, "sent": False}
     sender = getattr(event, "reply_voice", None)
     if sender is None:
@@ -158,7 +136,11 @@ async def run(arguments: dict, context: dict, config: dict) -> dict:
     to_lang = str(config.get("tts_to_lang") or "ZH")
     caption = text if to_lang != "ZH" else ""
     try:
-        sent = await sender(audio, content=caption)
+        sent = await sender(
+            audio_url,
+            content=caption,
+            file_name="tts.mp3",
+        )
     except Exception:  # noqa: BLE001 - 失败时静默跳过
         return {"ok": True, "sent": False}
     if sent is None:

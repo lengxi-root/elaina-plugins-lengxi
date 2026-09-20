@@ -22,7 +22,7 @@ __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
     "description": "支持多人格、人物集、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "2.1.2",
+    "version": "2.1.3",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }

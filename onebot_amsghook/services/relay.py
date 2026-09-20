@@ -141,7 +141,10 @@ async def raw_inline_keyboards(event, bot_appid=""):
         "PB 按钮读取请求",
         group_id=event.group_id,
         message_id=event.message_id,
-        real_seq=event.raw_data.get("real_seq"),
+        real_seq=next((event.raw_data.get(key) for key in (
+            "real_seq", "realSeq", "message_seq", "messageSeq",
+            "msg_seq", "msgSeq", "sequence",
+        ) if event.raw_data.get(key) not in (None, "", 0, "0")), 0),
         self_id=event.self_id,
     )
     try:
@@ -149,7 +152,10 @@ async def raw_inline_keyboards(event, bot_appid=""):
             keyboards = await get_api().get_inline_keyboard_buttons(
                 event.group_id,
                 event.message_id,
-                real_seq=event.raw_data.get("real_seq"),
+                real_seq=next((event.raw_data.get(key) for key in (
+                    "real_seq", "realSeq", "message_seq", "messageSeq",
+                    "msg_seq", "msgSeq", "sequence",
+                ) if event.raw_data.get(key) not in (None, "", 0, "0")), 0),
                 bot_appid=bot_appid,
                 self_id=str(event.self_id or ""),
             )
@@ -362,6 +368,25 @@ def record_event_use(group_id, event_id):
         runtime.event_ids.pop(str(group_id), None)
 
 
+def _mapping_message_sequence(mapping):
+    """返回官机按钮所在消息的正序号；旧哈希 ID/0 均视为无效。"""
+    if not isinstance(mapping, dict):
+        return 0
+    for key in (
+        "msg_seq", "message_seq", "real_seq", "sequence",
+    ):
+        value = mapping.get(key)
+        if value in (None, "", 0, "0"):
+            continue
+        try:
+            sequence = int(str(value).strip())
+        except (TypeError, ValueError):
+            continue
+        if sequence > 0:
+            return sequence
+    return 0
+
+
 async def wake_event(group_id, self_id, *, force=False):
     group_id = str(group_id)
     if force:
@@ -373,6 +398,14 @@ async def wake_event(group_id, self_id, *, force=False):
     mapping = store.mappings().get(group_id)
     if not mapping or not mapping.get("callback_data"):
         _trace("按钮映射缺失", level="warning", group_id=group_id)
+        return None
+    if _mapping_message_sequence(mapping) <= 0:
+        _trace(
+            "按钮映射序号失效",
+            level="warning",
+            group_id=group_id,
+            msg_seq=mapping.get("msg_seq") or mapping.get("message_seq") or "",
+        )
         return None
 
     lock = runtime.event_locks.setdefault(group_id, asyncio.Lock())
@@ -513,9 +546,12 @@ async def handle_keyboard_event(event):
             "button_id": selected.get("button_id") or "1",
             "callback_data": selected.get("callback_data"),
             "msg_seq": str(
-                event.raw_data.get("real_seq")
-                or event.raw_data.get("message_seq")
-                or event.message_id
+                selected.get("msg_seq")
+                or selected.get("message_seq")
+                or selected.get("real_seq")
+                or event.raw_data.get("sequence")
+                or getattr(event, "real_seq", 0)
+                or getattr(event, "message_seq", 0)
                 or ""
             ),
             "updated_at": int(time.time()),
@@ -1158,7 +1194,10 @@ async def intercept_api(request, call_next):
         _trace("原路发送", group_id=group_id, reason="官机不在群内或成员查询失败")
         return await call_next()
 
-    if not mapping.get("callback_data"):
+    mapping_ready = bool(mapping.get("callback_data")) and _mapping_message_sequence(mapping) > 0
+    if not mapping_ready:
+        if mapping.get("callback_data"):
+            await store.delete_mapping(group_id)
         if await queue_bootstrap(request, message):
             _trace("拦截结果", group_id=group_id, result="等待自动建链")
             return synthetic_success()
