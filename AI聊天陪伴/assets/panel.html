@@ -81,7 +81,7 @@ const _renderWithButtons=render;render=function(){_renderWithButtons();const fie
 const _payloadWithButtons=payload;payload=function(section){const value=_payloadWithButtons(section);if(section==='context')value.persistent_buttons=document.getElementById('persistent_buttons')?.value||'';return value};
 </script>
 <style>
-.character-set-item{padding:0}.character-set-item>.item-head{margin:0;padding:10px 12px}.character-set-body{padding:2px 14px 14px}.character-list,.relationship-list{display:grid;gap:10px}.character-item,.relationship-item{background:var(--bg3);box-shadow:none}.character-item .item-head,.relationship-item .item-head{margin:0 0 10px;padding:0}.character-item .item-head strong,.relationship-item .item-head strong{font-size:12px}.subsection{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}.character-section{margin-top:12px;border:1px solid var(--border);border-radius:7px;background:var(--bg2);overflow:hidden}.character-section:first-child{margin-top:0}.character-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;background:var(--bg3)}.character-section-head strong{font-size:12px}.character-section-head .btn{min-height:30px;padding:5px 9px;font-size:11px}.character-section-body{padding:12px}.character-section.collapsed>.character-section-body{display:none}
+.character-set-item{padding:0}.character-set-item>.item-head{margin:0;padding:10px 12px}.character-set-body{padding:2px 14px 14px}.character-list,.relationship-list{display:grid;gap:10px}.character-item,.relationship-item{background:var(--bg3);box-shadow:none}.character-item .item-head,.relationship-item .item-head{margin:0 0 10px;padding:0}.character-item .item-head strong,.relationship-item .item-head strong{font-size:12px}.subsection{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}.character-section{margin-top:12px;border:1px solid var(--border);border-radius:7px;background:var(--bg2);overflow:hidden}.character-section:first-child{margin-top:0}.character-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;background:var(--bg3)}.character-section-head strong{font-size:12px}.character-section-head .btn{min-height:30px;padding:5px 9px;font-size:11px}.character-section-body{padding:12px}.character-section.collapsed>.character-section-body{display:none}.agent-tabs{display:flex;gap:6px;margin-bottom:16px;padding:4px;background:var(--bg3);border:1px solid var(--border);border-radius:8px}.agent-tab{flex:1;min-height:38px;border:0;border-radius:6px;background:transparent;color:var(--text2);font-weight:700}.agent-tab:hover{background:var(--bg2)}.agent-tab.active{background:var(--bg2);color:var(--accent);box-shadow:0 1px 4px rgba(20,28,52,.08)}.agent-tab-panel{display:none}.agent-tab-panel.active{display:block}
 </style>
 <script>
 (function(){
@@ -137,11 +137,30 @@ const _payloadWithButtons=payload;payload=function(section){const value=_payload
   const nav=document.querySelector('.nav');
   const agentNav=nav?.querySelector('[data-page="model-tools"]');
   if(agentNav){agentNav.querySelector('span').textContent='Agent 工具'}
-  ['images','character-sets','tts','safety'].forEach(id=>{
+  const builtInPanel=document.createElement('div');
+  builtInPanel.className='agent-tab-panel active';
+  builtInPanel.dataset.agentTab='builtin';
+  ['images','character-sets','tts'].forEach(id=>{
     nav?.querySelector('[data-page="'+id+'"]')?.remove();
     const page=document.getElementById('page-'+id);
-    if(page){[...page.children].forEach(node=>agentPage.appendChild(node));page.remove()}
+    if(page){[...page.children].forEach(node=>builtInPanel.appendChild(node));page.remove()}
   });
+  const llmPanel=document.createElement('div');
+  llmPanel.className='agent-tab-panel';
+  llmPanel.dataset.agentTab='aillm';
+  const modelPanel=agentPage.querySelector('.panel');
+  if(modelPanel){modelPanel.remove();llmPanel.appendChild(modelPanel)}
+  const tabs=document.createElement('div');
+  tabs.className='agent-tabs';
+  tabs.innerHTML='<button class="agent-tab active" type="button" data-agent-tab="builtin">内置 Agent 工具</button><button class="agent-tab" type="button" data-agent-tab="aillm">AI LLM Agent 工具</button>';
+  agentPage.insertBefore(tabs,agentPage.firstChild);
+  agentPage.append(builtInPanel,llmPanel);
+  tabs.querySelectorAll('.agent-tab').forEach(button=>button.onclick=()=>{
+    const target=button.dataset.agentTab;
+    tabs.querySelectorAll('.agent-tab').forEach(item=>item.classList.toggle('active',item===button));
+    agentPage.querySelectorAll('.agent-tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.agentTab===target));
+  });
+  nav?.querySelectorAll('button').forEach((button,index)=>{const number=button.querySelector('i');if(number)number.textContent=String(index+1).padStart(2,'0')});
 })();
 </script>
 </body></html>
