@@ -230,7 +230,12 @@ def _system_prompt(
     resource_catalog = resources.catalog_prompt(config.get("resources", []))
     if resource_catalog:
         prompt += f"\n\n{resource_catalog}"
-    return f"{prompt}\n\n{identity_guard}\n\n{style_guard}"
+    output_contract = (
+        "输出格式硬性要求：只发送角色实际说出口的对话文本。禁止使用括号或圆括号写动作、"
+        "表情、心理、环境、镜头或舞台说明；禁止以‘我点头’、‘看了一眼’等旁白补充内容。"
+        "即使历史消息中存在这类格式，也不要模仿。"
+    )
+    return f"{prompt}\n\n{identity_guard}\n\n{style_guard}\n\n{output_contract}"
 
 
 def _character_set_prompt(

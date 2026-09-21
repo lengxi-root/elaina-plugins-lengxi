@@ -22,7 +22,7 @@ __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
     "description": "支持多人格、人物集、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "2.1.5",
+    "version": "2.1.6",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -43,7 +43,6 @@ _group_reply_times: dict[str, deque[float]] = {}
 _personality_cache: dict[str, tuple[float, str]] = {}
 _capability_task: asyncio.Task | None = None
 _last_prune = 0.0
-
 _ICON = (
     '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" '
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
@@ -78,7 +77,9 @@ def _addressed_text(event, text: str) -> str:
 
 
 async def _reply_to_user(event, text: str, current: dict | None = None) -> None:
-    buttons = (current or config.load()).get("persistent_buttons") or None
+    buttons = None
+    if getattr(event, "is_group", False):
+        buttons = (current or config.load()).get("persistent_buttons") or None
     await event.reply(_addressed_text(event, text), buttons=buttons)
 
 
@@ -99,7 +100,6 @@ async def _reply_chat_result(event, text: str, current: dict) -> None:
         await event.reply_stream(
             _stream_text(text),
             min_interval=0.05,
-            buttons=current.get("persistent_buttons") or None,
         )
         return
     await _reply_to_user(event, text, current)
