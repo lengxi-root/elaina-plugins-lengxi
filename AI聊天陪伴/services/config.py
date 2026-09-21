@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import threading
 
 BUILTIN_PERSONALITIES = {
@@ -71,6 +72,7 @@ DEFAULT_CONFIG = {
         "为什么",
         "怎么",
     ],
+    "persistent_buttons": [],
     "provider_id": "",
     "model_preference": "",
     "active_personality": "catgirl",
@@ -92,8 +94,6 @@ DEFAULT_CONFIG = {
     "network_tools_enabled": True,
     "network_tool_rounds": 3,
     "network_allowed_domains": ["majotabi.jp", "zh.moegirl.org.cn"],
-    "skills_enabled": False,
-    "enabled_skills": ["careful-research", "supportive-listening"],
     "enabled_model_tools": [],
     "resources": [],
     "meme_enabled": True,
@@ -112,7 +112,7 @@ DEFAULT_CONFIG = {
     "image_character_prompt": "",
     "image_reference_url": "",
     "image_cooldown_seconds": 900,
-    "moderation_enabled": True,
+    "moderation_enabled": False,
     "safety_review_prompt": DEFAULT_SAFETY_REVIEW_PROMPT,
     "blocked_words": [],
     "blocked_response": "这个我不方便聊，我们换个话题吧。",
@@ -213,6 +213,61 @@ def save(value: dict) -> dict:
         return public_config(_cache)
 
 
+def _parse_persistent_buttons(raw) -> list[list[dict]]:
+    """解析常驻按钮 JSON 或近似 JSON 文本。"""
+    if raw in (None, "", []):
+        return []
+    if isinstance(raw, str):
+        text = raw.strip()
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError:
+            text = re.sub(r'([{,]\s*)([A-Za-z_][\w-]*)\s*:', r'\1"\2":', text)
+            text = re.sub(
+                r':\s*([^\[\]{},]+?)(\s*[,}])',
+                lambda match: ':' + json.dumps(match.group(1).strip(), ensure_ascii=False) + match.group(2),
+                text,
+            )
+            try:
+                raw = json.loads(text)
+            except (TypeError, json.JSONDecodeError) as error:
+                raise ValueError("常驻按钮必须是 JSON 数组") from error
+    if isinstance(raw, dict):
+        raw = raw.get("rows") or raw.get("buttons") or raw.get("btns") or []
+    if not isinstance(raw, list):
+        raise ValueError("常驻按钮必须是二维数组")
+    rows = []
+    for raw_row in raw[:10]:
+        if isinstance(raw_row, dict):
+            raw_row = raw_row.get("buttons") or raw_row.get("btns") or []
+        if not isinstance(raw_row, list):
+            raise ValueError("常驻按钮的每一行必须是数组")
+        row = []
+        for item in raw_row[:10]:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or item.get("label") or "").strip()[:40]
+            data = str(item.get("data") or "").strip()[:200]
+            if not text or not data:
+                continue
+            try:
+                style = int(item.get("style", 1))
+            except (TypeError, ValueError):
+                style = 1
+            enter = item.get("enter", False)
+            if isinstance(enter, str):
+                enter = enter.strip().lower() in {"1", "true", "yes", "on"}
+            row.append({
+                "text": text,
+                "data": data,
+                "enter": bool(enter),
+                "style": 0 if style == 0 else 1,
+            })
+        if row:
+            rows.append(row)
+    return rows
+
+
 def validate(value: dict) -> dict:
     value["provider_id"] = str(value.get("provider_id") or "").strip()[:128]
     value["model_preference"] = str(value.get("model_preference") or "").strip()[:256]
@@ -226,6 +281,7 @@ def validate(value: dict) -> dict:
     value["safety_review_prompt"] = str(
         value.get("safety_review_prompt") or DEFAULT_SAFETY_REVIEW_PROMPT
     ).strip()[:12000]
+    value["persistent_buttons"] = _parse_persistent_buttons(value.get("persistent_buttons", []))
     raw_personalities = value.get("personalities")
     if not isinstance(raw_personalities, dict) or not raw_personalities:
         raise ValueError("至少需要一个人格")
@@ -463,20 +519,6 @@ def validate(value: dict) -> dict:
     value["image_cooldown_seconds"] = min(
         86400, max(0, int(value.get("image_cooldown_seconds", 900)))
     )
-    enabled_skills = value.get("enabled_skills", [])
-    if isinstance(enabled_skills, str):
-        enabled_skills = (
-            enabled_skills.replace("\r", "\n").replace("\n", ",").split(",")
-        )
-    if not isinstance(enabled_skills, list):
-        raise ValueError("启用技能必须是列表或逗号/换行分隔文本")
-    value["enabled_skills"] = list(
-        dict.fromkeys(
-            str(skill_id).strip()
-            for skill_id in enabled_skills
-            if str(skill_id).strip()
-        )
-    )[:100]
     enabled_model_tools = value.get("enabled_model_tools", [])
     if not isinstance(enabled_model_tools, list):
         raise ValueError("启用模型工具必须是列表")
@@ -555,14 +597,14 @@ def validate(value: dict) -> dict:
         "group_auto_reply",
         "memory_enabled",
         "network_tools_enabled",
-        "skills_enabled",
         "meme_enabled",
         "tts_enabled",
         "tts_auto_translate",
         "image_generation_enabled",
-        "moderation_enabled",
     ):
         value[key] = bool(value.get(key, DEFAULT_CONFIG[key]))
+    # 内容审核不再参与陪伴流程，保留旧字段仅用于兼容已有配置文件。
+    value["moderation_enabled"] = False
     return value
 
 

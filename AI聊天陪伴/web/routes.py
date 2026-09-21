@@ -10,7 +10,7 @@ import os
 from aiohttp import web
 from core.plugin.web_pages import register_route
 
-from ..services import central, config, skills, tts_tool
+from ..services import central, config, tts_tool
 from ..storage import repository as store
 
 PREFIX = "/api/ext/ai-companion"
@@ -34,9 +34,7 @@ def register_routes() -> None:
     register_route("GET", f"{PREFIX}/config")(_get_config)
     register_route("PUT", f"{PREFIX}/config")(_save_config)
     register_route("GET", f"{PREFIX}/stats")(_stats)
-    register_route("GET", f"{PREFIX}/skills")(_skills)
     register_route("GET", f"{PREFIX}/model-tools")(_model_tools)
-    register_route("POST", f"{PREFIX}/skills")(_create_skill)
     register_route("POST", f"{PREFIX}/models/refresh")(_refresh_models)
     register_route("PUT", f"{PREFIX}/providers/default-model")(_set_default_model)
     register_route("GET", f"{PREFIX}/reference-image")(_get_reference_image)
@@ -359,13 +357,6 @@ async def _stats(_request: web.Request) -> web.Response:
     return web.json_response({"success": True, "data": data})
 
 
-async def _skills(_request: web.Request) -> web.Response:
-    current = config.load()
-    enabled = set(current.get("enabled_skills", []))
-    data = [{**item, "enabled": item["id"] in enabled} for item in skills.discover()]
-    return web.json_response({"success": True, "data": data})
-
-
 async def _model_tools(_request: web.Request) -> web.Response:
     current = config.load()
     enabled = set(current.get("enabled_model_tools", []))
@@ -385,21 +376,6 @@ async def _model_tools(_request: web.Request) -> web.Response:
         if item.get("key")
     ]
     return web.json_response({"success": True, "data": data})
-
-
-async def _create_skill(request: web.Request) -> web.Response:
-    body = await _body(request)
-    try:
-        item = await asyncio.to_thread(
-            skills.create_skill,
-            body.get("id"),
-            body.get("name"),
-            body.get("description"),
-            body.get("content"),
-        )
-        return web.json_response({"success": True, "data": item})
-    except (TypeError, ValueError, OSError) as error:
-        return web.json_response({"success": False, "error": str(error)}, status=400)
 
 
 async def _tts_voices(request: web.Request) -> web.Response:

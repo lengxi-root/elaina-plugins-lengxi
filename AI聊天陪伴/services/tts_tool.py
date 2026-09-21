@@ -20,8 +20,6 @@ _voices_cache: dict[str, tuple[list[dict], float]] = {}
 
 def tool(roles: list[dict]) -> dict:
     """生成 TTS 工具定义。"""
-    names = [str(item.get("name") or "") for item in roles if item.get("name")]
-    catalog = "；".join(names)
     properties = {
         "text": {
             "type": "string",
@@ -29,18 +27,16 @@ def tool(roles: list[dict]) -> dict:
         },
     }
     required = ["text"]
-    if len(names) > 1:
+    if roles:
         properties["role"] = {
             "type": "string",
-            "enum": names,
-            "description": "按当前情绪和话题挑选最贴合的语音角色",
+            "description": "来自 list_tts_roles 返回结果的角色名称；不填则使用默认角色",
         }
-        required.append("role")
     return {
         "type": "function",
         "function": {
             "name": "send_tts_voice",
-            "description": "按语境用指定角色发送一句短语音；可用角色：" + catalog,
+            "description": "按语境发送一句短语音。需要角色时先调用 list_tts_roles，再选择合适角色；不需要语音时不要调用。",
             "parameters": {
                 "type": "object",
                 "properties": properties,
@@ -48,6 +44,38 @@ def tool(roles: list[dict]) -> dict:
                 "additionalProperties": False,
             },
         },
+    }
+
+
+def list_tool(roles: list[dict]) -> dict | None:
+    """生成供模型按需查看的 TTS 角色目录工具。"""
+    if not roles:
+        return None
+    return {
+        "type": "function",
+        "function": {
+            "name": "list_tts_roles",
+            "description": "列出当前可用的 TTS 语音角色。仅在确实需要发送语音或选择角色时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def list_roles(roles: list[dict]) -> dict:
+    return {
+        "ok": True,
+        "roles": [
+            {
+                "name": str(item.get("name") or ""),
+                "voice_id": int(item["voice_id"]),
+            }
+            for item in roles
+            if item.get("name") and item.get("voice_id")
+        ],
     }
 
 
@@ -123,6 +151,8 @@ async def run(arguments: dict, context: dict, config: dict) -> dict:
     text = text[:limit]
     role_name = str(arguments.get("role") or "").strip()
     role = next((item for item in roles if item["name"] == role_name), roles[0])
+    if role_name and role["name"] != role_name:
+        return {"ok": True, "sent": False}
     try:
         audio_url = await synthesize_url(text, int(role["voice_id"]), config)
     except Exception:  # noqa: BLE001 - 失败时静默跳过
