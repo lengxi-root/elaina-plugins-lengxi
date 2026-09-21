@@ -230,89 +230,31 @@ def _system_prompt(
     resource_catalog = resources.catalog_prompt(config.get("resources", []))
     if resource_catalog:
         prompt += f"\n\n{resource_catalog}"
+    if str(latest_text or "").strip():
+        prompt += (
+            "\n\n本轮焦点：以最后一条用户消息为唯一主要话题入口。"
+            "先回应它明确表达的内容；除非对方主动转向，不要自行开启另一个话题。"
+        )
     output_contract = (
         "输出格式硬性要求：只发送角色实际说出口的对话文本。禁止使用括号或圆括号写动作、"
         "表情、心理、环境、镜头或舞台说明；禁止以‘我点头’、‘看了一眼’等旁白补充内容。"
         "即使历史消息中存在这类格式，也不要模仿。"
     )
-    return f"{prompt}\n\n{identity_guard}\n\n{style_guard}\n\n{output_contract}"
-
-
-def _character_set_prompt(
-    config: dict,
-    personality: dict | None = None,
-    latest_text: str = "",
-) -> str:
-    """提供当前人物集，由模型自行判断是否需要引用。"""
-    character_sets = config.get("character_sets", {})
-    if not isinstance(character_sets, dict):
-        return ""
-    personality_id = str((personality or {}).get("_id") or config.get("active_personality") or "").strip()
-    active_by_personality = config.get("active_character_sets", {})
-    active_id = str(active_by_personality.get(personality_id) or "").strip() if isinstance(active_by_personality, dict) else ""
-    item = character_sets.get(active_id)
-    if (
-        not isinstance(item, dict)
-        or not item.get("enabled", True)
-        or str(item.get("personality_id") or personality_id) != personality_id
-    ):
-        return ""
-    name = str(item.get("name") or active_id).strip()
-    lines = [
-        "人物集资料（可选背景事实，由你根据当前对话自行判断是否引用；不相关时不要主动提及）：",
-        f"人物集：{name}",
-    ]
-    description = str(item.get("description") or "").strip()
-    if description:
-        lines.append(f"人物集概述：{description}")
-    characters = item.get("characters", [])
-    character_rows = [
-        character
-        for character in characters
-        if isinstance(character, dict) and str(character.get("name") or "").strip()
-    ] if isinstance(characters, list) else []
-    selected_characters = character_rows[:20]
-    for character in selected_characters:
-        if not isinstance(character, dict):
-            continue
-        character_name = str(character.get("name") or "").strip()
-        if not character_name:
-            continue
-        fields = [f"人物：{character_name}"]
-        for label, key in (
-            ("身份", "identity"),
-            ("性格", "personality"),
-            ("经历", "background"),
-            ("补充设定", "notes"),
-        ):
-            content = str(character.get(key) or "").strip()
-            if content:
-                fields.append(f"{label}：{content}")
-        lines.append("；".join(fields))
-    relationships = item.get("relationships", [])
-    relationship_lines = []
-    selected_relationships = (
-        relationships
-        if isinstance(relationships, list)
-        else []
+    conversation_contract = (
+        "对话决策规则：先判断用户这一条真正想聊的对象、意图和情绪，再组织回复；"
+        "当前消息的直接语义优先于人物背景、长期记忆、远处历史和工具资料。"
+        "人格设定只决定你如何说话、如何取舍和如何表达立场，不是每轮要展示的主题；"
+        "不要因为人格资料里出现某个偏好、经历或关键词，就主动把当前话题带到那里。"
+        "除非用户主动提及、上下文明确承接，或回答当前问题确实必须，否则不要提这些背景。"
+        "历史消息只用于承接仍在进行的内容；话题已经结束或与本轮无关时，立即放下，不要强行续写。"
+        "保持第一人称：只说当前人格真正知道、经历过或能合理判断的事。人物集没有提供的具体经历、"
+        "地点、人物关系和对话不要补写成亲身回忆；不确定时自然说‘我不记得’、‘我没有可靠印象’或‘这我不能确定’，"
+        "不要为了显得像角色而编造经历。人物集和联网结果是按需使用的事实资料，不是每轮必须调用或背诵的内容。"
     )
-    for relationship in selected_relationships:
-        if not isinstance(relationship, dict):
-            continue
-        source = str(relationship.get("source") or "").strip()
-        target = str(relationship.get("target") or "").strip()
-        relation = str(relationship.get("relation") or "").strip()
-        if not source or not target or not relation:
-            continue
-        detail = str(relationship.get("description") or "").strip()
-        suffix = f"（{detail}）" if detail else ""
-        relationship_lines.append(f"{source} 与 {target}：{relation}{suffix}")
-        if len(relationship_lines) >= 24:
-            break
-    if relationship_lines:
-        lines.append("人物关系：")
-        lines.extend(relationship_lines)
-    return "\n".join(lines) if len(lines) > 2 else ""
+    return (
+        f"{prompt}\n\n{identity_guard}\n\n{style_guard}"
+        f"\n\n{conversation_contract}\n\n{output_contract}"
+    )
 
 
 def _request_style_hint(latest_text: str) -> str:
