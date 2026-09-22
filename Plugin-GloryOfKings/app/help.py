@@ -28,6 +28,6 @@ async def cmd_help(event, match):
     data = {"generatedAt": time.strftime("%Y/%m/%d %H:%M:%S")}
     # 帮助菜单内容固定, 缓存图床直链 12 小时, 命中则跳过渲染+上传
     ok = await render.send_html(event, "help.html", data, name_hint="help",
-                               cache_key="help-v16", cache_ttl=12 * 3600)
+                               cache_key="help-v17", cache_ttl=12 * 3600)
     if not ok:
         await event.reply(_HELP_TEXT)
