@@ -51,6 +51,13 @@ def connect(data_dir: str) -> None:
                 created_at REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_ai_memories_scope ON memories(scope, id);
+            CREATE TABLE IF NOT EXISTS context_summaries (
+                scope TEXT PRIMARY KEY,
+                summary TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_context_summary_updated
+                ON context_summaries(updated_at);
             """
         )
         _connection.commit()
@@ -86,6 +93,17 @@ def append(scope: str, role: str, content: str, max_messages: int = 0) -> int:
         return int(cursor.lastrowid)
 
 
+def clear_messages(scope: str = "") -> int:
+    """删除消息但保留该会话的压缩摘要。"""
+    with _lock:
+        if scope:
+            cursor = _conn().execute("DELETE FROM messages WHERE scope=?", (scope,))
+        else:
+            cursor = _conn().execute("DELETE FROM messages")
+        _conn().commit()
+        return cursor.rowcount
+
+
 def remove(message_id: int) -> None:
     with _lock:
         _conn().execute("DELETE FROM messages WHERE id=?", (message_id,))
@@ -98,14 +116,15 @@ def history(scope: str, limit: int, expire_seconds: int) -> list[dict[str, str]]
     if expire_seconds > 0:
         where += " AND created_at>=?"
         params.append(time.time() - expire_seconds)
-    params.append(limit)
+    if limit > 0:
+        params.append(limit)
     with _lock:
+        query = f"SELECT role, content FROM messages WHERE {where} ORDER BY id DESC"
+        if limit > 0:
+            query += " LIMIT ?"
         rows = (
             _conn()
-            .execute(
-                f"SELECT role, content FROM messages WHERE {where} ORDER BY id DESC LIMIT ?",
-                params,
-            )
+            .execute(query, params)
             .fetchall()
         )
     return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
@@ -115,8 +134,10 @@ def clear(scope: str = "") -> int:
     with _lock:
         if scope:
             cursor = _conn().execute("DELETE FROM messages WHERE scope=?", (scope,))
+            _conn().execute("DELETE FROM context_summaries WHERE scope=?", (scope,))
         else:
             cursor = _conn().execute("DELETE FROM messages")
+            _conn().execute("DELETE FROM context_summaries")
         _conn().commit()
         return cursor.rowcount
 
@@ -136,8 +157,33 @@ def prune_expired(expire_seconds: int) -> dict:
             )
             .rowcount
         )
+        _conn().execute("DELETE FROM context_summaries WHERE updated_at<?", (cutoff,))
         _conn().commit()
+    # summaries 与消息采用相同过期策略；保留原有返回结构供调用方兼容。
     return {"messages": messages}
+
+
+def get_summary(scope: str) -> str:
+    with _lock:
+        row = _conn().execute(
+            "SELECT summary FROM context_summaries WHERE scope=?", (scope,)
+        ).fetchone()
+    return str(row["summary"] or "") if row else ""
+
+
+def set_summary(scope: str, summary: str) -> None:
+    value = str(summary or "").strip()
+    with _lock:
+        if not value:
+            _conn().execute("DELETE FROM context_summaries WHERE scope=?", (scope,))
+        else:
+            _conn().execute(
+                "INSERT INTO context_summaries(scope, summary, updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(scope) DO UPDATE SET summary=excluded.summary, "
+                "updated_at=excluded.updated_at",
+                (scope, value, time.time()),
+            )
+        _conn().commit()
 
 
 def get_personality(scope: str) -> str:

@@ -86,9 +86,8 @@ DEFAULT_CONFIG = {
     "style_guard": DEFAULT_STYLE_GUARD,
     "temperature": 0.8,
     "max_tokens": 8192,
-    "context_messages": 24,
+    "context_token_limit": 131072,
     "context_expire_seconds": 86400,
-    "max_stored_messages": 500,
     "memory_enabled": True,
     "memory_items_limit": 30,
     "network_tools_enabled": True,
@@ -392,12 +391,11 @@ def validate(value: dict) -> dict:
     value["active_character_set"] = ""
     value["temperature"] = min(2.0, max(0.0, float(value.get("temperature", 0.8))))
     value["max_tokens"] = min(131072, max(1, int(value.get("max_tokens", 8192))))
-    value["context_messages"] = min(200, max(2, int(value.get("context_messages", 24))))
+    value["context_token_limit"] = min(
+        131072, max(8192, int(value.get("context_token_limit", 131072)))
+    )
     value["context_expire_seconds"] = max(
         0, int(value.get("context_expire_seconds", 86400))
-    )
-    value["max_stored_messages"] = min(
-        10000, max(20, int(value.get("max_stored_messages", 500)))
     )
     value["group_reply_probability"] = min(
         100.0, max(0.0, float(value.get("group_reply_probability", 5)))

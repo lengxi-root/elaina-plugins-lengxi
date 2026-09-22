@@ -22,7 +22,7 @@ __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
     "description": "支持多人格、人物集、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "2.1.6",
+    "version": "2.1.7",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -49,6 +49,35 @@ _ICON = (
     '<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/>'
     '<path d="M8 9h.01M12 9h.01M16 9h.01"/></svg>'
 )
+_CONTEXT_COMPRESSION_RESERVE = 8192
+
+
+def _estimate_tokens(text: str) -> int:
+    """无额外依赖的保守 token 估算；中文按字符计，ASCII 按约 4 字符计。"""
+    value = str(text or "")
+    ascii_count = sum(1 for char in value if ord(char) < 128)
+    non_ascii_count = len(value) - ascii_count
+    return max(1, (ascii_count + 3) // 4 + non_ascii_count)
+
+
+def _history_tokens(history: list[dict], summary: str = "") -> int:
+    total = _estimate_tokens(summary)
+    for item in history:
+        total += 4 + _estimate_tokens(str(item.get("content") or ""))
+    return total
+
+
+def _trim_history_to_budget(history: list[dict], budget: int) -> list[dict]:
+    """仅在压缩服务暂时不可用时的最后防线，始终保留最新消息。"""
+    kept = []
+    used = 0
+    for item in reversed(history):
+        cost = 4 + _estimate_tokens(str(item.get("content") or ""))
+        if kept and used + cost > budget:
+            break
+        kept.append(item)
+        used += cost
+    return list(reversed(kept))
 
 
 def group_trigger_scope(event) -> str:
@@ -136,6 +165,31 @@ async def _memory_text(event, current: dict) -> str:
     return "\n".join(f"- {item['content']}" for item in items)
 
 
+async def _context_for_reply(scope: str, text: str, current: dict) -> tuple[list[dict], str]:
+    """读取会话；达到 128k token 预算时压缩全部历史并重新开始当前轮。"""
+    expire_seconds = current.get("context_expire_seconds", 86400)
+    history_limit = 0
+    summary = await asyncio.to_thread(store.get_summary, scope)
+    history = await asyncio.to_thread(
+        store.history, scope, history_limit, expire_seconds
+    )
+    token_limit = max(8192, int(current.get("context_token_limit", 131072) or 131072))
+    compression_at = max(4096, token_limit - _CONTEXT_COMPRESSION_RESERVE)
+    if _history_tokens(history, summary) < compression_at:
+        return history, summary
+    try:
+        compressed = await central.compress_context(current, history, summary)
+        await asyncio.to_thread(store.set_summary, scope, compressed)
+        await asyncio.to_thread(store.clear_messages, scope)
+        # 压缩摘要包含完整历史；当前用户消息单独保留，确保模型本轮仍能直接回答。
+        await asyncio.to_thread(store.append, scope, "user", text)
+        return [{"role": "user", "content": text}], compressed
+    except Exception as error:  # noqa: BLE001 - 压缩失败时保留会话可用
+        log.warning("上下文自动压缩失败，将暂时使用最近消息: %s", str(error)[:300])
+        fallback_budget = max(1024, token_limit - _CONTEXT_COMPRESSION_RESERVE)
+        return _trim_history_to_budget(history, fallback_budget), summary
+
+
 async def _input_rejected(current: dict, text: str) -> bool:
     if not current.get("moderation_enabled"):
         return False
@@ -166,7 +220,7 @@ async def _gentle_blocked_response(event, current: dict, source: str = "user_inp
     context = await asyncio.to_thread(
         store.history,
         user_context_scope(event),
-        min(current.get("context_messages", 24), 6),
+        6,
         current.get("context_expire_seconds", 86400),
     )
     return await central.gentle_safety_reply(current, personality, context, source)
@@ -187,12 +241,7 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
             store.append, scope, "user", text
         )
         try:
-            history = await asyncio.to_thread(
-                store.history,
-                scope,
-                current["context_messages"],
-                current["context_expire_seconds"],
-            )
+            history, context_summary = await _context_for_reply(scope, text, current)
             reply = await central.complete(
                 current,
                 personality,
@@ -205,6 +254,7 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
                     "event": event,
                     "scope": scope,
                 },
+                context_summary=context_summary,
             )
             reply, blocked = safety.safe_output(
                 reply,
@@ -222,9 +272,8 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
         except Exception:
             await asyncio.to_thread(store.remove, message_id)
             raise
-        await asyncio.to_thread(
-            store.append, scope, "assistant", reply, current["max_stored_messages"]
-        )
+        # 历史消息持续保留；达到 token 预算时由下一轮自动压缩。
+        await asyncio.to_thread(store.append, scope, "assistant", reply)
         return reply
 
 
