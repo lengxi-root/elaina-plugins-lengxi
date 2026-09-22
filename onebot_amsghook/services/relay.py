@@ -70,6 +70,12 @@ def _preview(value, limit=2500):
         if isinstance(item, dict):
             return {key: compact(child) for key, child in item.items()}
         if isinstance(item, list):
+            # 群成员列表可能有数千项；完整递归只用于日志，会明显拖慢
+            # 建链路径，也会把有效日志淹没。保留样本即可。
+            if len(item) > 24:
+                return [compact(child) for child in item[:20]] + [
+                    f"<list:{len(item)} items>"
+                ]
             return [compact(child) for child in item]
         if isinstance(item, str) and len(item) > 600:
             return f"<string:{len(item)} chars>"
@@ -171,31 +177,54 @@ async def raw_inline_keyboards(event, bot_appid=""):
 
 
 async def restart_bridge():
-    bridge = runtime.bridge
-    runtime.bridge = None
-    if bridge is not None:
-        await bridge.stop()
-    root_config = store.config()
-    runtime.debug_enabled = bool(root_config.get("debug"))
-    runtime.proactive_cache.clear()
-    config = root_config.get("qqbot") or {}
-    if not config.get("appid") or not config.get("secret"):
-        runtime.add_log("info", "官方机器人未配置，网关保持关闭")
-        return
-    _trace(
-        "网关启动",
-        appid=config.get("appid"),
-        qq_number=config.get("qq_number"),
-        intents=config.get("intents") or [],
-    )
-    bridge = OfficialBotBridge(
-        {**config, "_debug": runtime.debug_enabled},
-        handle_gateway_event,
-        runtime.add_log,
-    )
-    runtime.bridge = bridge
-    await bridge.start()
-    runtime.add_log("info", "官方机器人网关正在连接")
+    async with runtime.bridge_restart_lock:
+        root_config = store.config()
+        runtime.debug_enabled = bool(root_config.get("debug"))
+        config = root_config.get("qqbot") or {}
+        desired_config = {**config, "_debug": runtime.debug_enabled}
+        bridge = runtime.bridge
+
+        # 面板的“启动/保存”可能在建链期间重复触发。配置未变化时保留
+        # 当前 websocket，避免刚发出按钮点击包就把 event_id 等待链路打断。
+        if (
+            bridge is not None
+            and not bridge.closed
+            and bridge.task is not None
+            and not bridge.task.done()
+            and {
+                key: value for key, value in bridge.config.items()
+                if key != "_debug"
+            } == config
+        ):
+            bridge.config["_debug"] = runtime.debug_enabled
+            _trace(
+                "网关已在运行，跳过重复启动",
+                appid=config.get("appid"),
+                connected=bridge.connected,
+            )
+            return
+
+        runtime.bridge = None
+        if bridge is not None:
+            await bridge.stop()
+        runtime.proactive_cache.clear()
+        if not config.get("appid") or not config.get("secret"):
+            runtime.add_log("info", "官方机器人未配置，网关保持关闭")
+            return
+        _trace(
+            "网关启动",
+            appid=config.get("appid"),
+            qq_number=config.get("qq_number"),
+            intents=config.get("intents") or [],
+        )
+        bridge = OfficialBotBridge(
+            desired_config,
+            handle_gateway_event,
+            runtime.add_log,
+        )
+        runtime.bridge = bridge
+        await bridge.start()
+        runtime.add_log("info", "官方机器人网关正在连接")
 
 
 async def handle_gateway_event(event_type, payload, event_id):
@@ -1117,6 +1146,18 @@ async def queue_bootstrap(request, message):
             response=response,
         )
         return False
+    checked_at = time.time()
+    # OneBot 已成功向目标群发出验证码，说明当前账号确实仍在群内。
+    # 立即写入内存缓存，避免紧接着的下一条消息再次拉取完整成员列表。
+    runtime.membership_cache[str(group_id)] = {
+        "qq_number": str(qq_number),
+        "present": True,
+        "checked_at": checked_at,
+    }
+    runtime.spawn(
+        store.set_membership(group_id, qq_number, True, checked_at),
+        name=f"official-relay-membership-{group_id}",
+    )
     _trace("自动建链验证码响应", group_id=group_id, code=code, response=response)
     runtime.add_log("info", f"群 {group_id} 尚无映射，已启动自动建链")
     return True

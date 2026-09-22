@@ -14,6 +14,7 @@ ctx = current_plugin()
 class RuntimeState:
     def __init__(self):
         self.bridge = None
+        self.bridge_restart_lock = asyncio.Lock()
         self.pending_codes = {}
         self.bootstraps = {}
         self.event_ids = {}

@@ -22,7 +22,7 @@ __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
     "description": "支持多人格、人物集、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "2.1.7",
+    "version": "2.1.8",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -49,7 +49,7 @@ _ICON = (
     '<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/>'
     '<path d="M8 9h.01M12 9h.01M16 9h.01"/></svg>'
 )
-_CONTEXT_COMPRESSION_RESERVE = 8192
+_CONTEXT_COMPRESSION_RESERVE = 16384
 
 
 def _estimate_tokens(text: str) -> int:
@@ -174,6 +174,7 @@ async def _context_for_reply(scope: str, text: str, current: dict) -> tuple[list
         store.history, scope, history_limit, expire_seconds
     )
     token_limit = max(8192, int(current.get("context_token_limit", 131072) or 131072))
+    # 为系统提示、人格、工具定义和输出预留空间，避免历史占满真实窗口。
     compression_at = max(4096, token_limit - _CONTEXT_COMPRESSION_RESERVE)
     if _history_tokens(history, summary) < compression_at:
         return history, summary
@@ -188,6 +189,17 @@ async def _context_for_reply(scope: str, text: str, current: dict) -> tuple[list
         log.warning("上下文自动压缩失败，将暂时使用最近消息: %s", str(error)[:300])
         fallback_budget = max(1024, token_limit - _CONTEXT_COMPRESSION_RESERVE)
         return _trim_history_to_budget(history, fallback_budget), summary
+
+
+async def _compress_and_retry(
+    scope: str, text: str, current: dict, history: list[dict], summary: str
+) -> tuple[list[dict], str]:
+    """模型报告真实上下文窗口溢出时，强制压缩并重建本轮上下文。"""
+    compressed = await central.compress_context(current, history, summary)
+    await asyncio.to_thread(store.set_summary, scope, compressed)
+    await asyncio.to_thread(store.clear_messages, scope)
+    await asyncio.to_thread(store.append, scope, "user", text)
+    return [{"role": "user", "content": text}], compressed
 
 
 async def _input_rejected(current: dict, text: str) -> bool:
@@ -242,20 +254,29 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
         )
         try:
             history, context_summary = await _context_for_reply(scope, text, current)
-            reply = await central.complete(
-                current,
-                personality,
-                history,
-                await _memory_text(event, current),
-                media_context={
-                    "user_id": str(event.user_id),
-                    "appid": str(getattr(event, "appid", "") or ""),
-                    "self_id": str(getattr(event, "self_id", "") or ""),
-                    "event": event,
-                    "scope": scope,
-                },
-                context_summary=context_summary,
-            )
+            media_context = {
+                "user_id": str(event.user_id),
+                "appid": str(getattr(event, "appid", "") or ""),
+                "self_id": str(getattr(event, "self_id", "") or ""),
+                "event": event,
+                "scope": scope,
+            }
+            try:
+                reply = await central.complete(
+                    current, personality, history, await _memory_text(event, current),
+                    media_context=media_context, context_summary=context_summary,
+                )
+            except Exception as error:
+                if not central.is_context_overflow_error(error) or not history:
+                    raise
+                log.warning("模型报告真实上下文窗口超限，开始压缩完整历史后重试")
+                history, context_summary = await _compress_and_retry(
+                    scope, text, current, history, context_summary
+                )
+                reply = await central.complete(
+                    current, personality, history, await _memory_text(event, current),
+                    media_context=media_context, context_summary=context_summary,
+                )
             reply, blocked = safety.safe_output(
                 reply,
                 current["blocked_words"],

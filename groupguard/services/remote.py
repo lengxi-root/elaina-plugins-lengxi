@@ -487,14 +487,6 @@ async def _json_request(runtime, method, path, payload=None):
         raise RuntimeError(str(error)) from error
 
 
-def _member_role(item):
-    if not isinstance(item, dict):
-        return "", ""
-    user_id = item.get("userid") or item.get("user_id") or item.get("id")
-    role = item.get("member_role") or item.get("role") or "member"
-    return str(user_id or ""), str(role or "")
-
-
 def _eligible_group_rows(external_user_ids, robot_appid):
     """读取指定机器人数据库，返回机器人与用户均为管理员的群组。"""
     wanted = {str(value) for value in external_user_ids if value}
@@ -513,7 +505,7 @@ def _eligible_group_rows(external_user_ids, robot_appid):
             rows = (
                 log_service.query_data(
                     "SELECT group_id,group_name,in_group,is_admin,is_full_access,"
-                    "allow_proactive_msg,users FROM groups_users WHERE group_id != ?",
+                    "allow_proactive_msg FROM groups_users WHERE group_id != ?",
                     ("",),
                 )
                 or []
@@ -534,19 +526,13 @@ def _eligible_group_rows(external_user_ids, robot_appid):
             group_id = str(row.get("group_id") or "")
             if not group_id:
                 continue
-            raw_users = row.get("users")
-            if isinstance(raw_users, str):
-                try:
-                    users = json.loads(raw_users or "[]")
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    users = []
-            else:
-                users = raw_users if isinstance(raw_users, list) else []
-            administrators = {
-                user_id
-                for user_id, role in (_member_role(item) for item in users)
-                if user_id and role in {"admin", "owner"}
-            }
+            # 成员存储细节由框架接口封装 (group_admin_ids_sync 返回群主与管理员)
+            try:
+                administrators = set(
+                    log_service.group_admin_ids_sync(group_id) or [])
+            except Exception as error:  # noqa: BLE001
+                log.warning("读取群 %s 成员角色失败: %s", group_id, type(error).__name__)
+                continue
             for user_id in wanted & administrators:
                 discovered[user_id][group_id] = {
                     "group_id": group_id,

@@ -35,7 +35,7 @@ __plugin_meta__ = {
     "name": "群成员入群欢迎",
     "author": "ElainaBot",
     "description": "群成员入群自动欢迎推送, 支持召回模式/欢迎模式、黑白名单、每日上限, 含 Web 面板",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "github": "https://github.com/ElainaCore/Elaina-plugins",
     "license": "MIT",
 }
@@ -480,20 +480,6 @@ def _any_sender():
     return None
 
 
-def _group_last_active(users_json) -> str:
-    """群整体最后发言日期 = 群成员 last_active 的最大值; 无则返回 ''。"""
-    try:
-        arr = json.loads(users_json or "[]")
-    except (json.JSONDecodeError, TypeError):
-        return ""
-    dates = [
-        it["last_active"]
-        for it in arr
-        if isinstance(it, dict) and it.get("last_active")
-    ]
-    return max(dates) if dates else ""
-
-
 def _is_inactive(last_active: str, days: int, today) -> bool:
     """无 last_active (老群) 默认按「3 天内没发言」处理。"""
     if not last_active:
@@ -506,20 +492,17 @@ def _is_inactive(last_active: str, days: int, today) -> bool:
 
 
 def _scan_batch(ls, limit: int, offset: int, days: int, today) -> tuple[dict, int]:
-    """读取并解析一批 groups_users 行 (在工作线程中执行), 返回 ({gid: last_active}, 本批行数)。"""
-    rows = (
-        ls.query_data(
-            "SELECT group_id, users FROM groups_users LIMIT ? OFFSET ?",
-            (limit, offset),
-        )
-        or []
-    )
+    """读取一批群及其最后活跃日期 (在工作线程中执行), 返回 ({gid: last_active}, 本批行数)。
+
+    成员存储细节由框架接口封装, 插件不直接依赖表结构。
+    """
+    rows = ls.group_last_active_map_sync(limit, offset) or []
     inactive: dict = {}
     for r in rows:
         gid = r.get("group_id") or ""
         if not gid:
             continue
-        la = _group_last_active(r.get("users"))
+        la = str(r.get("last_active") or "")
         if _is_inactive(la, days, today):
             inactive[gid] = la
     return inactive, len(rows)
@@ -583,24 +566,14 @@ async def _list_db_groups(limit: int = PAGE_SIZE, offset: int = 0) -> tuple[list
 
 
 def _get_group_member_ids(group_id: str, limit: int = 3) -> list[str]:
-    """从框架 groups_users 表中获取指定群的成员 ID 列表 (最多 limit 个)。"""
+    """获取指定群的成员 ID (最多 limit 个, 排除机器人); 存储细节由框架接口封装。"""
     for ls in _iter_log_services():
         try:
-            rows = ls.query_data(
-                "SELECT users FROM groups_users WHERE group_id=?", (group_id,)
-            )
+            ids = ls.group_member_ids_sync(group_id, limit=limit)
         except Exception:
             continue
-        for r in rows or []:
-            try:
-                arr = json.loads(r.get("users") or "[]")
-            except (json.JSONDecodeError, TypeError):
-                continue
-            ids = [
-                it["userid"] for it in arr if isinstance(it, dict) and it.get("userid")
-            ]
-            if ids:
-                return ids[:limit]
+        if ids:
+            return ids
     return []
 
 
