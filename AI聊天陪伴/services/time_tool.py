@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-
 TOOL = {
     "type": "function",
     "function": {
@@ -34,7 +33,15 @@ def run() -> dict:
         "date": local.strftime("%Y-%m-%d"),
         "time": local.strftime("%H:%M:%S"),
         "weekday": local.strftime("%A"),
-        "weekday_cn": ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")[local.weekday()],
+        "weekday_cn": (
+            "星期一",
+            "星期二",
+            "星期三",
+            "星期四",
+            "星期五",
+            "星期六",
+            "星期日",
+        )[local.weekday()],
         "timezone": str(local.tzinfo),
         "utc_offset": offset_display,
         "utc_time": utc.strftime("%Y-%m-%d %H:%M:%S"),

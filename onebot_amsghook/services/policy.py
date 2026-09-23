@@ -5,30 +5,30 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 
-EXTERNAL_CALLER = 'OneBot 外部调用'
+EXTERNAL_CALLER = "OneBot 外部调用"
 
 DEFAULT_CONFIG = {
-    'enabled': True,
-    'debug': False,
-    'owner_qq': '',
-    'blocked_groups': [],
-    'blocked_users': [],
-    'global_owner_only': False,
-    'global_replace': False,
-    'send_violation_notice': True,
-    'violation_notice_by_official': True,
-    'wake_timeout_seconds': 15,
-    'rules': [],
-    'qqbot': {
-        'appid': '',
-        'secret': '',
-        'qq_number': '',
-        'force_image_rehost': False,
-        'master_qq': '',
-        'intents': [
-            'GROUP_AT_MESSAGE_CREATE',
-            'C2C_MESSAGE_CREATE',
-            'INTERACTION',
+    "enabled": True,
+    "debug": False,
+    "owner_qq": "",
+    "blocked_groups": [],
+    "blocked_users": [],
+    "global_owner_only": False,
+    "global_replace": False,
+    "send_violation_notice": True,
+    "violation_notice_by_official": True,
+    "wake_timeout_seconds": 15,
+    "rules": [],
+    "qqbot": {
+        "appid": "",
+        "secret": "",
+        "qq_number": "",
+        "force_image_rehost": False,
+        "master_qq": "",
+        "intents": [
+            "GROUP_AT_MESSAGE_CREATE",
+            "C2C_MESSAGE_CREATE",
+            "INTERACTION",
         ],
     },
 }
@@ -43,7 +43,7 @@ def _first(raw, *keys, default=None):
 
 def _string_list(value):
     if isinstance(value, str):
-        value = value.split(',')
+        value = value.split(",")
     if not isinstance(value, list):
         return []
     return list(dict.fromkeys(str(item).strip() for item in value if str(item).strip()))
@@ -60,11 +60,15 @@ def _bounded_int(value, default, minimum, maximum):
 def normalize_rule(raw):
     raw = raw if isinstance(raw, dict) else {}
     return {
-        'name': str(raw.get('name') or '').strip(),
-        'replace': bool(raw.get('replace', False)),
-        'owner_only': bool(raw.get('owner_only', raw.get('ownerOnly', False))),
-        'blocked_groups': _string_list(raw.get('blocked_groups', raw.get('blockedGroups'))),
-        'blocked_users': _string_list(raw.get('blocked_users', raw.get('blockedUsers'))),
+        "name": str(raw.get("name") or "").strip(),
+        "replace": bool(raw.get("replace", False)),
+        "owner_only": bool(raw.get("owner_only", raw.get("ownerOnly", False))),
+        "blocked_groups": _string_list(
+            raw.get("blocked_groups", raw.get("blockedGroups"))
+        ),
+        "blocked_users": _string_list(
+            raw.get("blocked_users", raw.get("blockedUsers"))
+        ),
     }
 
 
@@ -72,68 +76,77 @@ def normalize_config(raw=None):
     raw = raw if isinstance(raw, dict) else {}
     result = deepcopy(DEFAULT_CONFIG)
     aliases = {
-        'enabled': ('enabled',),
-        'debug': ('debug',),
-        'owner_qq': ('owner_qq', 'ownerQQ'),
-        'global_owner_only': ('global_owner_only', 'globalOwnerOnly'),
-        'global_replace': ('global_replace', 'globalReplace'),
-        'send_violation_notice': ('send_violation_notice', 'sendViolationNotice'),
-        'violation_notice_by_official': (
-            'violation_notice_by_official', 'violationNoticeByOfficial',
+        "enabled": ("enabled",),
+        "debug": ("debug",),
+        "owner_qq": ("owner_qq", "ownerQQ"),
+        "global_owner_only": ("global_owner_only", "globalOwnerOnly"),
+        "global_replace": ("global_replace", "globalReplace"),
+        "send_violation_notice": ("send_violation_notice", "sendViolationNotice"),
+        "violation_notice_by_official": (
+            "violation_notice_by_official",
+            "violationNoticeByOfficial",
         ),
-        'wake_timeout_seconds': ('wake_timeout_seconds', 'wakeTimeoutSeconds'),
+        "wake_timeout_seconds": ("wake_timeout_seconds", "wakeTimeoutSeconds"),
     }
     for key, names in aliases.items():
         result[key] = _first(raw, *names, default=result[key])
 
     for key in (
-        'enabled', 'debug', 'global_owner_only', 'global_replace',
-        'send_violation_notice', 'violation_notice_by_official',
+        "enabled",
+        "debug",
+        "global_owner_only",
+        "global_replace",
+        "send_violation_notice",
+        "violation_notice_by_official",
     ):
         result[key] = bool(result[key])
-    result['owner_qq'] = str(result['owner_qq'] or '').strip()
-    result['wake_timeout_seconds'] = _bounded_int(
-        result['wake_timeout_seconds'], 15, 5, 60,
+    result["owner_qq"] = str(result["owner_qq"] or "").strip()
+    result["wake_timeout_seconds"] = _bounded_int(
+        result["wake_timeout_seconds"],
+        15,
+        5,
+        60,
     )
-    result['blocked_groups'] = _string_list(
-        _first(raw, 'blocked_groups', 'blockedGroups'),
+    result["blocked_groups"] = _string_list(
+        _first(raw, "blocked_groups", "blockedGroups"),
     )
-    result['blocked_users'] = _string_list(
-        _first(raw, 'blocked_users', 'blockedUsers'),
+    result["blocked_users"] = _string_list(
+        _first(raw, "blocked_users", "blockedUsers"),
     )
 
     seen = set()
     rules = []
-    for item in raw.get('rules') or []:
+    for item in raw.get("rules") or []:
         rule = normalize_rule(item)
-        if not rule['name'] or rule['name'] in seen:
+        if not rule["name"] or rule["name"] in seen:
             continue
-        seen.add(rule['name'])
+        seen.add(rule["name"])
         rules.append(rule)
-    result['rules'] = rules
+    result["rules"] = rules
 
-    qqbot = raw.get('qqbot') if isinstance(raw.get('qqbot'), dict) else {}
-    result['qqbot'] = {
-        'appid': str(qqbot.get('appid') or '').strip(),
-        'secret': str(qqbot.get('secret') or '').strip(),
-        'qq_number': str(qqbot.get('qq_number') or qqbot.get('qqNumber') or '').strip(),
-        'force_image_rehost': bool(
-            _first(qqbot, 'force_image_rehost', 'forceImageRehost', default=False),
+    qqbot = raw.get("qqbot") if isinstance(raw.get("qqbot"), dict) else {}
+    result["qqbot"] = {
+        "appid": str(qqbot.get("appid") or "").strip(),
+        "secret": str(qqbot.get("secret") or "").strip(),
+        "qq_number": str(qqbot.get("qq_number") or qqbot.get("qqNumber") or "").strip(),
+        "force_image_rehost": bool(
+            _first(qqbot, "force_image_rehost", "forceImageRehost", default=False),
         ),
-        'master_qq': str(
-            _first(qqbot, 'master_qq', 'masterQQ', default='') or '',
+        "master_qq": str(
+            _first(qqbot, "master_qq", "masterQQ", default="") or "",
         ).strip(),
-        'intents': _string_list(qqbot.get('intents')) or list(DEFAULT_CONFIG['qqbot']['intents']),
+        "intents": _string_list(qqbot.get("intents"))
+        or list(DEFAULT_CONFIG["qqbot"]["intents"]),
     }
     return result
 
 
-def merge_plugin_rules(config, plugin_names, *, self_name='onebot_amsghook'):
+def merge_plugin_rules(config, plugin_names, *, self_name="onebot_amsghook"):
     """把已安装插件与历史规则合并，规则配置不因插件暂时停用而丢失。"""
     configured = {
-        item['name']: normalize_rule(item)
-        for item in (config or {}).get('rules', [])
-        if isinstance(item, dict) and str(item.get('name') or '').strip()
+        item["name"]: normalize_rule(item)
+        for item in (config or {}).get("rules", [])
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
     }
     discovered = {
         str(name).strip()
@@ -143,103 +156,117 @@ def merge_plugin_rules(config, plugin_names, *, self_name='onebot_amsghook'):
     ordered = [EXTERNAL_CALLER]
     ordered.extend(sorted(discovered - {EXTERNAL_CALLER}, key=str.casefold))
     ordered.extend(sorted(set(configured) - set(ordered), key=str.casefold))
-    return [configured.get(name, normalize_rule({'name': name})) for name in ordered]
+    return [configured.get(name, normalize_rule({"name": name})) for name in ordered]
 
 
-def button_click_params(group_id, mapping, appid='', msg_seq=''):
+def button_click_params(group_id, mapping, appid="", msg_seq=""):
     """构造内置 QQ 与外置 OneBot 共用的按钮点击发包参数。"""
     mapping = mapping if isinstance(mapping, dict) else {}
     return {
-        'group_id': str(group_id or ''),
-        'bot_appid': str(mapping.get('bot_appid') or appid or ''),
-        'button_id': str(mapping.get('button_id') or '1'),
-        'callback_data': str(mapping.get('callback_data') or ''),
-        'msg_seq': str(msg_seq or ''),
+        "group_id": str(group_id or ""),
+        "bot_appid": str(mapping.get("bot_appid") or appid or ""),
+        "button_id": str(mapping.get("button_id") or "1"),
+        "callback_data": str(mapping.get("callback_data") or ""),
+        "msg_seq": str(msg_seq or ""),
     }
 
 
 def caller_name(source_plugin):
-    return str(source_plugin or '').strip() or EXTERNAL_CALLER
+    return str(source_plugin or "").strip() or EXTERNAL_CALLER
 
 
 def find_rule(config, source_plugin):
     name = caller_name(source_plugin)
-    return next((item for item in config.get('rules', []) if item.get('name') == name), None)
+    return next(
+        (item for item in config.get("rules", []) if item.get("name") == name), None
+    )
 
 
 def extract_text(message):
     if isinstance(message, str):
         return message
     if not isinstance(message, list):
-        return ''
+        return ""
     parts = []
     for segment in message:
         if not isinstance(segment, dict):
             continue
-        data = segment.get('data') or {}
-        if segment.get('type') == 'text':
-            parts.append(str(data.get('text') or ''))
-        elif segment.get('type') == 'at':
-            name = data.get('name') or data.get('qq') or data.get('user_id') or ''
+        data = segment.get("data") or {}
+        if segment.get("type") == "text":
+            parts.append(str(data.get("text") or ""))
+        elif segment.get("type") == "at":
+            name = data.get("name") or data.get("qq") or data.get("user_id") or ""
             if name:
-                parts.append('@' + str(name))
-    return ''.join(parts)
+                parts.append("@" + str(name))
+    return "".join(parts)
 
 
 def extract_official_markdown(message):
     """提取供 QQ 官方机器人直接发送的 Markdown 内容。"""
     if isinstance(message, dict):
-        value = message.get('content') or message.get('markdown')
+        value = message.get("content") or message.get("markdown")
         if isinstance(value, dict):
-            value = value.get('content') or value.get('data')
-        return str(value or '') or None
+            value = value.get("content") or value.get("data")
+        return str(value or "") or None
     if not isinstance(message, list):
         return None
     for segment in message:
         if not isinstance(segment, dict):
             continue
-        if str(segment.get('type') or '').lower() != 'markdown':
+        if str(segment.get("type") or "").lower() != "markdown":
             continue
-        data = segment.get('data') or segment.get('markdown') or {}
+        data = segment.get("data") or segment.get("markdown") or {}
         if isinstance(data, str):
             return data or None
-        return str(data.get('content') or data.get('data') or data.get('markdown') or '') or None
+        return (
+            str(data.get("content") or data.get("data") or data.get("markdown") or "")
+            or None
+        )
     return None
 
 
 def extract_official_keyboard(message):
     """提取插件传入的官方机器人 keyboard 对象。"""
+
     def normalize(value):
         if isinstance(value, dict):
             return value
         if isinstance(value, list):
-            return {'content': {'rows': [{'buttons': value}]}}
+            return {"content": {"rows": [{"buttons": value}]}}
         if isinstance(value, str):
             try:
-                parsed = __import__('json').loads(value)
+                parsed = __import__("json").loads(value)
             except (TypeError, ValueError):
                 return None
             return normalize(parsed)
         return None
 
     if isinstance(message, dict):
-        return normalize(message.get('keyboard') or message.get('inline_keyboard'))
+        return normalize(message.get("keyboard") or message.get("inline_keyboard"))
     if not isinstance(message, list):
         return None
     for segment in message:
         if not isinstance(segment, dict):
             continue
-        if str(segment.get('type') or '').lower() not in {'button', 'buttons', 'keyboard', 'inline_keyboard'}:
+        if str(segment.get("type") or "").lower() not in {
+            "button",
+            "buttons",
+            "keyboard",
+            "inline_keyboard",
+        }:
             continue
-        data = segment.get('data') or segment.get('keyboard') or segment.get('buttons')
-        if isinstance(data, dict) and data.get('keyboard'):
-            data = data.get('keyboard')
-        if isinstance(data, dict) and data.get('inline_keyboard'):
-            data = data.get('inline_keyboard')
-        if (keyboard := normalize(data)):
+        data = segment.get("data") or segment.get("keyboard") or segment.get("buttons")
+        if isinstance(data, dict) and data.get("keyboard"):
+            data = data.get("keyboard")
+        if isinstance(data, dict) and data.get("inline_keyboard"):
+            data = data.get("inline_keyboard")
+        if keyboard := normalize(data):
             return keyboard
-        if isinstance(segment.get('data'), dict):
-            if (keyboard := normalize(segment['data'].get('keyboard') or segment['data'].get('inline_keyboard'))):
+        if isinstance(segment.get("data"), dict):
+            if keyboard := normalize(
+                segment["data"].get("keyboard")
+                or segment["data"].get("inline_keyboard")
+            ):
                 return keyboard
     return None
 
@@ -254,21 +281,23 @@ def official_message_supported(message):
     if not isinstance(message, list) or not message:
         return False
     media_count = 0
-    has_markdown = False
     for segment in message:
         if not isinstance(segment, dict):
             return False
-        segment_type = str(segment.get('type') or '').lower()
-        if segment_type in {'text', 'at'}:
+        segment_type = str(segment.get("type") or "").lower()
+        if segment_type in {"text", "at"}:
             continue
-        if segment_type == 'markdown':
-            data = segment.get('data')
-            if isinstance(data, str) or (isinstance(data, dict) and (data.get('content') or data.get('data'))):
-                has_markdown = True
+        if segment_type == "markdown":
+            data = segment.get("data")
+            if isinstance(data, str) or (
+                isinstance(data, dict) and (data.get("content") or data.get("data"))
+            ):
                 continue
             return False
-        if segment_type in {'button', 'buttons', 'keyboard', 'inline_keyboard'}:
-            data = segment.get('data') or segment.get('keyboard') or segment.get('buttons')
+        if segment_type in {"button", "buttons", "keyboard", "inline_keyboard"}:
+            data = (
+                segment.get("data") or segment.get("keyboard") or segment.get("buttons")
+            )
             if isinstance(data, (dict, list)):
                 continue
             if isinstance(data, str):
@@ -278,10 +307,10 @@ def official_message_supported(message):
                 except (TypeError, ValueError):
                     pass
             return False
-        if segment_type not in {'image', 'record', 'video'}:
+        if segment_type not in {"image", "record", "video"}:
             return False
-        data = segment.get('data')
-        if not isinstance(data, dict) or not (data.get('url') or data.get('file')):
+        data = segment.get("data")
+        if not isinstance(data, dict) or not (data.get("url") or data.get("file")):
             return False
         media_count += 1
         if media_count > 1:
@@ -293,20 +322,24 @@ def extract_media(message):
     if not isinstance(message, list):
         return None
     for segment in message:
-        if not isinstance(segment, dict) or segment.get('type') not in {'image', 'record', 'video'}:
+        if not isinstance(segment, dict) or segment.get("type") not in {
+            "image",
+            "record",
+            "video",
+        }:
             continue
-        data = segment.get('data') or {}
-        source = data.get('url') or data.get('file')
+        data = segment.get("data") or {}
+        source = data.get("url") or data.get("file")
         if source:
-            return {'type': segment['type'], 'source': str(source)}
+            return {"type": segment["type"], "source": str(source)}
     return None
 
 
 def group_target(action, params):
-    if action == 'send_group_msg':
-        return str(params.get('group_id') or '')
-    if action == 'send_msg' and (
-        params.get('message_type') == 'group' or params.get('group_id') is not None
+    if action == "send_group_msg":
+        return str(params.get("group_id") or "")
+    if action == "send_msg" and (
+        params.get("message_type") == "group" or params.get("group_id") is not None
     ):
-        return str(params.get('group_id') or '')
-    return ''
+        return str(params.get("group_id") or "")
+    return ""

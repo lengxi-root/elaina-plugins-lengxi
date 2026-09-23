@@ -4,10 +4,11 @@ import json
 import os
 import threading
 import uuid
+from typing import Any
 
 from core.plugins import config as cfg
 
-DEFAULTS = {
+DEFAULTS: dict[str, Any] = {
     "enabled": True,
     "high_risk_tools_enabled": False,
     "base_url": "https://api.ytea.top/v1",
@@ -114,7 +115,8 @@ def _norm_models(models) -> list:
 
     status: ''(未检测) / 'ok'(可用) / 'err'(不可用), 由面板「检测/一键检测」写入并持久保存;
     checked_at: 最近一次检测的时间戳 (秒), 用于面板展示「上次检测时间」。"""
-    out, seen = [], set()
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
     if not isinstance(models, list):
         return out
     for i, m in enumerate(models):

@@ -6,7 +6,6 @@ from collections import OrderedDict
 
 from core.plugin.decorators import handler, on_unload
 
-from ...storage import api as db
 from ...services import verification as verify
 from ...services.permissions import (
     ensure_admin_env,
@@ -15,11 +14,12 @@ from ...services.permissions import (
     is_group_admin,
 )
 from ...services.utils import reply_at
+from ...storage import api as db
 from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
 
 _REFRESH_INTERVAL = 180.0
-_refresh_locks = {}
-_last_refresh = OrderedDict()
+_refresh_locks: dict[str, asyncio.Lock] = {}
+_last_refresh: OrderedDict[str, float] = OrderedDict()
 _MAX_REFRESH_RECORDS = 2048
 
 

@@ -14,7 +14,6 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import aiohttp
-
 from core.plugins import ApiCallRequest, bypass_api_interceptors, get_api
 
 from ..storage import repository as store
@@ -147,10 +146,22 @@ async def raw_inline_keyboards(event, bot_appid=""):
         "PB 按钮读取请求",
         group_id=event.group_id,
         message_id=event.message_id,
-        real_seq=next((event.raw_data.get(key) for key in (
-            "real_seq", "realSeq", "message_seq", "messageSeq",
-            "msg_seq", "msgSeq", "sequence",
-        ) if event.raw_data.get(key) not in (None, "", 0, "0")), 0),
+        real_seq=next(
+            (
+                event.raw_data.get(key)
+                for key in (
+                    "real_seq",
+                    "realSeq",
+                    "message_seq",
+                    "messageSeq",
+                    "msg_seq",
+                    "msgSeq",
+                    "sequence",
+                )
+                if event.raw_data.get(key) not in (None, "", 0, "0")
+            ),
+            0,
+        ),
         self_id=event.self_id,
     )
     try:
@@ -158,10 +169,22 @@ async def raw_inline_keyboards(event, bot_appid=""):
             keyboards = await get_api().get_inline_keyboard_buttons(
                 event.group_id,
                 event.message_id,
-                real_seq=next((event.raw_data.get(key) for key in (
-                    "real_seq", "realSeq", "message_seq", "messageSeq",
-                    "msg_seq", "msgSeq", "sequence",
-                ) if event.raw_data.get(key) not in (None, "", 0, "0")), 0),
+                real_seq=next(
+                    (
+                        event.raw_data.get(key)
+                        for key in (
+                            "real_seq",
+                            "realSeq",
+                            "message_seq",
+                            "messageSeq",
+                            "msg_seq",
+                            "msgSeq",
+                            "sequence",
+                        )
+                        if event.raw_data.get(key) not in (None, "", 0, "0")
+                    ),
+                    0,
+                ),
                 bot_appid=bot_appid,
                 self_id=str(event.self_id or ""),
             )
@@ -191,10 +214,8 @@ async def restart_bridge():
             and not bridge.closed
             and bridge.task is not None
             and not bridge.task.done()
-            and {
-                key: value for key, value in bridge.config.items()
-                if key != "_debug"
-            } == config
+            and {key: value for key, value in bridge.config.items() if key != "_debug"}
+            == config
         ):
             bridge.config["_debug"] = runtime.debug_enabled
             _trace(
@@ -249,7 +270,8 @@ async def handle_gateway_event(event_type, payload, event_id):
         if isinstance(raw_content, list):
             raw_content = "".join(
                 str(item.get("text") or item.get("content") or "")
-                if isinstance(item, dict) else str(item or "")
+                if isinstance(item, dict)
+                else str(item or "")
                 for item in raw_content
             )
         content = re.sub(r"<@![^>]+>\s*", "", str(raw_content or "")).strip()
@@ -402,7 +424,10 @@ def _mapping_message_sequence(mapping):
     if not isinstance(mapping, dict):
         return 0
     for key in (
-        "msg_seq", "message_seq", "real_seq", "sequence",
+        "msg_seq",
+        "message_seq",
+        "real_seq",
+        "sequence",
     ):
         value = mapping.get(key)
         if value in (None, "", 0, "0"):
@@ -1171,7 +1196,9 @@ async def _bootstrap_timeout(code):
         configured = float(config.get("bootstrap_timeout_seconds", 45))
     except (TypeError, ValueError):
         configured = 45
-    timeout = max(45.0, configured, float(config.get("wake_timeout_seconds", 15) or 15) + 5)
+    timeout = max(
+        45.0, configured, float(config.get("wake_timeout_seconds", 15) or 15) + 5
+    )
     await asyncio.sleep(timeout)
     item = runtime.pending_codes.pop(code, None)
     if item is None:
@@ -1235,7 +1262,9 @@ async def intercept_api(request, call_next):
         _trace("原路发送", group_id=group_id, reason="官机不在群内或成员查询失败")
         return await call_next()
 
-    mapping_ready = bool(mapping.get("callback_data")) and _mapping_message_sequence(mapping) > 0
+    mapping_ready = (
+        bool(mapping.get("callback_data")) and _mapping_message_sequence(mapping) > 0
+    )
     if not mapping_ready:
         if mapping.get("callback_data"):
             await store.delete_mapping(group_id)

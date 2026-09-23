@@ -4,7 +4,6 @@ from __future__ import annotations
 
 # 这些导入组成兼容层的公共接口，供外部 AstrBot 插件直接访问。
 # ruff: noqa: F401
-
 from . import state
 from .commands import (
     CommandSpec,

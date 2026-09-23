@@ -73,7 +73,7 @@ def parse_members_and_minutes(event, arg):
         minute_matches = re.findall(
             r"(?<![A-Za-z0-9])(\d+)(?:\s*(?:分钟|分|min))?(?![A-Za-z0-9])",
             text,
-            re.I,
+            re.IGNORECASE,
         )
         if len(minute_matches) != 1:
             return members, 0

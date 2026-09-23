@@ -109,7 +109,9 @@ async def synthesize_url(text: str, voice_id: int, config: dict) -> str | None:
     }
     timeout = aiohttp.ClientTimeout(total=90)
     try:
-        async with aiohttp.ClientSession(timeout=timeout, headers=_headers()) as session:
+        async with aiohttp.ClientSession(
+            timeout=timeout, headers=_headers()
+        ) as session:
             async with session.post(
                 f"{_API_BASE}/flashsummary/tts",
                 params={"token": token} if token else None,
@@ -192,9 +194,10 @@ async def fetch_voices(token: str = "") -> list[dict]:
     timeout = aiohttp.ClientTimeout(total=30)
     rows: list[dict] = []
     try:
-        async with aiohttp.ClientSession(
-            timeout=timeout, headers=_headers()
-        ) as session, session.get(url, params=params) as response:
+        async with (
+            aiohttp.ClientSession(timeout=timeout, headers=_headers()) as session,
+            session.get(url, params=params) as response,
+        ):
             if response.status == 200:
                 # 角色目录接口未声明 charset，显式按 UTF-8 读取中文名称。
                 data = await response.json(encoding="utf-8", content_type=None)
@@ -213,10 +216,7 @@ async def fetch_voices(token: str = "") -> list[dict]:
 
 def _voice_label(item: dict) -> str:
     name = str(
-        item.get("voice_name")
-        or item.get("name")
-        or item.get("voiceName")
-        or ""
+        item.get("voice_name") or item.get("name") or item.get("voiceName") or ""
     ).strip()
     return name.split("|")[0].strip() or name
 

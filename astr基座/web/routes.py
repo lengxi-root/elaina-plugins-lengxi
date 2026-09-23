@@ -89,7 +89,7 @@ def _log_store() -> _PanelLogStore:
     store = getattr(_ROOT_LOG, "_eb_panel_store", None)
     if store is None:
         store = _PanelLogStore(_PANEL_LOG_MAX)
-        _ROOT_LOG._eb_panel_store = store
+        setattr(_ROOT_LOG, "_eb_panel_store", store)
     return store
 
 

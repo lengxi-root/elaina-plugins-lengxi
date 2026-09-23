@@ -8,8 +8,8 @@ import time
 
 import aiohttp
 from aiohttp import web
-
 from core.plugins import register_route, run_sync
+
 from ..services import agent as agentmod
 from ..services import aiconfig
 
@@ -278,9 +278,7 @@ async def _post_chat(request: web.Request):
     sid = str(body.get("session_id", "") or "")
     request_id = str(body.get("request_id", "") or "")[:80]
     mode = (
-        "analyze"
-        if str(body.get("mode", "") or "") in {"analyze", "chat"}
-        else "dev"
+        "analyze" if str(body.get("mode", "") or "") in {"analyze", "chat"} else "dev"
     )
     raw_images = body.get("images") or []
     images = (
@@ -345,7 +343,7 @@ async def _run_chat_job(
         job["status"] = "cancelled"
         job["result"] = {"success": False, "message": "任务已取消", "iterations": 0}
         raise
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:
         log.exception("AI Web 后台任务异常: session=%s", session_id)
         error_message = f"{type(error).__name__}: {error}"
         await store.add_event("error", {"message": error_message}, session_id)

@@ -4,7 +4,7 @@ __plugin_meta__ = {
     "name": "音乐点歌",
     "author": "lengxi",
     "description": "QQ音乐搜索与播放",
-    "version": "1.0.2",
+    "version": "1.0.3",
 }
 
 
@@ -52,9 +52,7 @@ async def _api(params: str):
 def _cache_key(event):
     appid = str(getattr(event, "appid", "") or "")
     conversation = str(
-        getattr(event, "group_openid", "")
-        or getattr(event, "group_id", "")
-        or "c2c"
+        getattr(event, "group_openid", "") or getattr(event, "group_id", "") or "c2c"
     )
     return appid, conversation, str(event.user_id)
 

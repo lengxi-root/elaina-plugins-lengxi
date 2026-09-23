@@ -4,12 +4,12 @@ __plugin_meta__ = {
     "name": "恶臭生成器",
     "author": "lengxi",
     "description": "将数字转换为 114514 表达式（本地计算）",
-    "version": "1.0.2",
+    "version": "1.0.3",
 }
 
 
-import re
 import bisect
+import re
 from decimal import Decimal, InvalidOperation
 
 from core.plugin.decorators import handler
@@ -257,9 +257,7 @@ async def handle_homo(event, match):
     try:
         num, _ = _parse_number(num_str)
     except OverflowError:
-        return await event.reply(
-            f"<@{uid}> 数字位数过大，最大支持18位整数和16位小数"
-        )
+        return await event.reply(f"<@{uid}> 数字位数过大，最大支持18位整数和16位小数")
     except ValueError:
         return await event.reply(
             f"<@{uid}>\n```python\n请在恶臭后面输入有效的数字\n```"

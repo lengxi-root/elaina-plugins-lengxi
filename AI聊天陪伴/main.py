@@ -22,7 +22,7 @@ __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
     "description": "支持多人格、人物集、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "2.1.8",
+    "version": "2.1.9",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -69,7 +69,7 @@ def _history_tokens(history: list[dict], summary: str = "") -> int:
 
 def _trim_history_to_budget(history: list[dict], budget: int) -> list[dict]:
     """仅在压缩服务暂时不可用时的最后防线，始终保留最新消息。"""
-    kept = []
+    kept: list[dict] = []
     used = 0
     for item in reversed(history):
         cost = 4 + _estimate_tokens(str(item.get("content") or ""))
@@ -165,7 +165,9 @@ async def _memory_text(event, current: dict) -> str:
     return "\n".join(f"- {item['content']}" for item in items)
 
 
-async def _context_for_reply(scope: str, text: str, current: dict) -> tuple[list[dict], str]:
+async def _context_for_reply(
+    scope: str, text: str, current: dict
+) -> tuple[list[dict], str]:
     """读取会话；达到 128k token 预算时压缩全部历史并重新开始当前轮。"""
     expire_seconds = current.get("context_expire_seconds", 86400)
     history_limit = 0
@@ -226,7 +228,9 @@ async def _output_rejected(current: dict, text: str) -> bool:
     return False
 
 
-async def _gentle_blocked_response(event, current: dict, source: str = "user_input") -> str:
+async def _gentle_blocked_response(
+    event, current: dict, source: str = "user_input"
+) -> str:
     """根据当前人格和既有上下文生成温和提醒；被拦截原文不进入上下文。"""
     personality = await _personality_for(event, current)
     context = await asyncio.to_thread(
@@ -249,9 +253,7 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
     scope = user_context_scope(event)
     lock = _locks.setdefault(scope, asyncio.Lock())
     async with lock:
-        message_id = await asyncio.to_thread(
-            store.append, scope, "user", text
-        )
+        message_id = await asyncio.to_thread(store.append, scope, "user", text)
         try:
             history, context_summary = await _context_for_reply(scope, text, current)
             media_context = {
@@ -263,8 +265,12 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
             }
             try:
                 reply = await central.complete(
-                    current, personality, history, await _memory_text(event, current),
-                    media_context=media_context, context_summary=context_summary,
+                    current,
+                    personality,
+                    history,
+                    await _memory_text(event, current),
+                    media_context=media_context,
+                    context_summary=context_summary,
                 )
             except Exception as error:
                 if not central.is_context_overflow_error(error) or not history:
@@ -274,8 +280,12 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
                     scope, text, current, history, context_summary
                 )
                 reply = await central.complete(
-                    current, personality, history, await _memory_text(event, current),
-                    media_context=media_context, context_summary=context_summary,
+                    current,
+                    personality,
+                    history,
+                    await _memory_text(event, current),
+                    media_context=media_context,
+                    context_summary=context_summary,
                 )
             reply, blocked = safety.safe_output(
                 reply,
@@ -287,9 +297,13 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
                 raise RuntimeError("模型没有返回可发送的最终答复")
             if blocked:
                 log.warning("AI 输出命中违规词，已替换为安全回复")
-                reply = await _gentle_blocked_response(event, current, "assistant_output")
+                reply = await _gentle_blocked_response(
+                    event, current, "assistant_output"
+                )
             elif await _output_rejected(current, reply):
-                reply = await _gentle_blocked_response(event, current, "assistant_output")
+                reply = await _gentle_blocked_response(
+                    event, current, "assistant_output"
+                )
         except Exception:
             await asyncio.to_thread(store.remove, message_id)
             raise
@@ -394,9 +408,13 @@ async def _watch_ai_service() -> None:
 async def help_command(event, _match) -> None:
     current = config.load()
     personality = await _personality_for(event, current)
-    personality_id = str((personality or {}).get("_id") or current.get("active_personality") or "")
+    personality_id = str(
+        (personality or {}).get("_id") or current.get("active_personality") or ""
+    )
     active_sets = current.get("active_character_sets", {})
-    active_set_id = active_sets.get(personality_id, "") if isinstance(active_sets, dict) else ""
+    active_set_id = (
+        active_sets.get(personality_id, "") if isinstance(active_sets, dict) else ""
+    )
     character_set = current.get("character_sets", {}).get(active_set_id, {})
     character_set_name = (
         character_set.get("name", "未使用")

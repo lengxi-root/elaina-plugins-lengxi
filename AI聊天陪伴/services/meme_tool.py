@@ -141,7 +141,10 @@ async def run(arguments: dict, context: dict, config: dict) -> dict:
         for value in arguments.get("texts", [])
         if str(value).strip()
     ]
-    required = int(item.get("texts") or 0)
+    try:
+        required = int(str(item.get("texts") or 0))
+    except (TypeError, ValueError):
+        required = 0
     if required and len(texts) < required:
         return {"ok": True, "sent": False}
     texts = texts[:required] if required else []

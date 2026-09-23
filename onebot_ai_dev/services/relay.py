@@ -13,6 +13,7 @@ messages 为 OpenAI 格式 (支持多模态 content: 文本 + image_url)。可�
 """
 
 import json
+from typing import Any
 
 import aiohttp
 
@@ -86,10 +87,11 @@ async def aidev_chat(
     messages: OpenAI 格式消息数组 (支持多模态 content: 文本 + image_url)。
     返回上游 /chat/completions 的 JSON dict (含 choices); 失败时含 error 字段。
     """
-    body = {"model": model or aiconfig.model(), "messages": list(messages or [])}
+    model_name = str(model or aiconfig.model())
+    body: dict[str, Any] = {"model": model_name, "messages": list(messages or [])}
     body.update(params or {})
     fo = aiconfig.auto_switch() if use_failover is None else bool(use_failover)
-    _status, data = await _post_forward(body, _chain(body["model"], fo))
+    _status, data = await _post_forward(body, _chain(model_name, fo))
     return data
 
 

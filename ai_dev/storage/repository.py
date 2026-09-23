@@ -83,7 +83,7 @@ class AIStore:
             reverse=True,
         )
 
-    def get_session(self, sid: str) -> dict:
+    def get_session(self, sid: str) -> dict | None:
         return self._sessions.get(sid)
 
     def create_session(

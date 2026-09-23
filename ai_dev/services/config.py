@@ -3,10 +3,11 @@
 import json
 import os
 import threading
+from typing import Any
 
 from core.base.config import cfg
 
-DEFAULTS = {
+DEFAULTS: dict[str, Any] = {
     "enabled": True,
     "provider_id": "",
     "model_preference": "",

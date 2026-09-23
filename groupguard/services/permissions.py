@@ -7,8 +7,8 @@ from collections import OrderedDict
 
 from core.base.config import cfg
 
-from .responses import respond
 from ..storage.audit import current_action, record_audit
+from .responses import respond
 
 
 def is_bot_owner(event):
@@ -60,8 +60,8 @@ async def get_event_member_role(event):
     return await get_group_member_role(event)
 
 
-_state_locks = weakref.WeakValueDictionary()
-_state_last_request = OrderedDict()
+_state_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+_state_last_request: OrderedDict[str, float] = OrderedDict()
 _STATE_REQUEST_INTERVAL = 60
 _MAX_STATE_REQUESTS = 2048
 

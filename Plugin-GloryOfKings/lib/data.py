@@ -39,10 +39,13 @@ def online_state(profile: dict):
     """资料卡里当前角色的在线状态 (0 离线 / 1 在线 / 2 游戏中); 取不到返回 None。"""
     data = (profile or {}).get("data") or {}
     role_id = str(data.get("targetRoleId") or "")
-    role = next((r for r in (data.get("roleList") or [])
-                 if str(r.get("roleId")) == role_id), None)
+    role = next(
+        (r for r in (data.get("roleList") or []) if str(r.get("roleId")) == role_id),
+        None,
+    )
     try:
-        return int((role or {}).get("gameOnline"))
+        game_online = (role or {}).get("gameOnline")
+        return int(game_online) if game_online is not None else None
     except (TypeError, ValueError):
         return None
 
@@ -60,7 +63,9 @@ def build_homepage_data(profile: dict) -> tuple[dict | None, str]:
 
     head = data.get("head") or {}
     target_role_id = data.get("targetRoleId")
-    role = next((r for r in data["roleList"] if r.get("roleId") == target_role_id), None)
+    role = next(
+        (r for r in data["roleList"] if r.get("roleId") == target_role_id), None
+    )
     if not role:
         return None, "未找到角色数据"
 
@@ -76,6 +81,7 @@ def build_homepage_data(profile: dict) -> tuple[dict | None, str]:
         p1 = _jloads(peak.get("param1"))
         flag = str(p1.get("flagPag") or "")
         import re
+
         m = re.search(r"(\d+)\.pag", flag)
         if m:
             p1["flagPag"] = m.group(1)
@@ -252,19 +258,23 @@ def build_battle_list_data(battle_list: dict) -> dict:
     data = []
     for item in lst:
         used = item.get("usedTime") or 0
-        data.append({
-            "gameType": item.get("mapName", ""),
-            "gameTime": item.get("gametime", ""),
-            "gameDuration": f"{used // 60}分{used % 60}秒",
-            "killCnt": item.get("killcnt", 0),
-            "deadCnt": item.get("deadcnt", 0),
-            "assistCnt": item.get("assistcnt", 0),
-            "gameResult": result_map.get(item.get("gameresult"), item.get("gameresult")),
-            "heroIcon": item.get("heroIcon", ""),
-            "desc": item.get("desc", ""),
-            "tags": _get_tags(item),
-            "gradeGame": item.get("gradeGame", ""),
-        })
+        data.append(
+            {
+                "gameType": item.get("mapName", ""),
+                "gameTime": item.get("gametime", ""),
+                "gameDuration": f"{used // 60}分{used % 60}秒",
+                "killCnt": item.get("killcnt", 0),
+                "deadCnt": item.get("deadcnt", 0),
+                "assistCnt": item.get("assistcnt", 0),
+                "gameResult": result_map.get(
+                    item.get("gameresult"), item.get("gameresult")
+                ),
+                "heroIcon": item.get("heroIcon", ""),
+                "desc": item.get("desc", ""),
+                "tags": _get_tags(item),
+                "gradeGame": item.get("gradeGame", ""),
+            }
+        )
     return {
         "data": data,
         "roleJobName": lst[0].get("roleJobName", ""),
@@ -273,6 +283,7 @@ def build_battle_list_data(battle_list: dict) -> dict:
 
 
 # ==================== 单局详情 ====================
+
 
 def _fmt_money(money) -> str:
     try:
@@ -298,73 +309,108 @@ def _fmt_damage(value) -> str:
 
 
 # 五维评级: battleStats 的 sabc* 字段 → 图上中文项名 (顺序即展示顺序)
-_RATING_ITEMS = (("sabchurthero", "输出"), ("sabcbattle", "战斗"), ("sabcgrow", "发育"),
-                 ("sabcsurvive", "生存"), ("sabcKDA", "KDA"))
+_RATING_ITEMS = (
+    ("sabchurthero", "输出"),
+    ("sabcbattle", "战斗"),
+    ("sabcgrow", "发育"),
+    ("sabcsurvive", "生存"),
+    ("sabcKDA", "KDA"),
+)
 _RATING_TIERS = {"s": "S", "a": "A", "b": "B", "c": "C"}
 
 
 def _decorate_team_roles(roles: list) -> None:
     """给一队玩家补细项: 输出/输出占比/参团/承伤/控制/补刀 (接口一次全给, 原样透传+换算)。"""
-    team_hurt = sum(_num((r.get("battleStats") or {}).get("totalHeroHurtCnt")) for r in roles)
+    team_hurt = sum(
+        _num((r.get("battleStats") or {}).get("totalHeroHurtCnt")) for r in roles
+    )
     for role in roles:
         bs = role.get("battleStats")
         if not bs:
             continue
-        join = _num(bs.get("joinGamePercent"))          # 接口给的是 0~1 小数
+        join = _num(bs.get("joinGamePercent"))  # 接口给的是 0~1 小数
         bs["joinRate"] = round(join * 100) if join > 0 else 0
         bs["behurtText"] = _fmt_damage(bs.get("totalBeheroHurtCnt"))
-        ctrl = _num(bs.get("ctrlTime"))                 # 控制时长(秒)
+        ctrl = _num(bs.get("ctrlTime"))  # 控制时长(秒)
         bs["ctrlText"] = f"{int(ctrl)}s" if ctrl > 0 else ""
         soldier = _num(bs.get("killSoldier"))
         bs["soldierText"] = str(int(soldier)) if soldier > 0 else ""
         # 「输出」取对英雄伤害, 不是含小兵野怪的总伤害 (坦克清兵刷不高才对)
         hurt = _num(bs.get("totalHeroHurtCnt"))
         bs["heroHurtText"] = _fmt_damage(hurt)
-        bs["heroHurtRate"] = round(hurt / team_hurt * 100) if team_hurt > 0 and hurt > 0 else 0
+        bs["heroHurtRate"] = (
+            round(hurt / team_hurt * 100) if team_hurt > 0 and hurt > 0 else 0
+        )
 
 
 def _ban_list(team: dict) -> list:
     """BP 的禁用英雄; 娱乐模式没有 BP 阶段时是空表"""
-    return [{"heroIcon": h.get("heroIcon") or "", "heroName": h.get("heroName") or ""}
-            for h in (team.get("banHeros") or [])
-            if h.get("heroIcon") or h.get("heroName")]
+    return [
+        {"heroIcon": h.get("heroIcon") or "", "heroName": h.get("heroName") or ""}
+        for h in (team.get("banHeros") or [])
+        if h.get("heroIcon") or h.get("heroName")
+    ]
 
 
 def _me_detail(my_roles: list, head: dict) -> dict:
     """「我的本场表现」: 五维评级 + dataBehaviorV2 三大类 (分路表现/战斗操作/团队贡献)。"""
     me = next((r for r in my_roles if (r.get("basicInfo") or {}).get("isMe")), None)
     if me is None:
-        me = next((r for r in my_roles
-                   if str((r.get("basicInfo") or {}).get("roleId") or "") == str(head.get("roleId") or "")),
-                  None)
+        me = next(
+            (
+                r
+                for r in my_roles
+                if str((r.get("basicInfo") or {}).get("roleId") or "")
+                == str(head.get("roleId") or "")
+            ),
+            None,
+        )
+    me = me or {}
     bs = (me or {}).get("battleStats") or {}
     if not bs:
-        return {"hasMeDetail": False, "meRatings": [], "meGroups": [], "meHeroName": "",
-                "meFightPower": 0, "meFightPowerDeltaText": ""}
+        return {
+            "hasMeDetail": False,
+            "meRatings": [],
+            "meGroups": [],
+            "meHeroName": "",
+            "meFightPower": 0,
+            "meFightPowerDeltaText": "",
+        }
 
-    ratings = [{"name": name, "tier": _RATING_TIERS.get(str(bs.get(key) or "").lower(), "")}
-               for key, name in _RATING_ITEMS]
+    ratings = [
+        {"name": name, "tier": _RATING_TIERS.get(str(bs.get(key) or "").lower(), "")}
+        for key, name in _RATING_ITEMS
+    ]
     ratings = [r for r in ratings if r["tier"]]
 
     groups = []
     for group in me.get("dataBehaviorV2") or []:
-        items = [{"name": it.get("name"), "value": it.get("data"), "note": it.get("dataNote") or "",
-                  "highlight": bool(it.get("dataHighlight")),
-                  "noteHighlight": bool(it.get("dataNoteHighlight"))}
-                 for it in (group.get("dataCounts") or [])
-                 if it.get("name") and it.get("data")]
+        items = [
+            {
+                "name": it.get("name"),
+                "value": it.get("data"),
+                "note": it.get("dataNote") or "",
+                "highlight": bool(it.get("dataHighlight")),
+                "noteHighlight": bool(it.get("dataNoteHighlight")),
+            }
+            for it in (group.get("dataCounts") or [])
+            if it.get("name") and it.get("data")
+        ]
         if items:
             groups.append({"title": group.get("title") or "", "items": items})
 
     delta = int(_num(bs.get("addFightPower")))
+    battle_records = me.get("battleRecords") or {}
+    used_hero = battle_records.get("usedHero") or {}
     return {
         "hasMeDetail": bool(ratings or groups),
         "meRatings": ratings,
         "meGroups": groups,
-        "meHeroName": ((me.get("battleRecords") or {}).get("usedHero") or {}).get("heroName")
-                      or head.get("heroName") or "",
+        "meHeroName": used_hero.get("heroName") or head.get("heroName") or "",
         "meFightPower": int(_num(bs.get("fightPower"))),
-        "meFightPowerDeltaText": (f"+{delta}" if delta > 0 else str(delta)) if delta else "",
+        "meFightPowerDeltaText": (f"+{delta}" if delta > 0 else str(delta))
+        if delta
+        else "",
     }
 
 
@@ -381,7 +427,9 @@ def build_detail_data(detail: dict) -> tuple[dict | None, str]:
 
     is_blue = head.get("acntCamp") == blue_team.get("acntCamp")
     my_team, enemy_team = (blue_team, red_team) if is_blue else (red_team, blue_team)
-    my_roles, enemy_roles = (blue_roles, red_roles) if is_blue else (red_roles, blue_roles)
+    my_roles, enemy_roles = (
+        (blue_roles, red_roles) if is_blue else (red_roles, blue_roles)
+    )
 
     my_money = my_team.get("money", 0)
     enemy_money = enemy_team.get("money", 0)
@@ -406,20 +454,29 @@ def build_detail_data(detail: dict) -> tuple[dict | None, str]:
         "enemyKillDeadAssistCnt": f"{enemy_team.get('killCnt', 0)}/{enemy_team.get('deadCnt', 0)}/{enemy_team.get('assistCnt', 0)}",
         "myRoles": my_roles,
         "enemyRoles": enemy_roles,
-        "myBdragon1": my_team.get("bdragon1", 0), "myBdragon2": my_team.get("bdragon2", 0),
+        "myBdragon1": my_team.get("bdragon1", 0),
+        "myBdragon2": my_team.get("bdragon2", 0),
         "myBdragon3": my_team.get("bdragon3", 0),
-        "myLdragon1": my_team.get("ldragon1", 0), "myLdragon2": my_team.get("ldragon2", 0),
-        "enemyBdragon1": enemy_team.get("bdragon1", 0), "enemyBdragon2": enemy_team.get("bdragon2", 0),
+        "myLdragon1": my_team.get("ldragon1", 0),
+        "myLdragon2": my_team.get("ldragon2", 0),
+        "enemyBdragon1": enemy_team.get("bdragon1", 0),
+        "enemyBdragon2": enemy_team.get("bdragon2", 0),
         "enemyBdragon3": enemy_team.get("bdragon3", 0),
-        "enemyLdragon1": enemy_team.get("ldragon1", 0), "enemyLdragon2": enemy_team.get("ldragon2", 0),
+        "enemyLdragon1": enemy_team.get("ldragon1", 0),
+        "enemyLdragon2": enemy_team.get("ldragon2", 0),
     }
 
     # 玩家细项 (参团/承伤/控制/补刀/输出占比) + 双方禁用 + 我的本场表现
     _decorate_team_roles(my_roles)
     _decorate_team_roles(enemy_roles)
     my_bans, enemy_bans = _ban_list(my_team), _ban_list(enemy_team)
-    out.update({"myBanHeros": my_bans, "enemyBanHeros": enemy_bans,
-                "hasBan": bool(my_bans or enemy_bans)})
+    out.update(
+        {
+            "myBanHeros": my_bans,
+            "enemyBanHeros": enemy_bans,
+            "hasBan": bool(my_bans or enemy_bans),
+        }
+    )
     out.update(_me_detail(my_roles, head))
     return out, ""
 
@@ -427,6 +484,7 @@ def build_detail_data(detail: dict) -> tuple[dict | None, str]:
 def parse_target_role_id(battle: dict) -> str:
     """从 battleDetailUrl 解析 toAppRoleId。"""
     import re
+
     url = battle.get("battleDetailUrl") or ""
     m = re.search(r"toAppRoleId=(\d+)", url)
     return m.group(1) if m else ""
@@ -447,8 +505,7 @@ _SKIN_LEVEL_COLORS = {
     "C": "#6b7785",
     "D": "#9aa3ad",
 }
-_SKIN_IMG_BASE = ("https://game-1255653016.file.myqcloud.com/"
-                  "battle_skin_702-1236")
+_SKIN_IMG_BASE = "https://game-1255653016.file.myqcloud.com/battle_skin_702-1236"
 # 皮肤墙单页最多画多少款 (与 JS 版 PAGE_SIZE 一致)
 _SKIN_PAGE_SIZE = 50
 
@@ -478,19 +535,26 @@ def build_skin_list_data(skin_info: dict, camp_id: str = "") -> tuple[dict | Non
         sz = str(detail.get("szClass") or "").replace("＋", "+")
         if not sz:
             continue
-        level_index = _SKIN_LEVELS.index(sz) if sz in _SKIN_LEVELS else len(_SKIN_LEVELS) - 1
+        level_index = (
+            _SKIN_LEVELS.index(sz) if sz in _SKIN_LEVELS else len(_SKIN_LEVELS) - 1
+        )
         if sz in level_counts:
             level_counts[sz] += 1
-        skins.append({
-            "levelIndex": level_index,
-            "level": sz,
-            "levelColor": _SKIN_LEVEL_COLORS.get(sz, "#9aa3ad"),
-            "title": detail.get("szTitle", ""),
-            # 新版 conf 没有 szHeroTitle, 英雄名走 heroConfList[heroId]
-            "heroTitle": (detail.get("szHeroTitle")
-                          or (hero_conf.get(str(detail.get("iHeroId"))) or {}).get("name") or ""),
-            "img": f"{_SKIN_IMG_BASE}/{detail.get('iSkinId')}.jpg",
-        })
+        skins.append(
+            {
+                "levelIndex": level_index,
+                "level": sz,
+                "levelColor": _SKIN_LEVEL_COLORS.get(sz, "#9aa3ad"),
+                "title": detail.get("szTitle", ""),
+                # 新版 conf 没有 szHeroTitle, 英雄名走 heroConfList[heroId]
+                "heroTitle": (
+                    detail.get("szHeroTitle")
+                    or (hero_conf.get(str(detail.get("iHeroId"))) or {}).get("name")
+                    or ""
+                ),
+                "img": f"{_SKIN_IMG_BASE}/{detail.get('iSkinId')}.jpg",
+            }
+        )
 
     if not skins:
         return None, "该账号暂无可展示的皮肤"
@@ -528,7 +592,7 @@ def _payload(value):
     return value.get("data") if isinstance(value.get("data"), dict) else value
 
 
-def _num(value, default=0):
+def _stat_num(value, default=0):
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -536,21 +600,30 @@ def _num(value, default=0):
 
 
 def _int(value, default=0):
-    return int(_num(value, default))
+    return int(_stat_num(value, default))
 
 
 def _percent(value, games=0):
     if isinstance(value, str) and value.strip():
         return value.strip()
-    return f"{round(_num(value) * 100)}%" if _num(value) <= 1 and _num(value) else (
-        f"{round(_num(value))}%" if _num(value) else (f"{round(100 * 0)}%" if not games else "0%"))
+    return (
+        f"{round(_stat_num(value) * 100)}%"
+        if _stat_num(value) <= 1 and _stat_num(value)
+        else (
+            f"{round(_stat_num(value))}%"
+            if _stat_num(value)
+            else (f"{(100 * 0)}%" if not games else "0%")
+        )
+    )
 
 
 def _role_view(profile: dict) -> dict:
     p = _payload(profile)
     roles = p.get("roleList") or []
     target = p.get("targetRoleId")
-    role = next((r for r in roles if str(r.get("roleId")) == str(target)), None) or (roles[0] if roles else {})
+    role = next((r for r in roles if str(r.get("roleId")) == str(target)), None) or (
+        roles[0] if roles else {}
+    )
     return {
         "roleName": role.get("roleName") or "召唤师",
         "roleIcon": role.get("roleIcon") or "",
@@ -563,20 +636,36 @@ def _build_lane(branch_type, self):
         return None
     wins, losses = _int(self.get("winNum")), _int(self.get("loseNum"))
     games = wins + losses
-    rate = (_percent(self.get("winRate"), games) if self.get("winRate") is not None
-            else (f"{round(wins / games * 100)}%" if games else "0%"))
+    rate = (
+        _percent(self.get("winRate"), games)
+        if self.get("winRate") is not None
+        else (f"{round(wins / games * 100)}%" if games else "0%")
+    )
     radar = [
-        ("输出", self.get("hurtHero")), ("生存", self.get("survive")),
-        ("团战", self.get("battle")), ("发育", self.get("grow")), ("KDA", self.get("kda")),
+        ("输出", self.get("hurtHero")),
+        ("生存", self.get("survive")),
+        ("团战", self.get("battle")),
+        ("发育", self.get("grow")),
+        ("KDA", self.get("kda")),
     ]
     return {
-        "type": _int(branch_type), "name": _BRANCH_NAMES.get(_int(branch_type), str(branch_type)),
-        "color": _LANE_COLORS.get(_int(branch_type), "#f5d76e"), "gameCnt": games,
-        "winRate": rate, "winNum": wins, "loseNum": losses,
-        "avgScore": _int(self.get("avgScore")), "radar": [
-            {"label": label, "value": _num(val), "pct": min(_num(val) / 12000, 1)}
+        "type": _int(branch_type),
+        "name": _BRANCH_NAMES.get(_int(branch_type), str(branch_type)),
+        "color": _LANE_COLORS.get(_int(branch_type), "#f5d76e"),
+        "gameCnt": games,
+        "winRate": rate,
+        "winNum": wins,
+        "loseNum": losses,
+        "avgScore": _int(self.get("avgScore")),
+        "radar": [
+            {
+                "label": label,
+                "value": _stat_num(val),
+                "pct": min(_stat_num(val) / 12000, 1),
+            }
             for label, val in radar
-        ], "raw": self,
+        ],
+        "raw": self,
     }
 
 
@@ -590,79 +679,208 @@ def build_season_view(season_data: dict, profile: dict | None = None) -> dict:
         games = _int(item.get("gameCnt"))
         if not games:
             continue
-        wins = _int(item.get("winNum")); losses = _int(item.get("loseNum"))
-        branches.append({"name": item.get("branchName") or _BRANCH_NAMES.get(_int(item.get("branchType")), str(item.get("branchType", ""))),
-                         "winNum": wins, "loseNum": losses, "gameCnt": games,
-                         "winRate": _percent(item.get("winRate"), games), "color": _BRANCH_COLORS[i % len(_BRANCH_COLORS)]})
+        wins = _int(item.get("winNum"))
+        losses = _int(item.get("loseNum"))
+        branches.append(
+            {
+                "name": item.get("branchName")
+                or _BRANCH_NAMES.get(
+                    _int(item.get("branchType")), str(item.get("branchType", ""))
+                ),
+                "winNum": wins,
+                "loseNum": losses,
+                "gameCnt": games,
+                "winRate": _percent(item.get("winRate"), games),
+                "color": _BRANCH_COLORS[i % len(_BRANCH_COLORS)],
+            }
+        )
     total_games = sum(x["gameCnt"] for x in branches)
     total_wins = sum(x["winNum"] for x in branches)
     fallback_games = _int(hc.get("gameCnt")) or total_games
-    fallback_rate = _percent(hc.get("winRate"), fallback_games) if hc.get("winRate") is not None else (f"{round(total_wins / total_games * 100)}%" if total_games else "0%")
-    heros = [{"heroName": h.get("heroName", ""), "heroIcon": h.get("heroIcon", ""),
-              "winRate": _percent(h.get("winRate")), "gameCnt": _int(h.get("gameCnt"))}
-             for h in (ri.get("heros") or [])[:3]]
-    radar = [{"label": label, "value": _num(bs.get(key)), "pct": min(_num(bs.get(key)) / 12000, 1)}
-             for label, key in (("输出", "hurtHero"), ("生存", "survive"), ("团战", "battle"), ("发育", "grow"), ("KDA", "kda"))]
-    trend = [{"star": _int(t.get("totalRankStar")) + _int(t.get("stars")), "stars": _int(t.get("stars")),
-              "jobName": t.get("jobName", ""), "jobColor": t.get("jobColor") or "#f5d76e", "time": t.get("time")}
-             for t in reversed(ri.get("gameTrend") or [])]
-    honor = [{"val": _int(bs.get(k)), "key": label} for k, label in (
-        ("mvp", "全场最佳"), ("loseMvp", "败方最佳"), ("threeKill", "三连决胜"),
-        ("fourKill", "四连超凡"), ("fiveKill", "五连绝世"), ("godLike", "超神"))]
+    fallback_rate = (
+        _percent(hc.get("winRate"), fallback_games)
+        if hc.get("winRate") is not None
+        else (f"{round(total_wins / total_games * 100)}%" if total_games else "0%")
+    )
+    heros = [
+        {
+            "heroName": h.get("heroName", ""),
+            "heroIcon": h.get("heroIcon", ""),
+            "winRate": _percent(h.get("winRate")),
+            "gameCnt": _int(h.get("gameCnt")),
+        }
+        for h in (ri.get("heros") or [])[:3]
+    ]
+    radar = [
+        {
+            "label": label,
+            "value": _stat_num(bs.get(key)),
+            "pct": min(_stat_num(bs.get(key)) / 12000, 1),
+        }
+        for label, key in (
+            ("输出", "hurtHero"),
+            ("生存", "survive"),
+            ("团战", "battle"),
+            ("发育", "grow"),
+            ("KDA", "kda"),
+        )
+    ]
+    trend = [
+        {
+            "star": _int(t.get("totalRankStar")) + _int(t.get("stars")),
+            "stars": _int(t.get("stars")),
+            "jobName": t.get("jobName", ""),
+            "jobColor": t.get("jobColor") or "#f5d76e",
+            "time": t.get("time"),
+        }
+        for t in reversed(ri.get("gameTrend") or [])
+    ]
+    honor = [
+        {"val": _int(bs.get(k)), "key": label}
+        for k, label in (
+            ("mvp", "全场最佳"),
+            ("loseMvp", "败方最佳"),
+            ("threeKill", "三连决胜"),
+            ("fourKill", "四连超凡"),
+            ("fiveKill", "五连绝世"),
+            ("godLike", "超神"),
+        )
+    ]
     lanes = []
-    for item in (data.get("battleData") or data.get("battleDatas") or []):
+    for item in data.get("battleData") or data.get("battleDatas") or []:
         lane = _build_lane(item.get("branchType", 0), item)
         if lane and lane["gameCnt"]:
             lanes.append(lane)
-    out = {**role, "seasonName": hc.get("seasonName") or data.get("seasonName") or "当前赛季",
-           "titleLabel": "排位表现", "subLabel": "", "jobName": hc.get("jobName") or "—",
-           "jobLabel": "当前段位", "rankingStar": _int(hc.get("rankingStar")),
-           "masterScore": _int(hc.get("masterScore")) or "—", "masterRank": _int(hc.get("masterRank")),
-           "score": _int(hc.get("score")) or "—", "winRate": fallback_rate, "gameCnt": fallback_games,
-           "branch": hc.get("branch") or (max(branches, key=lambda x: x["gameCnt"])["name"] if branches else "—"),
-           "heros": heros, "totalGames": total_games, "honor": honor,
-           "hasHonor": any(x["val"] for x in honor), "branches": branches,
-           "radar": radar, "trend": trend, "lanes": lanes, "hasLanes": bool(lanes),
-           "hasBattleStats": any(x["value"] > 0 for x in radar)}
-    out.update({"branchesJson": json.dumps(branches, ensure_ascii=False), "radarJson": json.dumps(radar if out["hasBattleStats"] else [], ensure_ascii=False),
-                "trendJson": json.dumps(trend, ensure_ascii=False), "lanesJson": json.dumps(lanes, ensure_ascii=False),
-                "masterBranchesJson": "[]", "masterStats": [], "masterHeros": [], "masterBranches": [],
-                "hasMaster": False, "masterTotalGames": 0})
+    out = {
+        **role,
+        "seasonName": hc.get("seasonName") or data.get("seasonName") or "当前赛季",
+        "titleLabel": "排位表现",
+        "subLabel": "",
+        "jobName": hc.get("jobName") or "—",
+        "jobLabel": "当前段位",
+        "rankingStar": _int(hc.get("rankingStar")),
+        "masterScore": _int(hc.get("masterScore")) or "—",
+        "masterRank": _int(hc.get("masterRank")),
+        "score": _int(hc.get("score")) or "—",
+        "winRate": fallback_rate,
+        "gameCnt": fallback_games,
+        "branch": hc.get("branch")
+        or (max(branches, key=lambda x: x["gameCnt"])["name"] if branches else "—"),
+        "heros": heros,
+        "totalGames": total_games,
+        "honor": honor,
+        "hasHonor": any(x["val"] for x in honor),
+        "branches": branches,
+        "radar": radar,
+        "trend": trend,
+        "lanes": lanes,
+        "hasLanes": bool(lanes),
+        "hasBattleStats": any(_stat_num(x.get("value")) > 0 for x in radar),
+    }
+    out.update(
+        {
+            "branchesJson": json.dumps(branches, ensure_ascii=False),
+            "radarJson": json.dumps(
+                radar if out["hasBattleStats"] else [], ensure_ascii=False
+            ),
+            "trendJson": json.dumps(trend, ensure_ascii=False),
+            "lanesJson": json.dumps(lanes, ensure_ascii=False),
+            "masterBranchesJson": "[]",
+            "masterStats": [],
+            "masterHeros": [],
+            "masterBranches": [],
+            "hasMaster": False,
+            "masterTotalGames": 0,
+        }
+    )
     return out
 
 
-def build_peak_view(fight_results: list, season_data: dict, profile: dict | None = None) -> dict:
+def build_peak_view(
+    fight_results: list, season_data: dict, profile: dict | None = None
+) -> dict:
     branches_raw = []
     for i, result in enumerate(fight_results or []):
         payload = _payload(result)
-        self = payload.get("battleDataSelf") or (payload.get("data") or {}).get("battleDataSelf")
+        self = payload.get("battleDataSelf") or (payload.get("data") or {}).get(
+            "battleDataSelf"
+        )
         lane = _build_lane(i, self)
         if lane:
             branches_raw.append(lane)
     overall = next((x for x in branches_raw if x["type"] == 0), None)
     lanes = [x for x in branches_raw if x["type"] != 0 and x["gameCnt"]]
-    s = _payload(season_data); behavior = s.get("behavior") or {}; mi = behavior.get("masterInfo") or {}
+    s = _payload(season_data)
+    behavior = s.get("behavior") or {}
+    mi = behavior.get("masterInfo") or {}
     ri = behavior.get("rankInfo") or {}
-    heros = [{"heroName": h.get("heroName", ""), "heroIcon": h.get("heroIcon", ""), "winRate": _percent(h.get("winRate")), "gameCnt": _int(h.get("gameCnt"))} for h in (mi.get("heros") or [])[:3]]
-    trend = [{"score": _int(t.get("score")), "jobName": t.get("jobName", ""), "jobColor": t.get("jobColor") or "#f5d76e", "time": t.get("time")} for t in reversed(ri.get("gameTrend") or [])]
+    heros = [
+        {
+            "heroName": h.get("heroName", ""),
+            "heroIcon": h.get("heroIcon", ""),
+            "winRate": _percent(h.get("winRate")),
+            "gameCnt": _int(h.get("gameCnt")),
+        }
+        for h in (mi.get("heros") or [])[:3]
+    ]
+    trend = [
+        {
+            "score": _int(t.get("score")),
+            "jobName": t.get("jobName", ""),
+            "jobColor": t.get("jobColor") or "#f5d76e",
+            "time": t.get("time"),
+        }
+        for t in reversed(ri.get("gameTrend") or [])
+    ]
     role = _role_view(profile or {})
     if not overall or not overall["gameCnt"]:
-        stats = [{"val": "—", "key": "巅峰赛场次"}, {"val": "—", "key": "胜率"}, {"val": "—", "key": "平均得分"}]
+        stats = [
+            {"val": "—", "key": "巅峰赛场次"},
+            {"val": "—", "key": "胜率"},
+            {"val": "—", "key": "平均得分"},
+        ]
         game_cnt, rate, avg, branch = 0, "0%", 0, "—"
         overall_json = "null"
     else:
-        game_cnt, rate, avg = overall["gameCnt"], overall["winRate"], overall["avgScore"]
+        game_cnt, rate, avg = (
+            overall["gameCnt"],
+            overall["winRate"],
+            overall["avgScore"],
+        )
         branch = max(lanes, key=lambda x: x["gameCnt"])["name"] if lanes else "—"
-        stats = [{"val": game_cnt, "key": "巅峰赛场次"}, {"val": rate, "key": "胜率"}, {"val": avg, "key": "平均得分"}]
+        stats = [
+            {"val": game_cnt, "key": "巅峰赛场次"},
+            {"val": rate, "key": "胜率"},
+            {"val": avg, "key": "平均得分"},
+        ]
         overall_json = json.dumps(overall, ensure_ascii=False)
-    branches = [{k: x[k] for k in ("name", "color", "gameCnt", "winNum", "loseNum", "winRate")} for x in lanes]
-    out = {**role, "seasonLabel": "巅峰表现 · 近30天", "subLabel": "", "stats": stats,
-           "gameCnt": game_cnt, "winRate": rate, "avgScore": avg, "branch": branch,
-           "branches": branches, "lanes": lanes, "heros": heros, "trend": trend,
-           "hasBranches": bool(branches), "hasLanes": bool(lanes), "hasOverallRadar": bool(overall),
-           "hasHonor": False, "honor": [], "branchesJson": json.dumps(branches, ensure_ascii=False),
-           "lanesJson": json.dumps(lanes, ensure_ascii=False), "trendJson": json.dumps(trend, ensure_ascii=False),
-           "overallJson": overall_json}
+    branches = [
+        {k: x[k] for k in ("name", "color", "gameCnt", "winNum", "loseNum", "winRate")}
+        for x in lanes
+    ]
+    out = {
+        **role,
+        "seasonLabel": "巅峰表现 · 近30天",
+        "subLabel": "",
+        "stats": stats,
+        "gameCnt": game_cnt,
+        "winRate": rate,
+        "avgScore": avg,
+        "branch": branch,
+        "branches": branches,
+        "lanes": lanes,
+        "heros": heros,
+        "trend": trend,
+        "hasBranches": bool(branches),
+        "hasLanes": bool(lanes),
+        "hasOverallRadar": bool(overall),
+        "hasHonor": False,
+        "honor": [],
+        "branchesJson": json.dumps(branches, ensure_ascii=False),
+        "lanesJson": json.dumps(lanes, ensure_ascii=False),
+        "trendJson": json.dumps(trend, ensure_ascii=False),
+        "overallJson": overall_json,
+    }
     return out
 
 
@@ -673,21 +891,65 @@ def build_rank_trend_view(fight_data: dict, profile: dict | None = None) -> dict
     role = _role_view(profile or {})
     games = _int(self.get("winNum")) + _int(self.get("loseNum"))
     wins, losses = _int(self.get("winNum")), _int(self.get("loseNum"))
-    rate = _percent(self.get("winRate"), games) if self.get("winRate") is not None else (f"{round(wins / games * 100)}%" if games else "0%")
-    raw_trend = payload.get("gameTrend") or (payload.get("rankInfo") or {}).get("gameTrend") or []
-    trend = [{"level": i, "time": x.get("time"), "label": x.get("jobName") or "—", "full": x.get("jobName") or "—", "ranked": True, "seg": 0}
-             for i, x in enumerate(raw_trend)]
+    rate = (
+        _percent(self.get("winRate"), games)
+        if self.get("winRate") is not None
+        else (f"{round(wins / games * 100)}%" if games else "0%")
+    )
+    raw_trend = (
+        payload.get("gameTrend")
+        or (payload.get("rankInfo") or {}).get("gameTrend")
+        or []
+    )
+    trend = [
+        {
+            "level": i,
+            "time": x.get("time"),
+            "label": x.get("jobName") or "—",
+            "full": x.get("jobName") or "—",
+            "ranked": True,
+            "seg": 0,
+        }
+        for i, x in enumerate(raw_trend)
+    ]
     current = self.get("jobName") or payload.get("jobName") or "—"
-    view = {"avatar": role["roleIcon"], "username": role["roleName"], "title": "段位趋势",
-            "rangeText": "最近排位", "coverText": "排位数据", "count": games, "subText": "",
-            "currentLabel": current, "currentShort": current, "peakLabel": current,
-            "startLabel": current, "deltaText": "—", "deltaClass": "flat", "winRate": rate.rstrip("%"),
-            "winRateClass": "good" if _num(rate.rstrip("%")) >= 50 else "bad", "win": wins, "lose": losses,
-            "starStepText": "+0 / -0", "maxWinStreak": _int(self.get("maxContinuousWinCnt")),
-            "maxLoseStreak": 0, "spanDays": 0, "trend": trend,
-            "levels": [{"level": i, "label": x["label"]} for i, x in enumerate(trend)],
-            "modeRows": [], "dayRows": [], "recentRows": [], "segNote": "", "footText": "数据来自王者营地",
-            "stepText": "未升降段", "upSteps": 0, "downSteps": 0, "starUpCount": 0, "starDownCount": 0}
+    view = {
+        "avatar": role["roleIcon"],
+        "username": role["roleName"],
+        "title": "段位趋势",
+        "rangeText": "最近排位",
+        "coverText": "排位数据",
+        "count": games,
+        "subText": "",
+        "currentLabel": current,
+        "currentShort": current,
+        "peakLabel": current,
+        "startLabel": current,
+        "deltaText": "—",
+        "deltaClass": "flat",
+        "winRate": rate.rstrip("%"),
+        "winRateClass": "good"
+        if _stat_num(rate.rstrip("%")) >= 50
+        else "bad",
+        "win": wins,
+        "lose": losses,
+        "starStepText": "+0 / -0",
+        "maxWinStreak": _int(self.get("maxContinuousWinCnt")),
+        "maxLoseStreak": 0,
+        "spanDays": 0,
+        "trend": trend,
+        "levels": [{"level": i, "label": x["label"]} for i, x in enumerate(trend)],
+        "modeRows": [],
+        "dayRows": [],
+        "recentRows": [],
+        "segNote": "",
+        "footText": "数据来自王者营地",
+        "stepText": "未升降段",
+        "upSteps": 0,
+        "downSteps": 0,
+        "starUpCount": 0,
+        "starDownCount": 0,
+    }
     view["trendJson"] = json.dumps(trend, ensure_ascii=False)
     view["levelJson"] = json.dumps(view["levels"], ensure_ascii=False)
     return view
@@ -706,6 +968,7 @@ _POWER_PLATFORM = {
 
 def build_hero_power_data(items: list) -> dict:
     """英雄最低战力渲染数据 (含四端最小值)。"""
+
     def _num(v):
         try:
             return float(v or 0)

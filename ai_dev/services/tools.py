@@ -1,7 +1,7 @@
 """Agent 工具集：仓库文件操作、插件管理、配置读写和消息发送。"""
 
-import asyncio
 import ast
+import asyncio
 import fnmatch
 import hashlib
 import json
@@ -10,8 +10,10 @@ import platform
 import re
 import subprocess
 import time
+from typing import Any
 
 from core.base.config import cfg
+
 
 def _locate_root() -> str:
     """安装态定位框架根，源码态回退到当前插件仓库根。"""
@@ -197,12 +199,11 @@ def _iter_matching_files(target: str, pattern: str):
     if os.path.isfile(target):
         candidates = ((target, _rel(target)),)
     else:
+
         def walk():
             for root, dirs, names in os.walk(target):
                 dirs[:] = [
-                    item
-                    for item in dirs
-                    if item.casefold() not in _SEARCH_IGNORED_DIRS
+                    item for item in dirs if item.casefold() not in _SEARCH_IGNORED_DIRS
                 ]
                 for name in names:
                     full = os.path.join(root, name)
@@ -324,8 +325,8 @@ def _decorator_name(node: ast.AST) -> str:
 
 def _python_outline(path: str, source: str) -> dict:
     tree = ast.parse(source, filename=path)
-    imports = []
-    symbols = []
+    imports: list[str] = []
+    symbols: list[dict[str, Any]] = []
     metadata = {}
     for node in tree.body:
         if isinstance(node, ast.Import):
@@ -338,19 +339,29 @@ def _python_outline(path: str, source: str) -> dict:
                     "kind": (
                         "class"
                         if isinstance(node, ast.ClassDef)
-                        else ("async_function" if isinstance(node, ast.AsyncFunctionDef) else "function")
+                        else (
+                            "async_function"
+                            if isinstance(node, ast.AsyncFunctionDef)
+                            else "function"
+                        )
                     ),
                     "name": node.name,
                     "line": node.lineno,
                     "end_line": getattr(node, "end_lineno", node.lineno),
-                    "decorators": [_decorator_name(item) for item in node.decorator_list],
+                    "decorators": [
+                        _decorator_name(item) for item in node.decorator_list
+                    ],
                 }
             )
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if any(isinstance(target, ast.Name) and target.id == "__plugin_meta__" for target in targets):
+            if any(
+                isinstance(target, ast.Name) and target.id == "__plugin_meta__"
+                for target in targets
+            ):
                 try:
-                    metadata = ast.literal_eval(node.value)
+                    if node.value is not None:
+                        metadata = ast.literal_eval(node.value)
                 except Exception:  # noqa: BLE001
                     metadata = {}
     return {
@@ -365,8 +376,16 @@ def _python_outline(path: str, source: str) -> dict:
 def _script_outline(source: str) -> dict:
     patterns = (
         ("class", re.compile(r"^\s*(?:export\s+)?class\s+([A-Za-z_$][\w$]*)")),
-        ("function", re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)")),
-        ("function", re.compile(r"^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(")),
+        (
+            "function",
+            re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)"),
+        ),
+        (
+            "function",
+            re.compile(
+                r"^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\("
+            ),
+        ),
     )
     imports = []
     symbols = []
@@ -399,7 +418,9 @@ def _code_outline_sync(path: str) -> dict:
     elif suffix in {".js", ".jsx", ".mjs", ".ts", ".tsx", ".vue"}:
         outline = _script_outline(source)
     else:
-        raise ValueError("code_outline 仅支持 Python、JavaScript、TypeScript 和 Vue 文件")
+        raise ValueError(
+            "code_outline 仅支持 Python、JavaScript、TypeScript 和 Vue 文件"
+        )
     return {"path": _rel(target), "size": size, **outline}
 
 
@@ -418,9 +439,19 @@ def _inspect_plugin_sync(path: str) -> dict:
     entrypoints = []
     tests = []
     configs = []
-    outlines = []
+    outlines: list[dict[str, Any]] = []
     skipped = 0
-    ignored = {".git", ".idea", ".venv", ".vscode", "__pycache__", "build", "dist", "node_modules", "venv"}
+    ignored = {
+        ".git",
+        ".idea",
+        ".venv",
+        ".vscode",
+        "__pycache__",
+        "build",
+        "dist",
+        "node_modules",
+        "venv",
+    }
     for root, dirs, names in os.walk(target):
         dirs[:] = [name for name in dirs if name.casefold() not in ignored]
         for name in names:
@@ -433,13 +464,36 @@ def _inspect_plugin_sync(path: str) -> dict:
             item = {"path": relative, "size": os.path.getsize(full)}
             files.append(item)
             folded = name.casefold()
-            if folded in {"main.py", "app.py", "index.py", "main.js", "index.js", "index.ts"}:
+            if folded in {
+                "main.py",
+                "app.py",
+                "index.py",
+                "main.js",
+                "index.js",
+                "index.ts",
+            }:
                 entrypoints.append(relative)
-            if folded.startswith("test_") or folded.endswith(("_test.py", ".test.js", ".test.ts", ".spec.js", ".spec.ts")):
+            if folded.startswith("test_") or folded.endswith(
+                ("_test.py", ".test.js", ".test.ts", ".spec.js", ".spec.ts")
+            ):
                 tests.append(relative)
-            if folded in {"pyproject.toml", "requirements.txt", "package.json", "plugin.json"} or suffix in {".yaml", ".yml", ".toml", ".ini", ".cfg"}:
+            if folded in {
+                "pyproject.toml",
+                "requirements.txt",
+                "package.json",
+                "plugin.json",
+            } or suffix in {".yaml", ".yml", ".toml", ".ini", ".cfg"}:
                 configs.append(relative)
-            if len(outlines) < 20 and suffix in {".py", ".pyi", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".vue"}:
+            if len(outlines) < 20 and suffix in {
+                ".py",
+                ".pyi",
+                ".js",
+                ".jsx",
+                ".mjs",
+                ".ts",
+                ".tsx",
+                ".vue",
+            }:
                 try:
                     outline = _code_outline_sync(relative)
                     if outline.get("symbols") or outline.get("plugin_meta"):
@@ -513,7 +567,9 @@ def _find_references_sync(symbol: str, path: str, pattern: str, limit: int) -> d
     return {"symbol": name, "matches": matches, "truncated": False}
 
 
-async def _t_find_references(symbol: str, path: str = ".", pattern: str = "*", limit: int = 100) -> dict:
+async def _t_find_references(
+    symbol: str, path: str = ".", pattern: str = "*", limit: int = 100
+) -> dict:
     return await asyncio.to_thread(_find_references_sync, symbol, path, pattern, limit)
 
 
@@ -874,7 +930,7 @@ async def _t_set_config(file: str, key: str, value) -> dict:
 
 
 async def _t_system_info() -> dict:
-    info = {
+    info: dict[str, Any] = {
         "os": platform.platform(),
         "system": platform.system(),
         "python": platform.python_version(),
@@ -923,7 +979,11 @@ def _git_command(args: list[str]) -> dict:
     except (OSError, subprocess.TimeoutExpired) as error:
         return {"ok": False, "error": f"git 执行失败: {error}"}
     output = (completed.stdout or "") + (completed.stderr or "")
-    return {"ok": completed.returncode == 0, "returncode": completed.returncode, "output": output[:100_000]}
+    return {
+        "ok": completed.returncode == 0,
+        "returncode": completed.returncode,
+        "output": output[:100_000],
+    }
 
 
 async def _t_git_status() -> dict:
@@ -975,8 +1035,13 @@ async def _t_run_tests(
             "output": output[:100_000],
         }
     except subprocess.TimeoutExpired as error:
-        output = ((error.stdout or "") if isinstance(error.stdout, str) else "")
-        return {"success": False, "returncode": None, "timed_out": True, "output": output[:100_000]}
+        output = (error.stdout or "") if isinstance(error.stdout, str) else ""
+        return {
+            "success": False,
+            "returncode": None,
+            "timed_out": True,
+            "output": output[:100_000],
+        }
 
 
 async def _t_verify_change(
@@ -1001,11 +1066,20 @@ async def _t_verify_change(
     for path in normalized_paths:
         if path.casefold().endswith((".py", ".pyi")):
             result = await _t_check_python(path)
-            steps.append({"step": "check_python", "path": path, "ok": result.get("ok") is True, "result": result})
+            steps.append(
+                {
+                    "step": "check_python",
+                    "path": path,
+                    "ok": result.get("ok") is True,
+                    "result": result,
+                }
+            )
 
     if test_suite_command:
         result = await _t_run_tests(test_suite_command, test_path, timeout)
-        steps.append({"step": "run_tests", "ok": result.get("success") is True, "result": result})
+        steps.append(
+            {"step": "run_tests", "ok": result.get("success") is True, "result": result}
+        )
 
     if plugin:
         result = await _t_reload_plugin(plugin)
@@ -1026,7 +1100,10 @@ async def _t_verify_change(
             {
                 "step": "test_command",
                 "command": command_text,
-                "ok": result.get("success") is True and result.get("matched") is True and not result.get("timed_out") and not result.get("error"),
+                "ok": result.get("success") is True
+                and result.get("matched") is True
+                and not result.get("timed_out")
+                and not result.get("error"),
                 "result": result,
             }
         )
@@ -1080,7 +1157,7 @@ async def _t_send_qq_message(
 
 # ==================== 调度表 ====================
 
-_DISPATCH = {
+_DISPATCH: dict[str, Any] = {
     "list_dir": _t_list_dir,
     "read_file": _t_read_file,
     "read_ranges": _t_read_ranges,
@@ -1555,8 +1632,9 @@ def schemas_for_mode(mode: str) -> list[dict]:
         allowed = _REVIEW_TOOL_NAMES
     else:
         allowed = _ANALYSIS_TOOL_NAMES
-    return [
-        item
-        for item in TOOLS_SCHEMA
-        if item.get("function", {}).get("name") in allowed
-    ]
+    selected = []
+    for item in TOOLS_SCHEMA:
+        function = item.get("function")
+        if isinstance(function, dict) and function.get("name") in allowed:
+            selected.append(item)
+    return selected

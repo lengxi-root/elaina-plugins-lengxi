@@ -7,7 +7,9 @@
 import contextlib
 import contextvars
 
-_current: contextvars.ContextVar[str] = contextvars.ContextVar("wzry_requester", default="")
+_current: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "wzry_requester", default=""
+)
 
 
 def current() -> str:

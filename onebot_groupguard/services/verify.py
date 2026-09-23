@@ -158,9 +158,7 @@ async def handle_verify_answer(
 
     trimmed = (raw_message or "").strip()
     if not _NUM_RE.match(trimmed):
-        await call_api(
-            "delete_msg", {"message_id": message_id}, self_id=self_id
-        )
+        await call_api("delete_msg", {"message_id": message_id}, self_id=self_id)
         await send_group_msg(
             group_id,
             [

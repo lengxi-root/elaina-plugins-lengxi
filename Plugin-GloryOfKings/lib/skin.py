@@ -9,13 +9,32 @@ MAX_HERO_SKINS = 30
 # 营地评级 szClass 的价值序 (下标越小越高)。和「品质名」是两套口径
 SZ_ORDER = ["SR", "S++", "S+", "S", "A", "B", "C", "D"]
 TIER_PRIORITY = ["荣耀典藏", "珍品无双", "无双至尊", "珍品传说", "传说限定"]
-QUALITY_LABELS = ["荣耀典藏", "珍品无双", "无双至尊", "珍品传说", "传说限定",
-                  "无双", "珍品限定", "传说品质", "史诗品质", "勇者品质", "限定"]
+QUALITY_LABELS = [
+    "荣耀典藏",
+    "珍品无双",
+    "无双至尊",
+    "珍品传说",
+    "传说限定",
+    "无双",
+    "珍品限定",
+    "传说品质",
+    "史诗品质",
+    "勇者品质",
+    "限定",
+]
 # 品质计数格: 统计品质名而不是营地评级 (评级里 SR 会盖过荣耀典藏)
 QUALITY_STATS = [
     {"key": "gloryNum", "label": "荣耀典藏", "aliases": ["荣耀典藏"]},
-    {"key": "wushuangNum", "label": "无双", "aliases": ["珍品无双", "无双至尊", "无双"]},
-    {"key": "legendNum", "label": "传说", "aliases": ["珍品传说", "传说限定", "传说品质"]},
+    {
+        "key": "wushuangNum",
+        "label": "无双",
+        "aliases": ["珍品无双", "无双至尊", "无双"],
+    },
+    {
+        "key": "legendNum",
+        "label": "传说",
+        "aliases": ["珍品传说", "传说限定", "传说品质"],
+    },
 ]
 # 元流之子的 5 个分身沿用 查皮肤 的缩写
 _YUAN_ABBR = {"法": "法师", "射": "射手", "辅": "辅助", "坦": "坦克", "刺": "刺客"}
@@ -38,7 +57,11 @@ def tier_rank(class_type_names) -> int:
 
 def pick_tier_text(class_type_names) -> str:
     """classTypeName 常混着主题名与品质名, 按价值品质优先挑一个展示"""
-    names = [str(n).strip() for n in (class_type_names if isinstance(class_type_names, list) else []) if str(n).strip()]
+    names = [
+        str(n).strip()
+        for n in (class_type_names if isinstance(class_type_names, list) else [])
+        if str(n).strip()
+    ]
     if not names:
         return ""
     for label in QUALITY_LABELS:
@@ -62,7 +85,14 @@ def owned_skin_ids(hero_skin_list) -> set:
 
 
 def _norm(name) -> str:
-    return str(name or "").replace(" ", "").replace("（", "").replace("）", "").replace("(", "").replace(")", "")
+    return (
+        str(name or "")
+        .replace(" ", "")
+        .replace("（", "")
+        .replace("）", "")
+        .replace("(", "")
+        .replace(")", "")
+    )
 
 
 def _sort_skins(skins: list) -> list:
@@ -73,11 +103,19 @@ def _sort_skins(skins: list) -> list:
 def match_hero(conf: list, name: str) -> dict:
     """先精确匹配, 不中再按包含关系给候选 (守住整条指令只 1 次请求)"""
     m = re.match(r"^元(.)$", str(name or ""))
-    want = _norm(f"元流之子({_YUAN_ABBR[m.group(1)]})" if m and m.group(1) in _YUAN_ABBR else name)
+    want = _norm(
+        f"元流之子({_YUAN_ABBR[m.group(1)]})"
+        if m and m.group(1) in _YUAN_ABBR
+        else name
+    )
 
     exact = [x for x in conf if _norm(x.get("szHeroTitle")) == want]
     if exact:
-        return {"hero": exact[0].get("szHeroTitle"), "list": _sort_skins(exact), "candidates": []}
+        return {
+            "hero": exact[0].get("szHeroTitle"),
+            "list": _sort_skins(exact),
+            "candidates": [],
+        }
 
     names = []
     for item in conf:
@@ -126,14 +164,24 @@ def _skin_card(conf: dict, owned: bool, sub: str = "") -> dict:
 def _tier_counts(conf: list, miss: list) -> list:
     tiers = []
     for stat in QUALITY_STATS:
+
         def hit(item, aliases=stat["aliases"]):
-            return any(str(n).strip() in aliases for n in (item.get("classTypeName") or []))
+            return any(
+                str(n).strip() in aliases for n in (item.get("classTypeName") or [])
+            )
+
         all_n = sum(1 for x in conf if hit(x))
         if not all_n:
             continue
         lack = sum(1 for x in miss if hit(x))
-        tiers.append({"label": stat["label"], "has": all_n - lack, "lack": lack,
-                      "pct": round((all_n - lack) / all_n * 100)})
+        tiers.append(
+            {
+                "label": stat["label"],
+                "has": all_n - lack,
+                "lack": lack,
+                "pct": round((all_n - lack) / all_n * 100),
+            }
+        )
     return tiers
 
 
@@ -157,9 +205,14 @@ def build_overview_view(conf: list, owned: set, count_info: dict, name: str) -> 
         "username": name,
         "avatar": "",
         "scopeText": f"已有 {has} / {total} 款",
-        "worthText": (f"估值 {worth} 点券{f' · 绝版 {not_for_sell}' if not_for_sell > 0 else ''}"
-                      if worth > 0 else ""),
-        "has": has, "missing": len(miss), "total": total,
+        "worthText": (
+            f"估值 {worth} 点券{f' · 绝版 {not_for_sell}' if not_for_sell > 0 else ''}"
+            if worth > 0
+            else ""
+        ),
+        "has": has,
+        "missing": len(miss),
+        "total": total,
         "totalKey": "全部皮肤",
         "pct": round(has / total * 100, 1) if total else 0,
         "tiers": _tier_counts(conf, miss),
@@ -183,7 +236,9 @@ def build_hero_view(hero: str, skins: list, owned: set, name: str) -> dict:
         "avatar": "",
         "scopeText": f"「{hero}」已有 {has} / {len(skins)} 款",
         "worthText": "",
-        "has": has, "missing": len(skins) - has, "total": len(skins),
+        "has": has,
+        "missing": len(skins) - has,
+        "total": len(skins),
         "totalKey": "该英雄皮肤",
         "pct": round(has / len(skins) * 100, 1) if skins else 0,
         "tiers": [],
@@ -202,14 +257,18 @@ def _skin_line(conf: dict) -> str:
     tier = pick_tier_text(conf.get("classTypeName"))
     price = int(conf.get("iPrice") or 0)
     title = conf.get("szTitle") or f"皮肤{conf.get('iSkinId')}"
-    return (title
-            + (f"[{tier}]" if tier else "") + (f" {price}点券" if price > 0 else ""))
+    return (
+        title + (f"[{tier}]" if tier else "") + (f" {price}点券" if price > 0 else "")
+    )
 
 
 def render_hero(hero: str, skins: list, owned: set, name: str) -> str:
-    lines = [f"🎨 {name} 的「{hero}」皮肤",
-             f"共 {len(skins)} 款，已有 {sum(1 for x in skins if str(x.get('iSkinId')) in owned)}，"
-             f"还缺 {sum(1 for x in skins if str(x.get('iSkinId')) not in owned)}", ""]
+    lines = [
+        f"🎨 {name} 的「{hero}」皮肤",
+        f"共 {len(skins)} 款，已有 {sum(1 for x in skins if str(x.get('iSkinId')) in owned)}，"
+        f"还缺 {sum(1 for x in skins if str(x.get('iSkinId')) not in owned)}",
+        "",
+    ]
     for item in skins[:MAX_HERO_SKINS]:
         ok = str(item.get("iSkinId")) in owned
         lines.append(f"{'✅' if ok else '❌'} {_skin_line(item)}")
@@ -224,12 +283,16 @@ def render_overview(conf: list, owned: set, count_info: dict, name: str) -> str:
     total = len(conf)
     has = total - len(miss)
     pct = round(has / total * 100, 1) if total else 0
-    lines = [f"🎨 {name} 的皮肤收集进度",
-             f"已有 {has} / {total} 款（{pct}%），还缺 {len(miss)} 款"]
+    lines = [
+        f"🎨 {name} 的皮肤收集进度",
+        f"已有 {has} / {total} 款（{pct}%），还缺 {len(miss)} 款",
+    ]
     worth = int((count_info or {}).get("totalValue") or 0)
     not_for_sell = int((count_info or {}).get("notForSell") or 0)
     if worth > 0:
-        lines.append(f"已有皮肤估值 {worth} 点券{f'，其中绝版 {not_for_sell} 款' if not_for_sell > 0 else ''}")
+        lines.append(
+            f"已有皮肤估值 {worth} 点券{f'，其中绝版 {not_for_sell} 款' if not_for_sell > 0 else ''}"
+        )
     lines += ["", "📦 按品质"]
     for t in _tier_counts(conf, miss):
         lines.append(f"· {t['label']}：有 {t['has']} / 缺 {t['lack']}")
@@ -246,6 +309,9 @@ def render_overview(conf: list, owned: set, count_info: dict, name: str) -> str:
     if hero_top:
         lines += ["", "🕳️ 缺得最多的英雄"]
         lines.append(" · ".join(f"{h} {n}" for h, n in hero_top))
-    lines += ["", "发送 王者缺皮肤 妲己 看单个英雄缺哪几款",
-              "总数按营地全量配置表算，不含经典皮肤"]
+    lines += [
+        "",
+        "发送 王者缺皮肤 妲己 看单个英雄缺哪几款",
+        "总数按营地全量配置表算，不含经典皮肤",
+    ]
     return "\n".join(lines)

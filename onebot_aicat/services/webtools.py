@@ -2,6 +2,7 @@
 
 import re
 import time
+from typing import Any
 from urllib.parse import quote
 
 import aiohttp
@@ -96,7 +97,7 @@ _NAPCAT_DOC_URL_RE = re.compile(r"^https://napcat\.apifox\.cn/[A-Za-z0-9]+\.md$"
 _NAPCAT_LINE_RE = re.compile(
     r"^(?:-\s*)?(?P<cat>[^\[]*)\[(?P<title>[^\]]+)\]\((?P<url>[^)]+)\)(?::\s*(?P<desc>.*))?$"
 )
-_napcat_index_cache = {"text": "", "time": 0.0}
+_napcat_index_cache: dict[str, Any] = {"text": "", "time": 0.0}
 _NAPCAT_CACHE_TTL = 3600
 
 

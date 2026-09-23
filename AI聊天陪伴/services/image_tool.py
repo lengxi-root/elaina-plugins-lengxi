@@ -13,42 +13,71 @@ import aiohttp
 from . import config as config_store
 from . import network_tools
 
+
 def list_tool(routes: list[dict]) -> dict | None:
-    enabled = [item for item in routes if isinstance(item, dict) and item.get("enabled", True)]
+    enabled = [
+        item for item in routes if isinstance(item, dict) and item.get("enabled", True)
+    ]
     if not enabled:
         return None
-    return {"type": "function", "function": {"name": "list_image_routes", "description": "列出当前可用的生图线路和模型。仅在确实需要生成图片时调用。", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}}
+    return {
+        "type": "function",
+        "function": {
+            "name": "list_image_routes",
+            "description": "列出当前可用的生图线路和模型。仅在确实需要生成图片时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    }
 
 
 def list_routes(routes: list[dict]) -> dict:
-    return {"ok": True, "routes": [{"route_id": str(index), "provider_id": str(item.get("provider_id") or ""), "model": str(item.get("model") or "")} for index, item in enumerate(routes) if isinstance(item, dict) and item.get("enabled", True)]}
+    return {
+        "ok": True,
+        "routes": [
+            {
+                "route_id": str(index),
+                "provider_id": str(item.get("provider_id") or ""),
+                "model": str(item.get("model") or ""),
+            }
+            for index, item in enumerate(routes)
+            if isinstance(item, dict) and item.get("enabled", True)
+        ],
+    }
 
 
 def tool(routes: list[dict]) -> dict:
-    route_ids = [str(index) for index, item in enumerate(routes) if isinstance(item, dict) and item.get("enabled", True)]
+    route_ids = [
+        str(index)
+        for index, item in enumerate(routes)
+        if isinstance(item, dict) and item.get("enabled", True)
+    ]
     return {
-    "type": "function",
-    "function": {
-        "name": "generate_image",
+        "type": "function",
+        "function": {
+            "name": "generate_image",
             "description": (
-            "在用户希望看图、要求绘制角色或当前对话自然适合用图片表达时生成一张图。"
-            "画面会自动保持后台设置的固定视觉人设和性格，不要在 prompt 中覆盖它们。"
-            "不要频繁调用；调用后继续自然对话，不要报告工具状态。"
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "prompt": {
-                    "type": "string",
-                    "description": "本次画面的场景、动作、构图、服装、光线和风格",
+                "在用户希望看图、要求绘制角色或当前对话自然适合用图片表达时生成一张图。"
+                "画面会自动保持后台设置的固定视觉人设和性格，不要在 prompt 中覆盖它们。"
+                "不要频繁调用；调用后继续自然对话，不要报告工具状态。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "本次画面的场景、动作、构图、服装、光线和风格",
+                    },
+                    "route_id": {"type": "string", "enum": route_ids},
                 },
-                "route_id": {"type": "string", "enum": route_ids},
+                "required": ["prompt"],
+                "additionalProperties": False,
             },
-            "required": ["prompt"],
-            "additionalProperties": False,
         },
-    },
-}
+    }
 
 
 TOOL = tool([])

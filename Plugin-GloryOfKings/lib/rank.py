@@ -22,8 +22,12 @@ _INVISIBLE_RE = (
 _PRIVATE_USE_RE = "\ue000-\uf8ff"
 
 _TIER_WEIGHT = {
-    "倔强青铜": 1, "秩序白银": 2, "荣耀黄金": 3,
-    "尊贵铂金": 4, "永恒钻石": 5, "至尊星耀": 6,
+    "倔强青铜": 1,
+    "秩序白银": 2,
+    "荣耀黄金": 3,
+    "尊贵铂金": 4,
+    "永恒钻石": 5,
+    "至尊星耀": 6,
 }
 # 王者段 (最强/非凡/无双/绝世/至圣/荣耀/传奇王者) 的 rankingStar 跨子段累计,
 _KING_WEIGHT = 7
@@ -33,7 +37,8 @@ _ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5}
 def normalize_name(name) -> str:
     cleaned = str(name or "")
     cleaned = "".join(
-        ch for ch in cleaned
+        ch
+        for ch in cleaned
         if not _in_class(ch, _INVISIBLE_RE) and not _in_class(ch, _PRIVATE_USE_RE)
     ).strip()
     return cleaned or "无名召唤师"
@@ -66,7 +71,7 @@ def calc_rank_sort(rank_name: str = "", rank_star: int = 0) -> int:
     tier_key = next((k for k in _TIER_WEIGHT if k in name), None)
     if not tier_key:
         return 0
-    roman = re.match(r"^(I{1,3}|IV|V)$", name[len(tier_key):])
+    roman = re.match(r"^(I{1,3}|IV|V)$", name[len(tier_key) :])
     sub_tier = (6 - _ROMAN[roman.group(1)]) if roman else 0
     return _TIER_WEIGHT[tier_key] * 100000 + sub_tier * 1000 + star
 
@@ -77,8 +82,17 @@ def extract_rank_info(profile_data: dict) -> dict | None:
     mods = (data.get("head") or {}).get("mods")
     if not data or not isinstance(mods, list):
         return None
-    role = next((r for r in (data.get("roleList") or [])
-                 if str(r.get("roleId")) == str(data.get("targetRoleId"))), None) or {}
+    role = (
+        next(
+            (
+                r
+                for r in (data.get("roleList") or [])
+                if str(r.get("roleId")) == str(data.get("targetRoleId"))
+            ),
+            None,
+        )
+        or {}
+    )
 
     def mod(mod_id):
         return next((m for m in mods if m.get("modId") == mod_id), None) or {}
@@ -106,7 +120,9 @@ def extract_rank_info(profile_data: dict) -> dict | None:
         "rankStar": rank_star,
         "rankSort": calc_rank_sort(rank_name, rank_star),
         "peakScore": peak_score,
-        "peakDesc": str(peak_score) if peak_score > 0 else str(param_peak.get("desc") or "未继承"),
+        "peakDesc": str(peak_score)
+        if peak_score > 0
+        else str(param_peak.get("desc") or "未继承"),
     }
 
 
@@ -128,7 +144,9 @@ class RankSnapshot:
             data = {}
         return {
             "updatedAt": int((data or {}).get("updatedAt") or 0),
-            "entries": (data or {}).get("entries") if isinstance((data or {}).get("entries"), dict) else {},
+            "entries": (data or {}).get("entries")
+            if isinstance((data or {}).get("entries"), dict)
+            else {},
         }
 
     def write(self, snapshot: dict) -> None:
@@ -142,12 +160,21 @@ class RankSnapshot:
             pass
 
 
-async def collect_rank_data(api, snapshot: RankSnapshot, targets: list,
-                            force: bool = False, ttl: int = SNAPSHOT_TTL) -> dict:
+async def collect_rank_data(
+    api,
+    snapshot: RankSnapshot,
+    targets: list,
+    force: bool = False,
+    ttl: int = SNAPSHOT_TTL,
+) -> dict:
     """逐个拉 profile 采集排名数据 (targets: [(营地ID, 属主QQ)], 用属主登录态拉, 分摊风控)。"""
     old = snapshot.read()
-    if not force and old["updatedAt"] and time.time() * 1000 - old["updatedAt"] < ttl \
-            and old["entries"]:
+    if (
+        not force
+        and old["updatedAt"]
+        and time.time() * 1000 - old["updatedAt"] < ttl
+        and old["entries"]
+    ):
         return {**old, "fromCache": True}
 
     entries = {}
@@ -170,7 +197,11 @@ async def collect_rank_data(api, snapshot: RankSnapshot, targets: list,
             info = extract_rank_info(profile)
             break
         if info:
-            entries[camp_id] = {**info, "campId": str(camp_id), "updatedAt": int(time.time() * 1000)}
+            entries[camp_id] = {
+                **info,
+                "campId": str(camp_id),
+                "updatedAt": int(time.time() * 1000),
+            }
         elif old["entries"].get(str(camp_id)):
             entries[camp_id] = old["entries"][str(camp_id)]
         await asyncio.sleep(1.2)
@@ -180,7 +211,9 @@ async def collect_rank_data(api, snapshot: RankSnapshot, targets: list,
     return {**result, "fromCache": False}
 
 
-def build_rank_list(entries: dict, rank_type: str, camp_ids=None, owner_map=None) -> list:
+def build_rank_list(
+    entries: dict, rank_type: str, camp_ids=None, owner_map=None
+) -> list:
     """按维度生成榜单; rank_type: rank=排位 / peak=巅峰分"""
     owner_map = owner_map or {}
     allow = {str(x) for x in camp_ids} if camp_ids is not None else None
@@ -188,19 +221,29 @@ def build_rank_list(entries: dict, rank_type: str, camp_ids=None, owner_map=None
     for item in (entries or {}).values():
         if allow is not None and str(item.get("campId")) not in allow:
             continue
-        item = {**item,
-                "roleName": normalize_name(item.get("roleName")),
-                "rankSort": calc_rank_sort(item.get("rankName"), item.get("rankStar"))}
+        item = {
+            **item,
+            "roleName": normalize_name(item.get("roleName")),
+            "rankSort": calc_rank_sort(item.get("rankName"), item.get("rankStar")),
+        }
         if rank_type == "peak":
             if int(item.get("peakScore") or 0) > 0:
                 items.append(item)
         elif int(item.get("rankSort") or 0) > 0:
             items.append(item)
-    items.sort(key=lambda x: -(x["peakScore"] if rank_type == "peak" else x["rankSort"]))
-    return [{
-        **item,
-        "index": idx + 1,
-        "botUserId": owner_map.get(str(item.get("campId"))) or "",
-        "value": (str(item.get("peakScore")) if rank_type == "peak"
-                  else f"{item.get('rankName')} {item.get('rankStar')}星"),
-    } for idx, item in enumerate(items)]
+    items.sort(
+        key=lambda x: -(x["peakScore"] if rank_type == "peak" else x["rankSort"])
+    )
+    return [
+        {
+            **item,
+            "index": idx + 1,
+            "botUserId": owner_map.get(str(item.get("campId"))) or "",
+            "value": (
+                str(item.get("peakScore"))
+                if rank_type == "peak"
+                else f"{item.get('rankName')} {item.get('rankStar')}星"
+            ),
+        }
+        for idx, item in enumerate(items)
+    ]

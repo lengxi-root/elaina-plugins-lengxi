@@ -38,7 +38,7 @@ def _new_module(name: str) -> types.ModuleType:
 def _export(mod: types.ModuleType, **attrs):
     for k, v in attrs.items():
         setattr(mod, k, v)
-    mod.__all__ = list(attrs.keys())
+    setattr(mod, "__all__", list(attrs.keys()))
 
 
 # ---------- obscure astrbot.* 子模块兜底 (返回宽松 stub) ----------
@@ -402,7 +402,7 @@ def install():
     )
 
     # aiocqhttp 桩模块（官方接口不支持，仅用于导入和类型标注）
-    class AiocqhttpMessageEvent(bridge.AstrMessageEvent):  # noqa: N801
+    class AiocqhttpMessageEvent(bridge.AstrMessageEvent):
         """占位: QQ 官方接口下不可用。仅用于 import / isinstance / 类型标注。"""
 
     _export(plat_aiocq_evt, AiocqhttpMessageEvent=AiocqhttpMessageEvent)

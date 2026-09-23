@@ -8,12 +8,12 @@ from aiohttp import web
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.web_pages import register_route, unregister_route
 
-from ..storage import api as db
 from ..services import remote, state
 from ..services import rendering as fw_render
 from ..services import verification as verify
 from ..services.responses import api_error, render_template_preview
 from ..services.templates import list_reply_templates, save_reply_template
+from ..storage import api as db
 
 log = get_logger(PLUGIN, "群管面板")
 
@@ -552,7 +552,7 @@ async def _test_template(request):
                 details={"template_key": key, "error": str(error)},
             )
         return _failure(error, code="TEMPLATE_TEST_INVALID")
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:
         log.exception("发送测试模板失败: %s", error)
         if group_id and _is_managed_group(group_id, appid):
             db.record_web_action(

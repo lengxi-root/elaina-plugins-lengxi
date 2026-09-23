@@ -10,11 +10,11 @@ from itertools import chain
 
 from core.plugin.decorators import interceptor
 
-from ..storage import api as db
 from ..services import state
 from ..services.responses import respond
 from ..services.server_time import MuteTimeRetry, build_mute_members
 from ..services.verification import send_verify
+from ..storage import api as db
 from ..storage.audit import record_audit, record_received, record_result
 
 _LINK_RE = re.compile(
@@ -155,8 +155,10 @@ async def _apply_policy(event, trigger, policy, notice=None, notify=False):
 
 _NOTIFY_INTERVAL = 600  # 同一群同一用户的撤回提醒间隔(秒), 防提醒刷屏
 _MAX_NOTIFY_ENTRIES = 4096
-_notify_last = OrderedDict()  # 群号与用户号的组合键对应时间戳
-_spam_locks = weakref.WeakValueDictionary()
+_notify_last: OrderedDict[tuple[str, str], float] = OrderedDict()  # 群用户提醒时间
+_spam_locks: weakref.WeakValueDictionary[tuple[str, str], asyncio.Lock] = (
+    weakref.WeakValueDictionary()
+)
 
 
 def _can_notify(gid, uid):

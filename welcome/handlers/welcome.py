@@ -26,7 +26,6 @@ import time
 from datetime import datetime
 
 from aiohttp import web
-
 from core.base.logger import PLUGIN, get_logger, report_error
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, register_route, unregister_page
@@ -35,7 +34,7 @@ __plugin_meta__ = {
     "name": "群成员入群欢迎",
     "author": "ElainaBot",
     "description": "群成员入群自动欢迎推送, 支持召回模式/欢迎模式、黑白名单、每日上限, 含 Web 面板",
-    "version": "2.0.2",
+    "version": "2.0.3",
     "github": "https://github.com/ElainaCore/Elaina-plugins",
     "license": "MIT",
 }
@@ -1466,6 +1465,7 @@ async def _cleanup():
     async with _delay_lock:
         _delay_queue.clear()
         _merge_group_qid.clear()
+
     def close_connection():
         global _conn
         if _conn is not None:

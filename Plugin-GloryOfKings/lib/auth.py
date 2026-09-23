@@ -1,13 +1,13 @@
 """登录态账号池 + 微信扫码登录 (营地接口唯一鉴权来源)"""
 
+import asyncio
+import base64
+import datetime
+import hashlib
 import json
+import threading
 import time
 import uuid
-import base64
-import asyncio
-import hashlib
-import threading
-import datetime
 
 import aiohttp
 
@@ -21,7 +21,8 @@ WX_POLL_URL = "https://long.open.weixin.qq.com/connect/l/qrconnect"
 DEFAULT_PUBLIC_KEY = (
     "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC0h62mV/zjJtFsNdfFNlxksfUOpjDI2KCc"
     "BrPiA8T7szABT4InLDTrdXAW84QyGNiazB0i7pgPCNGSAYbiJrCRutZ5jQsVS0Wg/RnXfwVQ"
-    "DJcAHJDjP5IXyroeLX7NUxDai8nPcpfRsvq6sneobyPexZSH0TlVSnecsJZTj5wu/wIDAQAB")
+    "DJcAHJDjP5IXyroeLX7NUxDai8nPcpfRsvq6sneobyPexZSH0TlVSnecsJZTj5wu/wIDAQAB"
+)
 
 _PUB_N, _PUB_E = crypto.parse_public_key(DEFAULT_PUBLIC_KEY)
 
@@ -80,24 +81,52 @@ def _s(value) -> str:
 
 # 账号字段 (与 Gitee 一致, 仅保留本框架用得到的)
 _ACCOUNT_STR_FIELDS = (
-    "userId", "token", "userKey", "encodeRes", "openId", "gameOpenId",
-    "gameRoleId", "gameServerId", "gameAreaId", "gameUserSex", "kohDimGender",
-    "accessToken", "refreshToken", "appOpenid", "avatar", "bigAvatar", "icon",
-    "nickname", "snsnickname", "userName", "sex", "expires", "uin", "userSig",
-    "loginPlatform", "ownerBotUserId", "remark", "lastLoginAt", "lastSuccessAt",
-    "lastAuthErrorAt", "lastAuthErrorMessage",
+    "userId",
+    "token",
+    "userKey",
+    "encodeRes",
+    "openId",
+    "gameOpenId",
+    "gameRoleId",
+    "gameServerId",
+    "gameAreaId",
+    "gameUserSex",
+    "kohDimGender",
+    "accessToken",
+    "refreshToken",
+    "appOpenid",
+    "avatar",
+    "bigAvatar",
+    "icon",
+    "nickname",
+    "snsnickname",
+    "userName",
+    "sex",
+    "expires",
+    "uin",
+    "userSig",
+    "loginPlatform",
+    "ownerBotUserId",
+    "remark",
+    "lastLoginAt",
+    "lastSuccessAt",
+    "lastAuthErrorAt",
+    "lastAuthErrorMessage",
 )
 
 
 def _is_usable(acc: dict) -> bool:
-    return bool(acc.get("token") and acc.get("userId")
-               and (acc.get("userKey") or acc.get("encodeRes")))
+    return bool(
+        acc.get("token")
+        and acc.get("userId")
+        and (acc.get("userKey") or acc.get("encodeRes"))
+    )
 
 
 class AuthStore:
     """登录态账号池 (AuthPool.json)。"""
 
-    __slots__ = ("_path", "_lock", "_pool")
+    __slots__ = ("_lock", "_path", "_pool")
 
     def __init__(self, path: str):
         self._path = path
@@ -121,6 +150,7 @@ class AuthStore:
 
     def _save(self):
         import os
+
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
         tmp = f"{self._path}.tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -137,15 +167,19 @@ class AuthStore:
             if field == "userId":
                 continue
             out[field] = _s(account.get(field, existing.get(field, "")))
-        out["authInvalid"] = bool(account.get(
-            "authInvalid", existing.get("authInvalid", False)))
-        out["authErrorCount"] = int(account.get(
-            "authErrorCount", existing.get("authErrorCount", 0)) or 0)
-        out["isGlobalDefault"] = bool(account.get(
-            "isGlobalDefault", existing.get("isGlobalDefault", False)))
+        out["authInvalid"] = bool(
+            account.get("authInvalid", existing.get("authInvalid", False))
+        )
+        out["authErrorCount"] = int(
+            account.get("authErrorCount", existing.get("authErrorCount", 0)) or 0
+        )
+        out["isGlobalDefault"] = bool(
+            account.get("isGlobalDefault", existing.get("isGlobalDefault", False))
+        )
         try:
-            out["priority"] = int(account.get(
-                "priority", existing.get("priority", 100)))
+            out["priority"] = int(
+                account.get("priority", existing.get("priority", 100))
+            )
         except (TypeError, ValueError):
             out["priority"] = 100
         out["updatedAt"] = _now_iso()
@@ -155,16 +189,18 @@ class AuthStore:
 
     def list_accounts(self) -> list:
         with self._lock:
-            return [json.loads(json.dumps(a))
-                    for a in self._pool["accounts"].values()]
+            return [json.loads(json.dumps(a)) for a in self._pool["accounts"].values()]
 
     @staticmethod
     def _sort_by_priority(accounts: list) -> list:
-        return sorted(accounts, key=lambda a: (
-            0 if a.get("isGlobalDefault") else 1,
-            int(a.get("priority", 100) or 100),
-            _s(a.get("userId")),
-        ))
+        return sorted(
+            accounts,
+            key=lambda a: (
+                0 if a.get("isGlobalDefault") else 1,
+                int(a.get("priority", 100) or 100),
+                _s(a.get("userId")),
+            ),
+        )
 
     def get_auth_candidates(self, requester_qq: str = "") -> list:
         """返回可用候选账号 (深拷贝), 顺序: 本人的营地账号 → 全局登录态。
@@ -189,11 +225,16 @@ class AuthStore:
 
             if requester_qq:
                 for acc in self._sort_by_priority(
-                        [a for a in accounts.values()
-                         if _s(a.get("ownerBotUserId")) == _s(requester_qq)]):
+                    [
+                        a
+                        for a in accounts.values()
+                        if _s(a.get("ownerBotUserId")) == _s(requester_qq)
+                    ]
+                ):
                     push(acc)
             for acc in self._sort_by_priority(
-                    [a for a in accounts.values() if a.get("isGlobalDefault")]):
+                [a for a in accounts.values() if a.get("isGlobalDefault")]
+            ):
                 push(acc)
             return out
 
@@ -207,8 +248,12 @@ class AuthStore:
             existing = self._pool["accounts"].get(uid)
             if account.get("resetAuthState"):
                 account = dict(account)
-                account.update(authInvalid=False, authErrorCount=0,
-                               lastAuthErrorAt="", lastAuthErrorMessage="")
+                account.update(
+                    authInvalid=False,
+                    authErrorCount=0,
+                    lastAuthErrorAt="",
+                    lastAuthErrorMessage="",
+                )
                 account.pop("resetAuthState", None)
             nxt = self._normalize(account, existing)
             nxt.setdefault("lastLoginAt", _now_iso())
@@ -294,6 +339,7 @@ class AuthStore:
 
 # ==================== 微信扫码登录 ====================
 
+
 class LoginError(Exception):
     """扫码登录失败 (含 code: QR_EXPIRED/QR_CANCELED/QR_TIMEOUT/QR_ERROR)。"""
 
@@ -308,6 +354,7 @@ def _sha1(text: str) -> str:
 
 def _build_nonce(length: int = 8) -> str:
     import random
+
     return "".join(str(random.randint(0, 9)) for _ in range(length))
 
 
@@ -339,8 +386,9 @@ def _build_special_encode_param() -> str:
         "wifi_mac": "02:00:00:00:00:00",
     }
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    return base64.b64encode(
-        crypto.rsa_public_encrypt(raw, _PUB_N, _PUB_E)).decode("ascii")
+    return base64.b64encode(crypto.rsa_public_encrypt(raw, _PUB_N, _PUB_E)).decode(
+        "ascii"
+    )
 
 
 async def _request_json(session, url, *, method="GET", headers=None, data=None):
@@ -355,8 +403,11 @@ async def _request_json(session, url, *, method="GET", headers=None, data=None):
 
 async def _fetch_sdk_ticket(session, x_log_uid: str) -> str:
     status, payload, text = await _request_json(
-        session, f"{CAMP_BASE_URL}/a/getwxsdkticket",
-        method="POST", headers={**_COMMON_HEADERS, "x-log-uid": x_log_uid})
+        session,
+        f"{CAMP_BASE_URL}/a/getwxsdkticket",
+        method="POST",
+        headers={**_COMMON_HEADERS, "x-log-uid": x_log_uid},
+    )
     ticket = (payload.get("data") or {}).get("sdkTicket")
     if status != 200 or payload.get("returnCode") != 0 or not ticket:
         raise LoginError(f"获取登录 SDK Ticket 失败: {text[:200]}")
@@ -367,10 +418,14 @@ async def _fetch_qr_code(session, ticket: str) -> dict:
     nonce = _build_nonce()
     timestamp = str(int(time.time()))
     signature = _sha1(
-        f"appid={APPID_WX}&noncestr={nonce}&sdk_ticket={ticket}&timestamp={timestamp}")
+        f"appid={APPID_WX}&noncestr={nonce}&sdk_ticket={ticket}&timestamp={timestamp}"
+    )
     params = {
-        "appid": APPID_WX, "noncestr": nonce, "timestamp": timestamp,
-        "scope": "snsapi_userinfo", "signature": signature,
+        "appid": APPID_WX,
+        "noncestr": nonce,
+        "timestamp": timestamp,
+        "scope": "snsapi_userinfo",
+        "signature": signature,
     }
     async with session.get(WX_QR_URL, params=params) as resp:
         text = await resp.text()
@@ -388,33 +443,64 @@ async def _fetch_qr_code(session, ticket: str) -> dict:
 async def _login_with_code(session, code: str, x_log_uid: str) -> dict:
     special = _build_special_encode_param()
     form = {
-        "loginType": "wx", "code": code, "delOldUser": "0",
-        "key1": _uuid_hex(), "lastLoginTime": "0", "lastGetRemarkTime": "0",
-        "cChannelId": "10003391", "cClientVersionCode": "2057957801",
-        "cClientVersionName": "10.111.0323", "cCurrentGameId": "20001",
-        "cGameId": "20001", "cGzip": "1", "cIsArm64": "true",
-        "cRand": str(int(time.time() * 1000)), "cSupportArm64": "true",
-        "cSystem": "android", "cSystemVersionCode": "34",
-        "cSystemVersionName": "14", "cpuHardware": "qcom", "gameId": "20001",
-        "tinkerId": "2057957801_64_0", "specialEncodeParam": special,
+        "loginType": "wx",
+        "code": code,
+        "delOldUser": "0",
+        "key1": _uuid_hex(),
+        "lastLoginTime": "0",
+        "lastGetRemarkTime": "0",
+        "cChannelId": "10003391",
+        "cClientVersionCode": "2057957801",
+        "cClientVersionName": "10.111.0323",
+        "cCurrentGameId": "20001",
+        "cGameId": "20001",
+        "cGzip": "1",
+        "cIsArm64": "true",
+        "cRand": str(int(time.time() * 1000)),
+        "cSupportArm64": "true",
+        "cSystem": "android",
+        "cSystemVersionCode": "34",
+        "cSystemVersionName": "14",
+        "cpuHardware": "qcom",
+        "gameId": "20001",
+        "tinkerId": "2057957801_64_0",
+        "specialEncodeParam": special,
     }
     headers = {
-        **_COMMON_HEADERS, "x-log-uid": x_log_uid,
+        **_COMMON_HEADERS,
+        "x-log-uid": x_log_uid,
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "cChannelId": "10003391", "cClientVersionCode": "2057957801",
-        "cClientVersionName": "10.111.0323", "cCurrentGameId": "20001",
-        "cGameId": "20001", "cGzip": "1", "cIsArm64": "true",
-        "cRand": str(int(time.time() * 1000)), "cSupportArm64": "true",
-        "cSystem": "android", "cSystemVersionCode": "34",
-        "cSystemVersionName": "14", "cpuHardware": "qcom", "gameId": "20001",
-        "tinkerId": "2057957801_64_0", "specialEncodeParam": special,
+        "cChannelId": "10003391",
+        "cClientVersionCode": "2057957801",
+        "cClientVersionName": "10.111.0323",
+        "cCurrentGameId": "20001",
+        "cGameId": "20001",
+        "cGzip": "1",
+        "cIsArm64": "true",
+        "cRand": str(int(time.time() * 1000)),
+        "cSupportArm64": "true",
+        "cSystem": "android",
+        "cSystemVersionCode": "34",
+        "cSystemVersionName": "14",
+        "cpuHardware": "qcom",
+        "gameId": "20001",
+        "tinkerId": "2057957801_64_0",
+        "specialEncodeParam": special,
     }
     status, payload, text = await _request_json(
-        session, f"{CAMP_BASE_URL}/user/login",
-        method="POST", headers=headers, data=form)
+        session,
+        f"{CAMP_BASE_URL}/user/login",
+        method="POST",
+        headers=headers,
+        data=form,
+    )
     data = payload.get("data") or {}
-    if status != 200 or payload.get("returnCode") != 0 or not data.get("userId") \
-            or not data.get("token"):
+    if (
+        status != 200
+        or payload.get("returnCode") != 0
+        or not data.get("userId")
+        or not data.get("token")
+    ):
         raise LoginError(f"营地登录失败: {text[:200]}")
     return payload
 
@@ -424,7 +510,9 @@ def build_account_from_login(payload: dict) -> dict:
     encode_res = _s(data.get("encodeRes"))
     user_key = _s(data.get("userKey"))
     if not user_key and encode_res:
-        user_key = _s(crypto.decode_encode_res(encode_res, _PUB_N, _PUB_E).get("userKey"))
+        user_key = _s(
+            crypto.decode_encode_res(encode_res, _PUB_N, _PUB_E).get("userKey")
+        )
     return {
         "userId": _s(data.get("userId")),
         "token": _s(data.get("token")),
@@ -462,8 +550,13 @@ async def create_login_session() -> dict:
         }
 
 
-async def wait_for_login(session_info: dict, *, timeout_s: int = 180,
-                         poll_interval_s: float = 2.0, on_status=None) -> dict:
+async def wait_for_login(
+    session_info: dict,
+    *,
+    timeout_s: int = 180,
+    poll_interval_s: float = 2.0,
+    on_status=None,
+) -> dict:
     """轮询扫码状态, 成功返回 {account, loginResponse}; 失败抛 LoginError。"""
     started = time.time()
     last_summary = ""
@@ -471,8 +564,8 @@ async def wait_for_login(session_info: dict, *, timeout_s: int = 180,
         while time.time() - started < timeout_s:
             try:
                 async with session.get(
-                        WX_POLL_URL,
-                        params={"f": "json", "uuid": session_info["uuid"]}) as resp:
+                    WX_POLL_URL, params={"f": "json", "uuid": session_info["uuid"]}
+                ) as resp:
                     text = await resp.text()
                 try:
                     payload = json.loads(text)
@@ -497,7 +590,8 @@ async def wait_for_login(session_info: dict, *, timeout_s: int = 180,
 
             if auth_code and status_code == 405:
                 login_response = await _login_with_code(
-                    session, auth_code, session_info["xLogUid"])
+                    session, auth_code, session_info["xLogUid"]
+                )
                 return {
                     "loginResponse": login_response,
                     "account": build_account_from_login(login_response),

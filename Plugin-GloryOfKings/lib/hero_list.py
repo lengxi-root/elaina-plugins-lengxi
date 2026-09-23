@@ -44,7 +44,7 @@ def to_percent(rate) -> str:
 
 
 def split_hero_name(raw_name: str) -> tuple[str, str]:
-    """"元流之子(射手)" → ("元流之子", "射手")"""
+    """ "元流之子(射手)" → ("元流之子", "射手")"""
     text = raw_name or ""
     matched = re.match(r"^(.+?)\s*[（(]([^）)]+)[）)]\s*$", text)
     if matched:
@@ -89,24 +89,40 @@ async def fetch_season_heroes(api, role_id: str) -> dict:
             key = str(hero_id)
             item = merged.get(key)
             if not item:
-                item = {"heroId": hero_id, "rawName": hero.get("heroName") or "",
-                        "imgUrl": "", "fightPower": 0, "honorTitle": None,
-                        "rank": None, "peak": None, "totalCnt": 0}
+                item = {
+                    "heroId": hero_id,
+                    "rawName": hero.get("heroName") or "",
+                    "imgUrl": "",
+                    "fightPower": 0,
+                    "honorTitle": None,
+                    "rank": None,
+                    "peak": None,
+                    "totalCnt": 0,
+                }
                 merged[key] = item
-            item["fightPower"] = max(item["fightPower"], _int(hero.get("heroFightPower")))
+            item["fightPower"] = max(
+                item["fightPower"], _int(hero.get("heroFightPower"))
+            )
             item["honorTitle"] = item["honorTitle"] or hero.get("honorTitle")
             item["imgUrl"] = item["imgUrl"] or hero.get("heroLandscapeIcon") or ""
-            item[mode] = {"gameCnt": _int(hero.get("gameCnt")),
-                          "winRate": to_percent(hero.get("winRate"))}
+            item[mode] = {
+                "gameCnt": _int(hero.get("gameCnt")),
+                "winRate": to_percent(hero.get("winRate")),
+            }
             item["totalCnt"] += _int(hero.get("gameCnt"))
 
     collect((behavior.get("rankInfo") or {}).get("heros"), "rank")
     collect((behavior.get("masterInfo") or {}).get("heros"), "peak")
 
     # 战力相同时 (如同为满战力) 按两模式总场次排前面
-    heroes = sorted(merged.values(),
-                    key=lambda h: (-h["fightPower"], -h["totalCnt"]))[:SHOW_COUNT]
-    return {"heroes": heroes, "scopeName": current.get("seasonName") or "", "showModes": True}
+    heroes = sorted(merged.values(), key=lambda h: (-h["fightPower"], -h["totalCnt"]))[
+        :SHOW_COUNT
+    ]
+    return {
+        "heroes": heroes,
+        "scopeName": current.get("seasonName") or "",
+        "showModes": True,
+    }
 
 
 async def fetch_career_heroes(api, camp_id: str, role_id: str) -> dict:
@@ -118,17 +134,22 @@ async def fetch_career_heroes(api, camp_id: str, role_id: str) -> dict:
     heroes = []
     for hero in ((res or {}).get("data") or {}).get("heroList") or []:
         basic = hero.get("basicInfo") or {}
-        heroes.append({
-            "heroId": basic.get("heroId"),
-            "rawName": basic.get("title") or "",
-            "imgUrl": "",
-            "fightPower": _int(basic.get("heroFightPower")),
-            "honorTitle": hero.get("honorTitle"),
-            "career": {"gameCnt": _int(basic.get("playNum")),
-                       "winRate": basic.get("winRate") or "-"},
-            "rank": None, "peak": None,
-            "totalCnt": _int(basic.get("playNum")),
-        })
+        heroes.append(
+            {
+                "heroId": basic.get("heroId"),
+                "rawName": basic.get("title") or "",
+                "imgUrl": "",
+                "fightPower": _int(basic.get("heroFightPower")),
+                "honorTitle": hero.get("honorTitle"),
+                "career": {
+                    "gameCnt": _int(basic.get("playNum")),
+                    "winRate": basic.get("winRate") or "-",
+                },
+                "rank": None,
+                "peak": None,
+                "totalCnt": _int(basic.get("playNum")),
+            }
+        )
     heroes.sort(key=lambda h: (-h["fightPower"], -h["totalCnt"]))
     return {"heroes": heroes[:SHOW_COUNT], "scopeName": "生涯累计", "showModes": False}
 
@@ -145,8 +166,11 @@ async def _resolve_hero_image(hero: dict) -> str:
 
 async def _probe_image(url: str, timeout: float = 6.0) -> bool:
     import aiohttp
+
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=timeout)
+        ) as session:
             async with session.get(url) as resp:
                 ctype = (resp.headers.get("Content-Type") or "").split(";", 1)[0]
                 return resp.status == 200 and ctype.startswith("image/")
@@ -156,7 +180,7 @@ async def _probe_image(url: str, timeout: float = 6.0) -> bool:
 
 async def build_hero_card(hero: dict) -> dict:
     """补齐渲染要用的头像、配色和称号图标"""
-    name, sub_name = split_hero_name(hero.get("rawName"))
+    name, sub_name = split_hero_name(str(hero.get("rawName") or ""))
     honor = hero.get("honorTitle") or {}
     honor_type = honor.get("type")
     desc = honor.get("desc") or {}
@@ -174,6 +198,7 @@ async def build_hero_card(hero: dict) -> dict:
         "fightPower": hero.get("fightPower") or "-",
         "fightColor": fight_color(hero.get("fightPower")),
         "honorIcon": _HONOR_ICON if honor_type else "",
-        "honorText": simplify_hero_name(desc.get("full") or desc.get("name")
-                                        or desc.get("abbr") or ""),
+        "honorText": simplify_hero_name(
+            desc.get("full") or desc.get("name") or desc.get("abbr") or ""
+        ),
     }

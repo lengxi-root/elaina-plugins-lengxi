@@ -4,9 +4,7 @@ import json
 
 import aiohttp
 
-from . import aiconfig
-from . import modelmgr
-from . import safety
+from . import aiconfig, modelmgr, safety
 from . import tools as toolmod
 
 

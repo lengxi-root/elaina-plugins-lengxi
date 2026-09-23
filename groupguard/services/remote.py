@@ -116,15 +116,21 @@ def _backend_tables():
     legacy = {
         key: value
         for key, value in backend.items()
-        if key in {"enabled", "url", "app_id", "robot_appid", "secret", "sync_interval_seconds"}
+        if key
+        in {
+            "enabled",
+            "url",
+            "app_id",
+            "robot_appid",
+            "secret",
+            "sync_interval_seconds",
+        }
     }
     if legacy:
         legacy_robot_appid = str(legacy.get("robot_appid") or "").strip()
         if not _ROBOT_APP_ID_PATTERN.fullmatch(legacy_robot_appid):
             candidates = _running_robot_appids() or _configured_robot_appids()
-            legacy_robot_appid = (
-                next(iter(candidates)) if len(candidates) == 1 else ""
-            )
+            legacy_robot_appid = next(iter(candidates)) if len(candidates) == 1 else ""
         if legacy_robot_appid:
             tables.setdefault(legacy_robot_appid, legacy)
     return tables
@@ -152,9 +158,7 @@ def _validate_url(value):
 def _backend_values(robot_appid, backend=None):
     robot_appid = str(robot_appid or "").strip()
     backend = (
-        backend
-        if isinstance(backend, dict)
-        else _backend_tables().get(robot_appid, {})
+        backend if isinstance(backend, dict) else _backend_tables().get(robot_appid, {})
     )
     url = str(backend.get("url") or _DEFAULT_URL).strip().rstrip("/")
     app_id = str(backend.get("app_id") or "").strip()
@@ -446,7 +450,10 @@ async def _request_with(
         json=payload,
         allow_redirects=False,
     ) as response:
-        if response.content_length is not None and response.content_length > _MAX_RESPONSE_BYTES:
+        if (
+            response.content_length is not None
+            and response.content_length > _MAX_RESPONSE_BYTES
+        ):
             raise ValueError("后端响应体过大")
         try:
             raw = await response.content.read(_MAX_RESPONSE_BYTES + 1)
@@ -510,7 +517,7 @@ def _eligible_group_rows(external_user_ids, robot_appid):
                 )
                 or []
             )
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             log.warning("读取机器人 %s 群权限失败: %s", bot_appid, type(error).__name__)
             raise RuntimeError("机器人群权限读取失败，已保留原有权限") from error
         for row in rows:
@@ -528,10 +535,11 @@ def _eligible_group_rows(external_user_ids, robot_appid):
                 continue
             # 成员存储细节由框架接口封装 (group_admin_ids_sync 返回群主与管理员)
             try:
-                administrators = set(
-                    log_service.group_admin_ids_sync(group_id) or [])
+                administrators = set(log_service.group_admin_ids_sync(group_id) or [])
             except Exception as error:  # noqa: BLE001
-                log.warning("读取群 %s 成员角色失败: %s", group_id, type(error).__name__)
+                log.warning(
+                    "读取群 %s 成员角色失败: %s", group_id, type(error).__name__
+                )
                 continue
             for user_id in wanted & administrators:
                 discovered[user_id][group_id] = {
@@ -660,7 +668,12 @@ async def _start_runtime(robot_appid):
     if not settings:
         return False
     existing = _runtimes.get(robot_appid)
-    if existing and not existing.session.closed and existing.task and not existing.task.done():
+    if (
+        existing
+        and not existing.session.closed
+        and existing.task
+        and not existing.task.done()
+    ):
         return True
     if existing:
         await stop(robot_appid)

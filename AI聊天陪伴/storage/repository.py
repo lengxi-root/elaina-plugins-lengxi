@@ -90,7 +90,7 @@ def append(scope: str, role: str, content: str, max_messages: int = 0) -> int:
                 (scope, scope, max_messages),
             )
         _conn().commit()
-        return int(cursor.lastrowid)
+        return int(cursor.lastrowid or 0)
 
 
 def clear_messages(scope: str = "") -> int:
@@ -122,11 +122,7 @@ def history(scope: str, limit: int, expire_seconds: int) -> list[dict[str, str]]
         query = f"SELECT role, content FROM messages WHERE {where} ORDER BY id DESC"
         if limit > 0:
             query += " LIMIT ?"
-        rows = (
-            _conn()
-            .execute(query, params)
-            .fetchall()
-        )
+        rows = _conn().execute(query, params).fetchall()
     return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
 
 
@@ -165,9 +161,11 @@ def prune_expired(expire_seconds: int) -> dict:
 
 def get_summary(scope: str) -> str:
     with _lock:
-        row = _conn().execute(
-            "SELECT summary FROM context_summaries WHERE scope=?", (scope,)
-        ).fetchone()
+        row = (
+            _conn()
+            .execute("SELECT summary FROM context_summaries WHERE scope=?", (scope,))
+            .fetchone()
+        )
     return str(row["summary"] or "") if row else ""
 
 
@@ -226,7 +224,7 @@ def add_memory(scope: str, content: str, limit: int = 30) -> int:
                 (scope, scope, limit),
             )
         _conn().commit()
-        return int(cursor.lastrowid)
+        return int(cursor.lastrowid or 0)
 
 
 def memories(scopes: list[str], limit: int = 30) -> list[dict]:

@@ -6,12 +6,13 @@ import time
 import uuid
 import weakref
 from types import SimpleNamespace
+from typing import Any
 
 from .core import get_db
 
 AUDIT_LOG_TTL = 180 * 86400
 _MAX_DETAILS_JSON = 16384
-_trace_context = {}
+_trace_context: dict[int, dict[str, Any]] = {}
 _last_cleanup = 0
 
 _MANAGEMENT_ACTIONS = {
@@ -38,14 +39,14 @@ _MANAGEMENT_ACTIONS = {
 _MANAGEMENT_ACTIONS_SORTED = tuple(sorted(_MANAGEMENT_ACTIONS))
 _MANAGEMENT_PLACEHOLDERS = ",".join("?" for _ in _MANAGEMENT_ACTIONS_SORTED)
 _MANAGEMENT_BY_ACTION_SQL = (
-    "SELECT action, COUNT(DISTINCT trace_id) AS operations, "  # noqa: S608 - 仅拼接固定数量的参数占位符
+    "SELECT action, COUNT(DISTINCT trace_id) AS operations, "
     "SUM(affected_count) AS affected "
     "FROM audit_log WHERE group_id = ? AND time >= ? AND phase = 'result' "
     "AND success = 1 "
     f"AND action IN ({_MANAGEMENT_PLACEHOLDERS}) GROUP BY action"
 )
 _MANAGEMENT_BY_SOURCE_SQL = (
-    "WITH scoped AS ("  # noqa: S608 - 仅拼接固定数量的参数占位符
+    "WITH scoped AS ("
     "SELECT source, trace_id, success FROM audit_log "
     "WHERE group_id = ? AND time >= ? AND phase = 'result' "
     f"AND action IN ({_MANAGEMENT_PLACEHOLDERS})"
@@ -60,7 +61,7 @@ _MANAGEMENT_BY_SOURCE_SQL = (
     "FROM totals LEFT JOIN sources ON 1"
 )
 _RECENT_AUDIT_SQL = (
-    "SELECT a.time, a.trace_id, a.operator_id, a.target_id, a.action, "  # noqa: S608 - 仅拼接固定数量的参数占位符
+    "SELECT a.time, a.trace_id, a.operator_id, a.target_id, a.action, "
     "a.success, a.source, latest.affected_count, "
     "COALESCE((SELECT m.username FROM message_log m "
     "WHERE m.group_id = a.group_id AND m.user_id = a.target_id "

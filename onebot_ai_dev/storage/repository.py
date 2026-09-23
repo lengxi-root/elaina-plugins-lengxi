@@ -84,7 +84,7 @@ class AIStore:
             reverse=True,
         )
 
-    def get_session(self, sid: str) -> dict:
+    def get_session(self, sid: str) -> dict | None:
         return self._sessions.get(sid)
 
     async def create_session(

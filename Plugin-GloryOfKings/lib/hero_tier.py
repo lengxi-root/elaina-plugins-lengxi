@@ -17,7 +17,14 @@ POSITION_MAP = [
     (4, ["游走", "辅助", "游"]),
     (5, ["打野", "野"]),
 ]
-POSITION_LABEL = {0: "全部分路", 1: "对抗路", 2: "中路", 3: "发育路", 4: "游走", 5: "打野"}
+POSITION_LABEL = {
+    0: "全部分路",
+    1: "对抗路",
+    2: "中路",
+    3: "发育路",
+    4: "游走",
+    5: "打野",
+}
 
 TIER_COLOR = {"T0": "#d64545", "T1": "#b67d22", "T2": "#2b7fd1", "T3": "#5b6675"}
 TIER_ORDER = ["T0", "T1", "T2", "T3"]
@@ -55,6 +62,7 @@ def _to_percent(value) -> str:
 
 def _split_name(raw_name: str) -> tuple[str, str]:
     import re
+
     text = raw_name or ""
     matched = re.match(r"^(.+?)\s*[（(]([^）)]+)[）)]\s*$", text)
     return (matched.group(1), matched.group(2)) if matched else (text, "")
@@ -68,21 +76,30 @@ def build_view(res: dict, segment: int, position: int) -> dict:
     group_map: dict = {}
     for item in items:
         info = item.get("heroInfo") or {}
-        name, sub = _split_name(info.get("heroName"))
+        name, sub = _split_name(str(info.get("heroName") or ""))
         tier = item.get("tRank") if item.get("tRank") in TIER_ORDER else "T3"
-        group_map.setdefault(tier, []).append({
-            "name": name,
-            "sub": sub,
-            "career": info.get("heroCareer") or "",
-            "icon": info.get("heroIcon") or "",
-            "winRate": _to_percent(item.get("winRate")),
-            "showRate": _to_percent(item.get("showRate")),
-            "banRate": _to_percent(item.get("banRate")),
-        })
+        group_map.setdefault(tier, []).append(
+            {
+                "name": name,
+                "sub": sub,
+                "career": info.get("heroCareer") or "",
+                "icon": info.get("heroIcon") or "",
+                "winRate": _to_percent(item.get("winRate")),
+                "showRate": _to_percent(item.get("showRate")),
+                "banRate": _to_percent(item.get("banRate")),
+            }
+        )
 
-    groups = [{"tier": tier, "color": TIER_COLOR[tier], "count": len(group_map[tier]),
-               "heroes": group_map[tier]}
-              for tier in TIER_ORDER if group_map.get(tier)]
+    groups = [
+        {
+            "tier": tier,
+            "color": TIER_COLOR[tier],
+            "count": len(group_map[tier]),
+            "heroes": group_map[tier],
+        }
+        for tier in TIER_ORDER
+        if group_map.get(tier)
+    ]
 
     # 英雄多时 (全部分路 130+) 用 4 列紧凑样式, 避免卡片过长; 少时保持 3 列大卡片
     compact = len(items) > 60

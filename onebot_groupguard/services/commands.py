@@ -3,8 +3,8 @@
 import re
 import time
 
-from . import menus, verify
 from ..storage import repository as store
+from . import menus, verify
 from .utils import (
     call_api,
     get_event_member_role,
@@ -371,9 +371,7 @@ async def handle_command(event) -> bool:
             await store.save()
         await send_group_text(group_id, f"已将 {target} 加入{scope}黑名单")
         return True
-    matched, target = _match_target_command(
-        event, text, "取消拉黑", "取消加黑"
-    )
+    matched, target = _match_target_command(event, text, "取消拉黑", "取消加黑")
     if matched:
         owner = store.is_owner(user_id)
         if not owner and not await is_admin_or_owner(group_id, user_id, member_role):
@@ -385,9 +383,9 @@ async def handle_command(event) -> bool:
         if owner:
             conf["blacklist"] = [q for q in conf.get("blacklist", []) if q != target]
         else:
-            scope = _group_editable(group_id)
-            scope["groupBlacklist"] = [
-                q for q in scope.get("groupBlacklist", []) if q != target
+            group_config = _group_editable(group_id)
+            group_config["groupBlacklist"] = [
+                q for q in group_config.get("groupBlacklist", []) if q != target
             ]
         await store.save()
         await send_group_text(group_id, f"已将 {target} 移出黑名单")
@@ -492,8 +490,8 @@ async def handle_command(event) -> bool:
         if not word:
             await send_group_text(group_id, "请指定违禁词：添加违禁词 词语")
             return True
-        scope = _write_config(conf, group_id, user_id)
-        kw = scope.setdefault("filterKeywords", [])
+        group_config = _write_config(conf, group_id, user_id)
+        kw = group_config.setdefault("filterKeywords", [])
         if word not in kw:
             kw.append(word)
             await store.save()
@@ -507,9 +505,9 @@ async def handle_command(event) -> bool:
         if not word:
             await send_group_text(group_id, "请指定违禁词")
             return True
-        scope = _write_config(conf, group_id, user_id)
-        scope["filterKeywords"] = [
-            w for w in scope.get("filterKeywords", []) if w != word
+        group_config = _write_config(conf, group_id, user_id)
+        group_config["filterKeywords"] = [
+            w for w in group_config.get("filterKeywords", []) if w != word
         ]
         await store.save()
         await send_group_text(group_id, f"已删除违禁词：{word}")
@@ -532,8 +530,8 @@ async def handle_command(event) -> bool:
         if not word:
             await send_group_text(group_id, "请指定关键词：添加拒绝词 词语")
             return True
-        scope = _write_config(conf, group_id, user_id)
-        kw = scope.setdefault("rejectKeywords", [])
+        group_config = _write_config(conf, group_id, user_id)
+        kw = group_config.setdefault("rejectKeywords", [])
         if word not in kw:
             kw.append(word)
             await store.save()
@@ -547,9 +545,9 @@ async def handle_command(event) -> bool:
         if not word:
             await send_group_text(group_id, "请指定关键词")
             return True
-        scope = _write_config(conf, group_id, user_id)
-        scope["rejectKeywords"] = [
-            w for w in scope.get("rejectKeywords", []) if w != word
+        group_config = _write_config(conf, group_id, user_id)
+        group_config["rejectKeywords"] = [
+            w for w in group_config.get("rejectKeywords", []) if w != word
         ]
         await store.save()
         await send_group_text(group_id, f"已删除入群拒绝关键词：{word}")
@@ -568,14 +566,14 @@ async def handle_command(event) -> bool:
     if text == "问答列表":
         group = conf.get("groups", {}).get(group_id)
         is_local = bool(group and not group.get("useGlobal"))
-        lst = (group.get("qaList") or []) if is_local else (conf.get("qaList") or [])
+        qa_items = (group.get("qaList") or []) if is_local else (conf.get("qaList") or [])
         label = "本群" if is_local else "全局"
-        if not lst:
+        if not qa_items:
             await send_group_text(group_id, f"{label}问答列表为空")
             return True
         txt = "\n".join(
-            f"{i + 1}. [{_MODE_LABEL.get(q.get('mode'), q.get('mode'))}] {q.get('keyword')} → {q.get('reply')}"
-            for i, q in enumerate(lst)
+            f"{i + 1}. [{_MODE_LABEL.get(qa_item.get('mode'), qa_item.get('mode'))}] {qa_item.get('keyword')} → {qa_item.get('reply')}"
+            for i, qa_item in enumerate(qa_items)
         )
         await send_group_text(group_id, f"{label}问答列表：\n{txt}")
         return True
@@ -601,8 +599,8 @@ async def handle_command(event) -> bool:
         if not keyword or not reply:
             await send_group_text(group_id, "关键词和回复不能为空")
             return True
-        scope = _write_config(conf, group_id, user_id)
-        scope.setdefault("qaList", []).append(
+        group_config = _write_config(conf, group_id, user_id)
+        group_config.setdefault("qaList", []).append(
             {"keyword": keyword, "reply": reply, "mode": mode}
         )
         await store.save()
@@ -618,12 +616,12 @@ async def handle_command(event) -> bool:
         if not keyword:
             await send_group_text(group_id, "请指定关键词：删除问答 关键词")
             return True
-        scope = _write_config(conf, group_id, user_id)
-        before = len(scope.get("qaList", []))
-        scope["qaList"] = [
-            q for q in scope.get("qaList", []) if q.get("keyword") != keyword
+        group_config = _write_config(conf, group_id, user_id)
+        before = len(group_config.get("qaList", []))
+        group_config["qaList"] = [
+            q for q in group_config.get("qaList", []) if q.get("keyword") != keyword
         ]
-        if len(scope["qaList"]) == before:
+        if len(group_config["qaList"]) == before:
             await send_group_text(group_id, f"未找到问答：{keyword}")
             return True
         await store.save()

@@ -2,13 +2,13 @@
 
 from core.plugin.decorators import handler
 
-from ..storage import api as db
 from ..services import state
 from ..services import verification as verify
 from ..services.permissions import get_event_member_role, is_group_admin
 from ..services.responses import _build, api_error
 from ..services.utils import api_pair
 from ..services.verification import handle_verify_answer, send_verify
+from ..storage import api as db
 from ..storage.audit import record_received, record_result
 
 

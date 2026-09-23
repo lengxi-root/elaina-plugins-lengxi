@@ -1,13 +1,13 @@
 """王者荣耀渲染 — 使用 necessary/resources 中的模板与 Elaina 主题"""
 
+import asyncio
+import base64
+import json
 import os
 import re
 import sys
-import json
-import time
-import base64
-import asyncio
 import tempfile
+import time
 from urllib.parse import urlparse
 
 import aiohttp
@@ -18,7 +18,8 @@ _HTML_DIR = os.path.join(_RES, "html")
 _render_sem = asyncio.Semaphore(2)
 _remote_img_cache: dict[str, str | None] = {}
 _REMOTE_IMAGE_KEYS = re.compile(
-    r"(?:avatar|icon|cover|photo|image|img|hero|skin|rank|role|head|portrait)", re.I
+    r"(?:avatar|icon|cover|photo|image|img|hero|skin|rank|role|head|portrait)",
+    re.IGNORECASE,
 )
 
 # 截图前的固定沉降等待 (ms)。已改为"自适应等待图片/字体就绪" (_READY_JS),
@@ -62,9 +63,15 @@ def _cache_drop(key: str) -> None:
 
 
 _MIME = {
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-    ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
-    ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
     ".css": "text/css",
 }
 
@@ -75,6 +82,7 @@ _resmap_cache: dict | None = None
 def _get_module(name: str):
     try:
         from core.bot.manager import _bot_manager_ref
+
         if _bot_manager_ref and _bot_manager_ref.module_manager:
             return _bot_manager_ref.module_manager.get(name)
     except Exception:
@@ -91,7 +99,7 @@ def _data_uri(path: str) -> str:
 
 
 _CSS_INLINE_CACHE: dict[str, str] = {}
-_FONT_FACE_RE = re.compile(r"@font-face\s*\{[^}]*\}", re.S)
+_FONT_FACE_RE = re.compile(r"@font-face\s*\{[^}]*\}", re.DOTALL)
 _FONT_FAMILY_RE = re.compile(r"font-family\s*:\s*['\"]?([^'\";]+)")
 
 
@@ -103,8 +111,7 @@ def _inline_css(css_path: str) -> str:
     with open(css_path, "r", encoding="utf-8") as f:
         css = f.read()
     # @font-face: url(../font/x.woff) format("woff"), url(../font/x.ttf) format("truetype")
-    css = re.sub(
-        r',\s*url\(\.\./font/[^)]+\)\s*format\(["\']truetype["\']\)', "", css)
+    css = re.sub(r',\s*url\(\.\./font/[^)]+\)\s*format\(["\']truetype["\']\)', "", css)
 
     def repl(m):
         rel = m.group(1).strip("'\"")
@@ -129,9 +136,9 @@ def _prune_css_fonts(css_text: str, page_text: str, seen: set) -> str:
         if not name:
             return face
         if name in seen:
-            return ""                      # 同页前面的 CSS 已提供该字体
+            return ""  # 同页前面的 CSS 已提供该字体
         if name not in body and name not in page_text:
-            return ""                      # 没人用
+            return ""  # 没人用
         seen.add(name)
         return face
 
@@ -178,7 +185,14 @@ def _remote_image_key(key: str, value: str) -> bool:
         return False
     if _REMOTE_IMAGE_KEYS.search(str(key)):
         return True
-    return os.path.splitext(urlparse(value).path)[1].lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
+    return os.path.splitext(urlparse(value).path)[1].lower() in {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".svg",
+    }
 
 
 def _guess_image_mime(url: str) -> str:
@@ -197,12 +211,15 @@ def _shrink_image(raw: bytes) -> tuple[bytes, str]:
         return raw, ""
     try:
         import io
+
         from PIL import Image
+
         with Image.open(io.BytesIO(raw)) as img:
             if img.width <= _INLINE_MAX_WIDTH:
                 return raw, ""
             has_alpha = img.mode in ("RGBA", "LA") or (
-                img.mode == "P" and "transparency" in img.info)
+                img.mode == "P" and "transparency" in img.info
+            )
             ratio = _INLINE_MAX_WIDTH / img.width
             size = (_INLINE_MAX_WIDTH, max(1, int(img.height * ratio)))
             out = io.BytesIO()
@@ -211,7 +228,9 @@ def _shrink_image(raw: bytes) -> tuple[bytes, str]:
                 resized.save(out, format="PNG", optimize=True)
                 return out.getvalue(), "image/png"
             resized = img.convert("RGB").resize(size, Image.LANCZOS)
-            resized.save(out, format="JPEG", quality=_INLINE_JPEG_QUALITY, optimize=True)
+            resized.save(
+                out, format="JPEG", quality=_INLINE_JPEG_QUALITY, optimize=True
+            )
             return out.getvalue(), "image/jpeg"
     except Exception:
         return raw, ""
@@ -222,7 +241,9 @@ async def _fetch_remote_image(session, url: str):
     try:
         async with session.get(url, ssl=False) as resp:
             content_type = (resp.headers.get("Content-Type") or "").split(";", 1)[0]
-            if resp.status != 200 or (content_type and not content_type.startswith("image/")):
+            if resp.status != 200 or (
+                content_type and not content_type.startswith("image/")
+            ):
                 _remote_img_cache[url] = None
                 return
             raw = await resp.read()
@@ -230,9 +251,14 @@ async def _fetch_remote_image(session, url: str):
                 _remote_img_cache[url] = None
                 return
             raw, forced_mime = await asyncio.to_thread(_shrink_image, raw)
-            mime = forced_mime or (content_type if content_type.startswith("image/")
-                                   else _guess_image_mime(url))
-            _remote_img_cache[url] = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+            mime = forced_mime or (
+                content_type
+                if content_type.startswith("image/")
+                else _guess_image_mime(url)
+            )
+            _remote_img_cache[url] = (
+                f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+            )
     except Exception:
         _remote_img_cache[url] = None
 
@@ -277,7 +303,8 @@ async def _inline_remote_images(value, key: str = "", session=None):
         return node
 
     try:
-        urls, seen = [], set()
+        urls: list[str] = []
+        seen: set[str] = set()
         walk(value, key)
         pending = [u for u in urls if u not in _remote_img_cache]
         # 一页内联太多图会把 HTML 撑到十几 MB (set_content 直接卡住)。
@@ -309,7 +336,7 @@ def _select_resmap(tpl: str) -> dict:
     prefixes: set = set()
     for m in _RES_REF_RE.finditer(tpl):
         ref = m.group(0)
-        tail = tpl[m.end():m.end() + 2]
+        tail = tpl[m.end() : m.end() + 2]
         (prefixes if tail.startswith("{{") else wanted).add(ref)
     if not wanted and not prefixes:
         if "css/" in tpl:
@@ -395,8 +422,7 @@ def build_page(template: str, data: dict) -> str:
 
 def _img_size(data: bytes) -> tuple[int, int] | None:
     """从 PNG / JPEG 字节解析真实像素宽高。解析失败返回 None。"""
-    if (len(data) >= 24 and data[:8] == b"\x89PNG\r\n\x1a\n"
-            and data[12:16] == b"IHDR"):
+    if len(data) >= 24 and data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR":
         w = int.from_bytes(data[16:20], "big")
         h = int.from_bytes(data[20:24], "big")
         if w > 0 and h > 0:
@@ -409,43 +435,48 @@ def _img_size(data: bytes) -> tuple[int, int] | None:
                 continue
             marker = data[i + 1]
             if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
-                h = int.from_bytes(data[i + 5:i + 7], "big")
-                w = int.from_bytes(data[i + 7:i + 9], "big")
+                h = int.from_bytes(data[i + 5 : i + 7], "big")
+                w = int.from_bytes(data[i + 7 : i + 9], "big")
                 return (w, h) if w > 0 and h > 0 else None
-            seg = int.from_bytes(data[i + 2:i + 4], "big")
+            seg = int.from_bytes(data[i + 2 : i + 4], "big")
             if seg < 2:
                 break
             i += 2 + seg
     return None
 
 
-async def _screenshot_module(page_html: str, tag: str = "wzry") -> tuple[bytes, int, int] | None:
+async def _screenshot_module(
+    page_html: str, tag: str = "wzry"
+) -> tuple[bytes, int, int] | None:
     """框架内置 playwright 模块渲染 (set_content, 页面已自包含)。不可用返回 None。"""
     rd = _get_module("renderer")
     pw = rd.playwright if rd else _get_module("playwright")
     if not pw or not pw.is_available():
         return None
     try:
-        async with _render_sem:
-            async with pw.new_page(viewport=(1400, 900)) as page:
-                await page.set_content(page_html, wait_until="domcontentloaded")
-                try:
-                    await page.wait_for_function(_READY_JS, timeout=_READY_TIMEOUT_MS)
-                except Exception:
-                    pass
-                await page.wait_for_timeout(_RENDER_SETTLE_MS)
-                # 只截内容根元素 (Gitee/Yunzai 同款 #container||.container||body):
-                el = (await page.query_selector("#container")
-                      or await page.query_selector(".container")
-                      or await page.query_selector("body"))
-                img = await el.screenshot(type="jpeg", quality=90)
+        async with _render_sem, pw.new_page(viewport=(1400, 900)) as page:
+            await page.set_content(page_html, wait_until="domcontentloaded")
+            try:
+                await page.wait_for_function(_READY_JS, timeout=_READY_TIMEOUT_MS)
+            except Exception:
+                pass
+            await page.wait_for_timeout(_RENDER_SETTLE_MS)
+            # 只截内容根元素 (Gitee/Yunzai 同款 #container||.container||body):
+            el = (
+                await page.query_selector("#container")
+                or await page.query_selector(".container")
+                or await page.query_selector("body")
+            )
+            img = await el.screenshot(type="jpeg", quality=90)
         size = _img_size(img) or (1400, 900)
         return img, size[0], size[1]
     except Exception:
         return None
 
 
-async def _screenshot_subprocess(page_html: str, tag: str) -> tuple[bytes, int, int] | None:
+async def _screenshot_subprocess(
+    page_html: str, tag: str
+) -> tuple[bytes, int, int] | None:
     ts = int(time.time() * 1000)
     tmp = tempfile.gettempdir()
     hp = os.path.join(tmp, f"{tag}_{ts}.html")
@@ -457,17 +488,17 @@ async def _screenshot_subprocess(page_html: str, tag: str) -> tuple[bytes, int, 
         "try:\n"
         "    with sync_playwright() as p:\n"
         "        b=p.chromium.launch(timeout=60000)\n"
-        "        pg=b.new_page(viewport={\"width\":1400,\"height\":900})\n"
-        f"        pg.goto(\"file:///{hp.replace(chr(92), '/')}\",wait_until=\"domcontentloaded\")\n"
+        '        pg=b.new_page(viewport={"width":1400,"height":900})\n'
+        f'        pg.goto("file:///{hp.replace(chr(92), "/")}",wait_until="domcontentloaded")\n'
         f"        try: pg.wait_for_function({_READY_JS!r}, timeout={_READY_TIMEOUT_MS})\n"
         "        except Exception: pass\n"
         f"        pg.wait_for_timeout({_RENDER_SETTLE_MS})\n"
-        "        el=(pg.query_selector(\"#container\") or pg.query_selector(\".container\") or pg.query_selector(\"body\"))\n"
-        f"        el.screenshot(path=r\"{ip}\",type=\"jpeg\",quality=90)\n"
+        '        el=(pg.query_selector("#container") or pg.query_selector(".container") or pg.query_selector("body"))\n'
+        f'        el.screenshot(path=r"{ip}",type="jpeg",quality=90)\n'
         "        b.close()\n"
-        "        print(\"SUCCESS\")\n"
+        '        print("SUCCESS")\n'
         "except Exception as e:\n"
-        "    print(\"ERROR:\"+str(e));sys.exit(1)\n"
+        '    print("ERROR:"+str(e));sys.exit(1)\n'
     )
     try:
         with open(hp, "w", encoding="utf-8") as f:
@@ -476,9 +507,12 @@ async def _screenshot_subprocess(page_html: str, tag: str) -> tuple[bytes, int, 
             f.write(script)
         async with _render_sem:
             proc = await asyncio.create_subprocess_exec(
-                sys.executable, sp,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+                sys.executable,
+                sp,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
         out = stdout.decode("utf-8", errors="replace")
         if proc.returncode != 0 or "SUCCESS" not in out or not os.path.exists(ip):
@@ -502,8 +536,9 @@ async def _screenshot_subprocess(page_html: str, tag: str) -> tuple[bytes, int, 
 _MAX_SHOT_PIXELS = 45_000_000
 
 
-async def render_template(template: str, data: dict,
-                          tag: str = "wzry") -> tuple[bytes, int, int] | None:
+async def render_template(
+    template: str, data: dict, tag: str = "wzry"
+) -> tuple[bytes, int, int] | None:
     """渲染原版模板, 返回 (png_bytes, width, height)。失败返回 None。"""
     data = await _inline_remote_images(data)
     page_html = build_page(template, data)
@@ -511,8 +546,10 @@ async def render_template(template: str, data: dict,
     if shot is None:
         shot = await _screenshot_subprocess(page_html, tag)
     if shot and shot[1] * shot[2] > _MAX_SHOT_PIXELS:
-        print(f"[render] {template} 出图 {shot[1]}x{shot[2]} 超过 {_MAX_SHOT_PIXELS} 像素上限, "
-              "多半是模板变量与视图数据不匹配, 已放弃发送")
+        print(
+            f"[render] {template} 出图 {shot[1]}x{shot[2]} 超过 {_MAX_SHOT_PIXELS} 像素上限, "
+            "多半是模板变量与视图数据不匹配, 已放弃发送"
+        )
         return None
     return shot
 
@@ -542,15 +579,24 @@ async def _render_and_host(template: str, data: dict, name_hint: str = ""):
     return img, w, h, url
 
 
-async def send_html(event, template: str, data: dict, caption: str = "",
-                    buttons=None, name_hint: str = "",
-                    cache_key: str = "", cache_ttl: int = 0) -> bool:
+async def send_html(
+    event,
+    template: str,
+    data: dict,
+    caption: str = "",
+    buttons=None,
+    name_hint: str = "",
+    cache_key: str = "",
+    cache_ttl: int = 0,
+) -> bool:
     """渲染模板并发送。优先图床 markdown (带尺寸), 发不出去就回退字节图。"""
     if cache_key:
         cached = _cache_get(cache_key)
         if cached:
             url, w, h = cached
-            if await event.reply(f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons):
+            if await event.reply(
+                f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons
+            ):
                 return True
             # 直链发不出去 (图床挂了 / 平台不认): 丢掉缓存, 重新渲染并重新上传
             _cache_drop(cache_key)
@@ -559,7 +605,8 @@ async def send_html(event, template: str, data: dict, caption: str = "",
         return False
     img, w, h, url = res
     if url and await event.reply(
-            f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons):
+        f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons
+    ):
         # 只缓存发成功了的直链, 免得坏链被复用 12 小时
         _cache_put(cache_key, url, w, h, cache_ttl)
         return True
@@ -567,8 +614,15 @@ async def send_html(event, template: str, data: dict, caption: str = "",
     return True
 
 
-async def send_html_to_group(sender, group_id: str, template: str, data: dict,
-                             caption: str = "", buttons=None, name_hint: str = "") -> bool:
+async def send_html_to_group(
+    sender,
+    group_id: str,
+    template: str,
+    data: dict,
+    caption: str = "",
+    buttons=None,
+    name_hint: str = "",
+) -> bool:
     """主动推送: ①图床直链 markdown → ②QQ 原生图片上传 → 都失败返回 False。"""
     res = await _render_and_host(template, data, name_hint)
     if not res:
@@ -577,7 +631,10 @@ async def send_html_to_group(sender, group_id: str, template: str, data: dict,
     if url:
         try:
             ok, _, _ = await sender.send_to_group(
-                group_id, f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons)
+                group_id,
+                f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(),
+                buttons=buttons,
+            )
             if ok:
                 return True
         except Exception:

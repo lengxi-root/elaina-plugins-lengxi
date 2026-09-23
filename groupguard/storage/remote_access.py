@@ -13,9 +13,7 @@ def remote_users(app_id):
             (str(app_id),),
         ).fetchall()
         return {
-            str(row["user_id"]): str(row["user_id"])
-            for row in rows
-            if row["user_id"]
+            str(row["user_id"]): str(row["user_id"]) for row in rows if row["user_id"]
         }
     finally:
         connection.close()
@@ -26,7 +24,8 @@ def replace_remote_users(app_id, users):
     normalized = {
         str(item.get("external_user_id") or item.get("user_id") or "")
         for item in users
-        if isinstance(item, dict) and (item.get("external_user_id") or item.get("user_id"))
+        if isinstance(item, dict)
+        and (item.get("external_user_id") or item.get("user_id"))
     }
     connection = get_db()
     try:
@@ -36,20 +35,17 @@ def replace_remote_users(app_id, users):
             "(app_id, user_id, updated_at) VALUES (?, ?, ?) "
             "ON CONFLICT(app_id, user_id) DO UPDATE SET "
             "updated_at=excluded.updated_at",
-            [
-                (app_id, user_id, now)
-                for user_id in normalized
-            ],
+            [(app_id, user_id, now) for user_id in normalized],
         )
         if normalized:
             placeholders = ",".join("?" for _ in normalized)
             connection.execute(
-                f"DELETE FROM remote_users WHERE app_id = ? "  # noqa: S608 - 仅拼接参数占位符
+                f"DELETE FROM remote_users WHERE app_id = ? "
                 f"AND user_id NOT IN ({placeholders})",
                 (app_id, *normalized),
             )
             connection.execute(
-                f"DELETE FROM remote_user_groups WHERE app_id = ? "  # noqa: S608 - 仅拼接参数占位符
+                f"DELETE FROM remote_user_groups WHERE app_id = ? "
                 f"AND user_id NOT IN ({placeholders})",
                 (app_id, *normalized),
             )

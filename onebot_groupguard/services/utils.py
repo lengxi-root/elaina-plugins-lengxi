@@ -2,8 +2,7 @@
 
 import re
 
-from core.plugins import PLUGIN, get_logger
-from core.plugins import get_api
+from core.plugins import PLUGIN, get_api, get_logger
 
 log = get_logger(PLUGIN, "groupguard")
 
@@ -45,9 +44,7 @@ async def send_group_msg(group_id, message, *, self_id: str | None = None) -> No
     )
 
 
-async def send_group_text(
-    group_id, text: str, *, self_id: str | None = None
-) -> None:
+async def send_group_text(group_id, text: str, *, self_id: str | None = None) -> None:
     await send_group_msg(
         group_id,
         [{"type": "text", "data": {"text": text}}],

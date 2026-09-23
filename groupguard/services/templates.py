@@ -10,10 +10,10 @@ import threading
 
 from .default_templates import (
     DEFAULT_PAYLOAD,
-    JOIN_REVIEW_BUTTONS,
     JOIN_REQUEST_ITEM_CONTENT,
-    LEGACY_JOIN_REVIEW_BUTTONS,
+    JOIN_REVIEW_BUTTONS,
     LEGACY_JOIN_REQUEST_ITEM_CONTENT,
+    LEGACY_JOIN_REVIEW_BUTTONS,
 )
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -440,16 +440,11 @@ def initialize_reply_templates():
         ):
             legacy_template["content"] = default_content
             changed = True
-        verify_passed_template = payload["templates"].get(
-            "verify_passed_by_admin"
-        )
-        default_verify_passed = defaults["templates"].get(
-            "verify_passed_by_admin", {}
-        )
+        verify_passed_template = payload["templates"].get("verify_passed_by_admin")
+        default_verify_passed = defaults["templates"].get("verify_passed_by_admin", {})
         if (
             isinstance(verify_passed_template, dict)
-            and verify_passed_template.get("content")
-            == _LEGACY_VERIFY_PASSED_CONTENT
+            and verify_passed_template.get("content") == _LEGACY_VERIFY_PASSED_CONTENT
         ):
             verify_passed_template["content"] = default_verify_passed.get(
                 "content", _LEGACY_VERIFY_PASSED_CONTENT

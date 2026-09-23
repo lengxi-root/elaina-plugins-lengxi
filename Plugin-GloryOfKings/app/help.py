@@ -2,8 +2,8 @@
 
 import time
 
-from ..lib.handlers import handler
 from ..lib import render
+from ..lib.handlers import handler
 
 _HELP_TEXT = """王者荣耀 · 指令菜单
 【账号】<qqbot-cmd-input text='王者绑定 ' show='王者绑定 营地ID' /> | <qqbot-cmd-input text='王者wx登录' /> | <qqbot-cmd-input text='王者QQ登录' /> | <qqbot-cmd-input text='王者我的ID' /> | <qqbot-cmd-input text='王者切换 ' show='王者切换 序号' /> | <qqbot-cmd-input text='王者删除 ' show='王者删除 序号' />
@@ -19,15 +19,26 @@ _HELP_TEXT = """王者荣耀 · 指令菜单
 
 def _get_runtime():
     from .. import get_runtime
+
     return get_runtime()
 
 
-@handler(r'^王者(?:荣耀|农药)?(?:插件)?(?:帮助|help|菜单)$', name='王者帮助',
-         desc='王者荣耀插件帮助', priority=10)
+@handler(
+    r"^王者(?:荣耀|农药)?(?:插件)?(?:帮助|help|菜单)$",
+    name="王者帮助",
+    desc="王者荣耀插件帮助",
+    priority=10,
+)
 async def cmd_help(event, match):
     data = {"generatedAt": time.strftime("%Y/%m/%d %H:%M:%S")}
     # 帮助菜单内容固定, 缓存图床直链 12 小时, 命中则跳过渲染+上传
-    ok = await render.send_html(event, "help.html", data, name_hint="help",
-                               cache_key="help-v17", cache_ttl=12 * 3600)
+    ok = await render.send_html(
+        event,
+        "help.html",
+        data,
+        name_hint="help",
+        cache_key="help-v17",
+        cache_ttl=12 * 3600,
+    )
     if not ok:
         await event.reply(_HELP_TEXT)

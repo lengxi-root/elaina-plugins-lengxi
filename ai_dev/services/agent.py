@@ -5,9 +5,10 @@ import json
 import posixpath
 import time
 import uuid
+from typing import Any
 
-from . import config as aiconfig
 from . import central
+from . import config as aiconfig
 from . import tools as toolmod
 
 SYSTEM_PROMPT = """你是 ElainaBot_v2 框架内置的 AI 开发助手，负责使用当前工具完成开发、调试、配置与验证。
@@ -109,7 +110,7 @@ def _build_user_content(
         )
     if not images:
         return text
-    content = [{"type": "text", "text": text}] if text else []
+    content: list[dict[str, Any]] = [{"type": "text", "text": text}] if text else []
     content.extend({"type": "image_url", "image_url": {"url": url}} for url in images)
     return content
 
@@ -138,12 +139,12 @@ async def _run_selected_plugin_reader(
             {
                 "user_request": str(user_text or ""),
                 "selected_targets": [
-                {
-                    "path": item.get("path", ""),
-                    "kind": item.get("kind", "file"),
-                    "role": item.get("role", "primary"),
-                }
-                for item in plugin_files
+                    {
+                        "path": item.get("path", ""),
+                        "kind": item.get("kind", "file"),
+                        "role": item.get("role", "primary"),
+                    }
+                    for item in plugin_files
                 ],
             },
             ensure_ascii=False,
@@ -151,8 +152,7 @@ async def _run_selected_plugin_reader(
     )
     reader_tools = toolmod.schemas_for_mode("reader")
     reader_tool_names = {
-        str(item.get("function", {}).get("name") or "")
-        for item in reader_tools
+        str(item.get("function", {}).get("name") or "") for item in reader_tools
     }
     reader_calls = 0
 
@@ -267,7 +267,9 @@ def _normalize_reader_contract(raw: str, user_text: str, plugin_files: list) -> 
     if not isinstance(raw_targets, list):
         raw_targets = []
     reported_targets = {
-        _clean_contract_text(item.get("path"), 300).replace(chr(92), "/").casefold(): item
+        _clean_contract_text(item.get("path"), 300)
+        .replace(chr(92), "/")
+        .casefold(): item
         for item in raw_targets
         if isinstance(item, dict) and item.get("path")
     }
@@ -276,9 +278,7 @@ def _normalize_reader_contract(raw: str, user_text: str, plugin_files: list) -> 
         if not isinstance(selected, dict):
             continue
         selected_path = _clean_contract_text(selected.get("path"), 300)
-        item = reported_targets.get(
-            selected_path.replace(chr(92), "/").casefold(), {}
-        )
+        item = reported_targets.get(selected_path.replace(chr(92), "/").casefold(), {})
         if not isinstance(item, dict):
             item = {}
         role = _clean_contract_text(selected.get("role"), 20).casefold()
@@ -286,9 +286,7 @@ def _normalize_reader_contract(raw: str, user_text: str, plugin_files: list) -> 
         targets.append(
             {
                 "path": selected_path,
-                "kind": "directory"
-                if selected.get("kind") == "directory"
-                else "file",
+                "kind": "directory" if selected.get("kind") == "directory" else "file",
                 "role": role if role in _TARGET_ROLES else "primary",
                 "status": status if status in {"found", "missing"} else "found",
                 "reason": _clean_contract_text(item.get("reason")),
@@ -304,14 +302,16 @@ def _normalize_reader_contract(raw: str, user_text: str, plugin_files: list) -> 
     raw_symbols = value.get("relevant_symbols")
     if not isinstance(raw_symbols, list):
         raw_symbols = []
-    symbols = []
+    symbols: list[dict[str, Any]] = []
     for item in raw_symbols:
         if isinstance(item, dict) and len(symbols) < 80:
             symbols.append(
                 {
                     "path": _clean_contract_text(item.get("path"), 300),
                     "symbol": _clean_contract_text(item.get("symbol"), 200),
-                    "line": item.get("line") if isinstance(item.get("line"), int) else None,
+                    "line": item.get("line")
+                    if isinstance(item.get("line"), int)
+                    else None,
                     "reason": _clean_contract_text(item.get("reason")),
                 }
             )
@@ -319,7 +319,7 @@ def _normalize_reader_contract(raw: str, user_text: str, plugin_files: list) -> 
     raw_related = value.get("related_files")
     if not isinstance(raw_related, list):
         raw_related = []
-    related = []
+    related: list[dict[str, Any]] = []
     for item in raw_related:
         if isinstance(item, dict) and len(related) < 80:
             related.append(
@@ -343,24 +343,26 @@ def _normalize_reader_contract(raw: str, user_text: str, plugin_files: list) -> 
     return json.dumps(contract, ensure_ascii=False, indent=2)
 
 
-def _selected_target_write_error(
-    name: str, arguments: dict, plugin_files: list
-) -> str:
+def _selected_target_write_error(name: str, arguments: dict, plugin_files: list) -> str:
     """对 reference/protected 路径实施工具层写保护。"""
     if name not in _PATH_WRITE_TOOLS or not isinstance(arguments, dict):
         return ""
-    path = posixpath.normpath(
-        str(arguments.get("path") or "").replace(chr(92), "/")
-    ).strip("/").casefold()
+    path = (
+        posixpath.normpath(str(arguments.get("path") or "").replace(chr(92), "/"))
+        .strip("/")
+        .casefold()
+    )
     if not path:
         return ""
     for item in plugin_files:
         role = str(item.get("role") or "primary").casefold()
         if role not in {"reference", "protected"}:
             continue
-        target = posixpath.normpath(
-            str(item.get("path") or "").replace(chr(92), "/")
-        ).strip("/").casefold()
+        target = (
+            posixpath.normpath(str(item.get("path") or "").replace(chr(92), "/"))
+            .strip("/")
+            .casefold()
+        )
         if path == target or (
             item.get("kind") == "directory" and path.startswith(target + "/")
         ):
@@ -440,12 +442,7 @@ def _turn_context_prompt(
         if analysis_mode
         else "开发执行模式已提供完整开发工具集，可连续完成实现与验证，无需请求额外工具授权。"
     )
-    return (
-        "【本轮运行上下文】\n"
-        f"- 模式：{mode}\n"
-        f"- {tool_note}\n"
-        f"- {target_note}"
-    )
+    return f"【本轮运行上下文】\n- 模式：{mode}\n- {tool_note}\n- {target_note}"
 
 
 def _append_turn_context(system_prompt: str, context_prompt: str) -> str:
@@ -513,7 +510,11 @@ def _successful_tool_event(event: dict) -> bool:
     result = event.get("result")
     if not isinstance(result, dict):
         return result is not None
-    if result.get("error") or result.get("ok") is False or result.get("success") is False:
+    if (
+        result.get("error")
+        or result.get("ok") is False
+        or result.get("success") is False
+    ):
         return False
     name = str(event.get("name") or "")
     if name == "test_command":
@@ -573,9 +574,7 @@ def _execution_validator(user_text: str, analysis_mode: bool):
     )
 
     def validate(_final_text: str, events: list[dict]) -> str | None:
-        completed_events = [
-            event for event in events if _successful_tool_event(event)
-        ]
+        completed_events = [event for event in events if _successful_tool_event(event)]
         names = []
         for event in completed_events:
             name = str(event.get("name") or "")
@@ -641,9 +640,9 @@ async def run_agent(
     session_id: str,
     user_text: str,
     model: str = "",
-    images: list = None,
+    images: list | None = None,
     mode: str = "dev",
-    plugin_files: list = None,
+    plugin_files: list | None = None,
 ) -> dict:
     """执行一轮多步 Agent 对话。返回 {ok, message, iterations}。
 
@@ -730,9 +729,7 @@ async def run_agent(
     base_system_prompt = (
         aiconfig.analysis_system_prompt()
         if analysis_mode
-        else aiconfig.compose_system_prompt(
-            SYSTEM_PROMPT, aiconfig.system_prompt()
-        )
+        else aiconfig.compose_system_prompt(SYSTEM_PROMPT, aiconfig.system_prompt())
     )
     effective_system_prompt = _append_turn_context(
         base_system_prompt,
@@ -841,12 +838,8 @@ async def run_agent(
     messages.append({"role": "assistant", "content": final_text})
     stored = _storage_messages(messages)
     if current_user_index < len(stored):
-        stored[current_user_index]["content"] = _stored_user_content(
-            user_text, images
-        )
-    await asyncio.to_thread(
-        store.set_messages, session_id, _compact_history(stored)
-    )
+        stored[current_user_index]["content"] = _stored_user_content(user_text, images)
+    await asyncio.to_thread(store.set_messages, session_id, _compact_history(stored))
     return {
         "ok": True,
         "message": final_text,

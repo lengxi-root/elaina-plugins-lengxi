@@ -6,10 +6,11 @@
 import json
 import os
 import threading
+from typing import Any
 
 from core.plugins import config as cfg
 
-DEFAULTS = {
+DEFAULTS: dict[str, Any] = {
     "enabled": True,
     "prefix": "",
     "enable_meme": True,
@@ -180,7 +181,7 @@ def get(key: str):
     ov = _load_override().get(key)
     if ov is not None and ov != "":
         return _coerce(key, ov)
-    if key in _override_cache and key in ("prefix", "owner_qqs"):
+    if key in _load_override() and key in ("prefix", "owner_qqs"):
         return _coerce(key, ov)
     val = _yaml(key, None)
     if val is None or val == "":

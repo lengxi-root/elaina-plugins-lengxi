@@ -7,6 +7,7 @@ app/ 下的命令统一从这里导入 handler (而不是直接用 core.plugin.d
 import functools
 
 from core.plugin.decorators import handler as _handler
+
 from . import requester
 
 

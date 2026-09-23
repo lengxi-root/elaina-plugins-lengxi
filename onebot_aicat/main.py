@@ -11,9 +11,16 @@ import asyncio
 import os
 import random
 
-from core.plugins import PLUGIN, get_logger, run_sync
-from core.plugins import handler, on_load, on_unload
-from core.plugins import register_page, unregister_page
+from core.plugins import (
+    PLUGIN,
+    get_logger,
+    handler,
+    on_load,
+    on_unload,
+    register_page,
+    run_sync,
+    unregister_page,
+)
 
 from .services import agent as agentmod
 from .services import (
@@ -32,7 +39,7 @@ __plugin_meta__ = {
     "name": "猫娘 AI (aicat)",
     "author": "冷曦",
     "description": "接入 OpenAI 兼容接口的 AI 对话助手, 支持人设/上下文/工具调用与 Web 面板配置",
-    "version": "1.3.3",
+    "version": "1.3.4",
 }
 
 log = get_logger(PLUGIN, "aicat")
@@ -285,7 +292,10 @@ def _build_random_instruction(event, content: str) -> str:
 
 
 async def _run_and_reply(
-    event, instruction: str, is_random: bool = False, context_text: str = None
+    event,
+    instruction: str,
+    is_random: bool = False,
+    context_text: str | None = None,
 ):
     """执行一轮 AI 对话并回复。is_random=True 时不发确认提示语, 出错静默。"""
     if not aiconfig.is_configured():

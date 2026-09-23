@@ -24,8 +24,7 @@ _last_sync_success = 0.0
 def build_mute_members(member_ids, *, operation="add", seconds=0, minutes=0):
     """使用服务器当前时间生成群禁言请求项。"""
     expire_at = (
-        datetime.now().astimezone()
-        + timedelta(seconds=seconds, minutes=minutes)
+        datetime.now().astimezone() + timedelta(seconds=seconds, minutes=minutes)
     ).isoformat(timespec="seconds")
     return [
         {
@@ -44,9 +43,7 @@ def is_mute_expire_error(response):
     else:
         text = str(response or "")
     lowered = text.lower()
-    return "mute.expire_at" in lowered and (
-        "参数无效" in text or "invalid" in lowered
-    )
+    return "mute.expire_at" in lowered and ("参数无效" in text or "invalid" in lowered)
 
 
 def _run(command):
@@ -61,9 +58,7 @@ def _run(command):
             timeout=_SYNC_TIMEOUT,
             check=False,
             creationflags=(
-                getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                if os.name == "nt"
-                else 0
+                getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
             ),
         )
     except (OSError, subprocess.SubprocessError) as error:

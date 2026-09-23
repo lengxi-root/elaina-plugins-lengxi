@@ -335,7 +335,7 @@ class CommandSpec:
         if self.kind == "command":
             alt = "|".join(re.escape(n) for n in self.match_names)
             return rf"^\s*/?{esc}\s*(?:{alt})(?=\s|$)"
-        base = self.pattern[1:] if self.pattern.startswith("^") else self.pattern
+        base = self.pattern.removeprefix("^")
         return rf"^\s*{esc}\s*{base}"
 
     @classmethod
@@ -762,11 +762,8 @@ def _app_dir_of(spec: PluginSpec):
     import sys
 
     mod = sys.modules.get(spec.module)
-    return (
-        os.path.dirname(mod.__file__)
-        if mod and getattr(mod, "__file__", None)
-        else None
-    )
+    module_path = getattr(mod, "__file__", None) if mod is not None else None
+    return os.path.dirname(module_path) if isinstance(module_path, str) else None
 
 
 def _schema_default(meta: dict):

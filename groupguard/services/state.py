@@ -3,11 +3,12 @@
 import asyncio
 import contextlib
 import time
+from typing import Any
 
-pending_verify = {}  # 群号和用户号对应验证答案、验证编号及到期时间等状态
-unverified = {}  # {group_id: set(user_id)} — 待验证
-verify_cooldown = {}  # 群号和用户号对应重试次数及下次重试时间
-verification_muted = {}  # {group_id: set(user_id)} — 插件施加的验证临时禁言
+pending_verify: dict[str, dict[str, dict[str, Any]]] = {}  # 群号和用户号对应验证状态
+unverified: dict[str, set[str]] = {}  # {group_id: set(user_id)} — 待验证
+verify_cooldown: dict[str, dict[str, Any]] = {}  # 群号和用户号对应重试状态
+verification_muted: dict[str, set[str]] = {}  # 插件施加的验证临时禁言
 
 _cleanup_task = None
 

@@ -4,7 +4,7 @@ __plugin_meta__ = {
     "name": "全量申请",
     "author": "lengxi",
     "description": "生成群全量消息授权链接，支持记录申请与列表查看",
-    "version": "1.1.1",
+    "version": "1.1.2",
 }
 
 
@@ -16,7 +16,6 @@ from datetime import datetime
 from core.application import get_app
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load
-
 
 log = get_logger(PLUGIN, "全量申请")
 _BASE = os.path.dirname(os.path.abspath(__file__))

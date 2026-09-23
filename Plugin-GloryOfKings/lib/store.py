@@ -4,7 +4,6 @@ import os
 import sqlite3
 import threading
 
-
 _INIT_SQL = """
 CREATE TABLE IF NOT EXISTS bindings (
     qq_id      TEXT NOT NULL,
@@ -85,23 +84,28 @@ class PluginDB:
         """新增绑定。返回 True=新增, False=已存在。首个账号自动设为当前。"""
         with self._lock:
             exists = self._conn.execute(
-                "SELECT 1 FROM bindings WHERE qq_id=? AND camp_id=?",
-                (qq_id, camp_id)).fetchone()
+                "SELECT 1 FROM bindings WHERE qq_id=? AND camp_id=?", (qq_id, camp_id)
+            ).fetchone()
             if exists:
                 return False
             row = self._conn.execute(
                 "SELECT COALESCE(MAX(ord),-1)+1 AS n FROM bindings WHERE qq_id=?",
-                (qq_id,)).fetchone()
+                (qq_id,),
+            ).fetchone()
             ordv = row["n"]
             self._conn.execute(
                 "INSERT INTO bindings (qq_id, camp_id, role_name, ord) "
-                "VALUES (?, ?, ?, ?)", (qq_id, camp_id, role_name, ordv))
+                "VALUES (?, ?, ?, ?)",
+                (qq_id, camp_id, role_name, ordv),
+            )
             cur = self._conn.execute(
-                "SELECT 1 FROM current_account WHERE qq_id=?", (qq_id,)).fetchone()
+                "SELECT 1 FROM current_account WHERE qq_id=?", (qq_id,)
+            ).fetchone()
             if not cur:
                 self._conn.execute(
                     "INSERT INTO current_account (qq_id, camp_id) VALUES (?, ?)",
-                    (qq_id, camp_id))
+                    (qq_id, camp_id),
+                )
             self._conn.commit()
             return True
 
@@ -110,7 +114,9 @@ class PluginDB:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT camp_id, role_name, created_at FROM bindings "
-                "WHERE qq_id=? ORDER BY ord", (qq_id,)).fetchall()
+                "WHERE qq_id=? ORDER BY ord",
+                (qq_id,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def get_all_bindings(self) -> list:
@@ -125,16 +131,19 @@ class PluginDB:
         """当前账号营地ID; 无当前但有绑定则回退第一个。"""
         with self._lock:
             row = self._conn.execute(
-                "SELECT camp_id FROM current_account WHERE qq_id=?", (qq_id,)).fetchone()
+                "SELECT camp_id FROM current_account WHERE qq_id=?", (qq_id,)
+            ).fetchone()
             if row:
                 ok = self._conn.execute(
                     "SELECT 1 FROM bindings WHERE qq_id=? AND camp_id=?",
-                    (qq_id, row["camp_id"])).fetchone()
+                    (qq_id, row["camp_id"]),
+                ).fetchone()
                 if ok:
                     return row["camp_id"]
             first = self._conn.execute(
                 "SELECT camp_id FROM bindings WHERE qq_id=? ORDER BY ord LIMIT 1",
-                (qq_id,)).fetchone()
+                (qq_id,),
+            ).fetchone()
         return first["camp_id"] if first else None
 
     def set_current_by_index(self, qq_id: str, index: int) -> str | None:
@@ -147,7 +156,8 @@ class PluginDB:
             self._conn.execute(
                 "INSERT INTO current_account (qq_id, camp_id) VALUES (?, ?) "
                 "ON CONFLICT(qq_id) DO UPDATE SET camp_id=excluded.camp_id",
-                (qq_id, camp_id))
+                (qq_id, camp_id),
+            )
             self._conn.commit()
         return camp_id
 
@@ -159,26 +169,31 @@ class PluginDB:
         camp_id = binds[index - 1]["camp_id"]
         with self._lock:
             self._conn.execute(
-                "DELETE FROM bindings WHERE qq_id=? AND camp_id=?", (qq_id, camp_id))
+                "DELETE FROM bindings WHERE qq_id=? AND camp_id=?", (qq_id, camp_id)
+            )
             # 重排 ord
             rows = self._conn.execute(
-                "SELECT camp_id FROM bindings WHERE qq_id=? ORDER BY ord",
-                (qq_id,)).fetchall()
+                "SELECT camp_id FROM bindings WHERE qq_id=? ORDER BY ord", (qq_id,)
+            ).fetchall()
             for i, r in enumerate(rows):
                 self._conn.execute(
                     "UPDATE bindings SET ord=? WHERE qq_id=? AND camp_id=?",
-                    (i, qq_id, r["camp_id"]))
+                    (i, qq_id, r["camp_id"]),
+                )
             # 当前账号被删则回退到第一个或清空
             cur = self._conn.execute(
-                "SELECT camp_id FROM current_account WHERE qq_id=?", (qq_id,)).fetchone()
+                "SELECT camp_id FROM current_account WHERE qq_id=?", (qq_id,)
+            ).fetchone()
             if cur and cur["camp_id"] == camp_id:
                 if rows:
                     self._conn.execute(
                         "UPDATE current_account SET camp_id=? WHERE qq_id=?",
-                        (rows[0]["camp_id"], qq_id))
+                        (rows[0]["camp_id"], qq_id),
+                    )
                 else:
                     self._conn.execute(
-                        "DELETE FROM current_account WHERE qq_id=?", (qq_id,))
+                        "DELETE FROM current_account WHERE qq_id=?", (qq_id,)
+                    )
             self._conn.commit()
         return camp_id
 
@@ -186,23 +201,40 @@ class PluginDB:
         with self._lock:
             self._conn.execute(
                 "UPDATE bindings SET role_name=? WHERE qq_id=? AND camp_id=?",
-                (role_name, qq_id, camp_id))
+                (role_name, qq_id, camp_id),
+            )
             self._conn.commit()
 
     # ==================== 订阅 ====================
 
-    def add_sub(self, group_id: str, camp_id: str, role_name: str = "",
-                last_battle_id: str = "", subscriber: str = "", appid: str = "") -> bool:
+    def add_sub(
+        self,
+        group_id: str,
+        camp_id: str,
+        role_name: str = "",
+        last_battle_id: str = "",
+        subscriber: str = "",
+        appid: str = "",
+    ) -> bool:
         with self._lock:
             exists = self._conn.execute(
                 "SELECT 1 FROM subscriptions WHERE group_id=? AND camp_id=?",
-                (group_id, camp_id)).fetchone()
+                (group_id, camp_id),
+            ).fetchone()
             if exists:
                 return False
             self._conn.execute(
                 "INSERT INTO subscriptions (group_id, camp_id, role_name, "
                 "last_battle_id, subscriber, appid) VALUES (?, ?, ?, ?, ?, ?)",
-                (group_id, camp_id, role_name, last_battle_id, subscriber, str(appid or "")))
+                (
+                    group_id,
+                    camp_id,
+                    role_name,
+                    last_battle_id,
+                    subscriber,
+                    str(appid or ""),
+                ),
+            )
             self._conn.commit()
             return True
 
@@ -210,7 +242,8 @@ class PluginDB:
         with self._lock:
             cur = self._conn.execute(
                 "DELETE FROM subscriptions WHERE group_id=? AND camp_id=?",
-                (group_id, camp_id))
+                (group_id, camp_id),
+            )
             self._conn.commit()
             return cur.rowcount > 0
 
@@ -218,7 +251,8 @@ class PluginDB:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM subscriptions WHERE group_id=? ORDER BY created_at",
-                (group_id,)).fetchall()
+                (group_id,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def get_camp_groups(self) -> dict:
@@ -226,36 +260,53 @@ class PluginDB:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT group_id, camp_id, role_name, last_battle_id, appid, subscriber "
-                "FROM subscriptions").fetchall()
+                "FROM subscriptions"
+            ).fetchall()
         result: dict[str, list] = {}
         for r in rows:
             result.setdefault(r["camp_id"], []).append(
-                (r["group_id"], r["role_name"], r["last_battle_id"],
-                 r["appid"], r["subscriber"]))
+                (
+                    r["group_id"],
+                    r["role_name"],
+                    r["last_battle_id"],
+                    r["appid"],
+                    r["subscriber"],
+                )
+            )
         return result
 
     def set_sub_last_battle(self, group_id: str, camp_id: str, last_battle_id: str):
         with self._lock:
             self._conn.execute(
                 "UPDATE subscriptions SET last_battle_id=? "
-                "WHERE group_id=? AND camp_id=?", (last_battle_id, group_id, camp_id))
+                "WHERE group_id=? AND camp_id=?",
+                (last_battle_id, group_id, camp_id),
+            )
             self._conn.commit()
 
     # ==================== 谁在游戏订阅 ====================
 
-    def add_play_sub(self, group_id: str, camp_id: str, role_name: str = "",
-                     subscriber: str = "", appid: str = "") -> bool:
+    def add_play_sub(
+        self,
+        group_id: str,
+        camp_id: str,
+        role_name: str = "",
+        subscriber: str = "",
+        appid: str = "",
+    ) -> bool:
         """新增一条谁在游戏订阅 (camp_id='*' 表示盯本群全部账号); 已存在返回 False。"""
         with self._lock:
             exists = self._conn.execute(
                 "SELECT 1 FROM play_subs WHERE group_id=? AND camp_id=?",
-                (group_id, camp_id)).fetchone()
+                (group_id, camp_id),
+            ).fetchone()
             if exists:
                 return False
             self._conn.execute(
                 "INSERT INTO play_subs (group_id, camp_id, role_name, subscriber, appid) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (group_id, camp_id, role_name, subscriber, str(appid or "")))
+                (group_id, camp_id, role_name, subscriber, str(appid or "")),
+            )
             self._conn.commit()
             return True
 
@@ -263,10 +314,12 @@ class PluginDB:
         with self._lock:
             cur = self._conn.execute(
                 "DELETE FROM play_subs WHERE group_id=? AND camp_id=?",
-                (group_id, camp_id))
+                (group_id, camp_id),
+            )
             self._conn.execute(
                 "DELETE FROM play_states WHERE group_id=? AND camp_id=?",
-                (group_id, camp_id))
+                (group_id, camp_id),
+            )
             self._conn.commit()
             return cur.rowcount > 0
 
@@ -274,9 +327,9 @@ class PluginDB:
         """取消本群全部谁在游戏订阅, 返回取消条数。"""
         with self._lock:
             cur = self._conn.execute(
-                "DELETE FROM play_subs WHERE group_id=?", (group_id,))
-            self._conn.execute(
-                "DELETE FROM play_states WHERE group_id=?", (group_id,))
+                "DELETE FROM play_subs WHERE group_id=?", (group_id,)
+            )
+            self._conn.execute("DELETE FROM play_states WHERE group_id=?", (group_id,))
             self._conn.commit()
             return cur.rowcount
 
@@ -284,7 +337,8 @@ class PluginDB:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM play_subs WHERE group_id=? ORDER BY created_at",
-                (group_id,)).fetchall()
+                (group_id,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def get_all_play_subs(self) -> list:
@@ -298,7 +352,8 @@ class PluginDB:
         with self._lock:
             row = self._conn.execute(
                 "SELECT state FROM play_states WHERE group_id=? AND camp_id=?",
-                (group_id, camp_id)).fetchone()
+                (group_id, camp_id),
+            ).fetchone()
         return int(row["state"]) if row else -1
 
     def set_play_state(self, group_id: str, camp_id: str, state: int):
@@ -308,7 +363,8 @@ class PluginDB:
                 "VALUES (?, ?, ?, datetime('now','localtime')) "
                 "ON CONFLICT(group_id, camp_id) DO UPDATE SET "
                 "state=excluded.state, updated_at=excluded.updated_at",
-                (group_id, camp_id, int(state)))
+                (group_id, camp_id, int(state)),
+            )
             self._conn.commit()
 
     # ==================== 设置 ====================
@@ -316,7 +372,8 @@ class PluginDB:
     def get_setting(self, key: str, default: str = "") -> str:
         with self._lock:
             row = self._conn.execute(
-                "SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+                "SELECT value FROM settings WHERE key=?", (key,)
+            ).fetchone()
         return row["value"] if row else default
 
     def stats(self) -> tuple[int, int]:

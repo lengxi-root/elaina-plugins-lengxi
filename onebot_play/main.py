@@ -10,9 +10,16 @@ Web 面板: 登录框架后台 -> 侧边栏「娱乐插件」页面。
 import os
 import re
 
-from core.plugins import PLUGIN, get_logger, run_sync
-from core.plugins import interceptor, on_load, on_unload
-from core.plugins import register_page, unregister_page
+from core.plugins import (
+    PLUGIN,
+    get_logger,
+    interceptor,
+    on_load,
+    on_unload,
+    register_page,
+    run_sync,
+    unregister_page,
+)
 
 from .services import config, draw, meme, menu, music
 from .services.message import send_record, send_reply
@@ -22,7 +29,7 @@ __plugin_meta__ = {
     "name": "娱乐插件 (play)",
     "author": "冷曦",
     "description": "表情包(meme)/点歌/AI绘画一体的娱乐插件, 附哈基米语音与自闭禁言, 支持 Web 面板配置",
-    "version": "1.1.1",
+    "version": "1.1.2",
 }
 
 log = get_logger(PLUGIN, "play")

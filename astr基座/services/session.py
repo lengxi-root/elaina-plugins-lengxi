@@ -41,7 +41,7 @@ class SessionController:
     def stop(self, *_a, **_k):
         self._stopped = True
 
-    def keep(self, timeout: float = None, reset_timeout: bool = False, *_a, **_k):
+    def keep(self, timeout: float | None = None, reset_timeout: bool = False, *_a, **_k):
         if reset_timeout and timeout is not None or timeout is not None:
             self._timeout = timeout
 

@@ -10,7 +10,6 @@ import random
 import re
 
 import aiohttp
-
 from core.plugins import PLUGIN, get_logger, run_sync
 
 from . import config
@@ -121,7 +120,7 @@ def catalog() -> list:
         )
     return sorted(
         items,
-        key=lambda item: ((item["keywords"] or [item["code"]])[0].casefold()),
+        key=lambda item: (item["keywords"] or [item["code"]])[0].casefold(),
     )
 
 
@@ -272,7 +271,7 @@ def _apply_master_protection(imgs: list, sender_id: str, at_users: list) -> list
                 if len(imgs) == 1:
                     return [sender_ava]
                 new = list(imgs)
-                new[0] = imgs[i]
+                new[0] = url
                 new[1] = sender_ava
                 return new
     return imgs
@@ -328,6 +327,9 @@ async def _add_master(event, msg, user_id) -> bool:
         await send_reply(event, "只有主人才能设置")
         return True
     m = re.search(r"(\d+)", msg)
+    if m is None:
+        await send_reply(event, "请指定 QQ 号")
+        return True
     qq = m.group(1)
     ids = config.owner_qqs()
     if qq in ids:
@@ -344,6 +346,9 @@ async def _remove_master(event, msg, user_id) -> bool:
         await send_reply(event, "只有主人才能删除")
         return True
     m = re.search(r"(\d+)", msg)
+    if m is None:
+        await send_reply(event, "请指定 QQ 号")
+        return True
     qq = m.group(1)
     ids = config.owner_qqs()
     if qq not in ids:

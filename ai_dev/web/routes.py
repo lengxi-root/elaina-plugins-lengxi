@@ -8,7 +8,6 @@ import re
 import time
 
 from aiohttp import web
-
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.web_pages import register_route
 
@@ -153,7 +152,9 @@ async def _set_config(request: web.Request):
     """保存 AI 开发运行参数；接口与密钥始终由中央 AI LLM 管理。"""
     body = await _json(request)
     if not isinstance(body, dict):
-        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
+        return web.json_response(
+            {"success": False, "error": "请求体必须是 JSON 对象"}, status=400
+        )
     updates = {}
     for k in (
         "enabled",
@@ -190,7 +191,9 @@ async def _get_sessions(request: web.Request):
 async def _create_session(request: web.Request):
     body = await _json(request)
     if not isinstance(body, dict):
-        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
+        return web.json_response(
+            {"success": False, "error": "请求体必须是 JSON 对象"}, status=400
+        )
     request_id = str(body.get("request_id", "") or "")[:80]
     sess = await asyncio.to_thread(
         _store().create_session, source="web", request_id=request_id
@@ -203,7 +206,9 @@ async def _create_session(request: web.Request):
 async def _delete_session(request: web.Request):
     body = await _json(request)
     if not isinstance(body, dict):
-        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
+        return web.json_response(
+            {"success": False, "error": "请求体必须是 JSON 对象"}, status=400
+        )
     sid = str(body.get("session_id", ""))
     if _session_running(sid):
         return web.json_response(
@@ -233,9 +238,7 @@ async def _get_history(request: web.Request):
             view.append(
                 {"role": "assistant", "content": _content_text(m.get("content", ""))}
             )
-    return web.json_response(
-        {"success": True, "messages": view, "events": events}
-    )
+    return web.json_response({"success": True, "messages": view, "events": events})
 
 
 async def _get_workspace(request: web.Request):
@@ -248,9 +251,7 @@ async def _get_workspace(request: web.Request):
     try:
         result = await toolmod.run_tool("list_dir", {"path": path})
     except (OSError, TypeError, ValueError) as error:
-        return web.json_response(
-            {"success": False, "error": str(error)}, status=400
-        )
+        return web.json_response({"success": False, "error": str(error)}, status=400)
     entries = []
     for item in result.get("entries", []):
         name = str(item.get("name") or "")
@@ -291,7 +292,9 @@ async def _post_chat(request: web.Request):
         return web.json_response({"success": False, "error": "请求体过大"}, status=413)
     body = await _json(request)
     if not isinstance(body, dict):
-        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
+        return web.json_response(
+            {"success": False, "error": "请求体必须是 JSON 对象"}, status=400
+        )
     message = str(body.get("message", "")).strip()
     if len(message) > _MAX_MESSAGE_CHARS:
         return web.json_response(
@@ -301,7 +304,9 @@ async def _post_chat(request: web.Request):
     model = str(body.get("model", "") or "").strip()
     sid = str(body.get("session_id", "") or "").strip()
     if len(model) > 256 or len(sid) > 128:
-        return web.json_response({"success": False, "error": "model 或 session_id 过长"}, status=400)
+        return web.json_response(
+            {"success": False, "error": "model 或 session_id 过长"}, status=400
+        )
     request_id = str(body.get("request_id", "") or "")[:80]
     mode = (
         "analyze" if str(body.get("mode", "") or "") in {"analyze", "chat"} else "dev"
@@ -309,9 +314,7 @@ async def _post_chat(request: web.Request):
     try:
         plugin_files = _validate_plugin_files(body.get("plugin_files"))
     except ValueError as error:
-        return web.json_response(
-            {"success": False, "error": str(error)}, status=400
-        )
+        return web.json_response({"success": False, "error": str(error)}, status=400)
     raw_images = body.get("images")
     if raw_images is None:
         raw_images = []
@@ -324,7 +327,10 @@ async def _post_chat(request: web.Request):
     for image in raw_images:
         if not isinstance(image, str) or not _IMAGE_DATA_RE.fullmatch(image):
             return web.json_response(
-                {"success": False, "error": "图片必须是 PNG/JPEG/WebP/GIF 的 base64 data URL"},
+                {
+                    "success": False,
+                    "error": "图片必须是 PNG/JPEG/WebP/GIF 的 base64 data URL",
+                },
                 status=400,
             )
         if len(image) > _MAX_IMAGE_CHARS:
@@ -376,9 +382,7 @@ async def _post_chat(request: web.Request):
         "result": None,
     }
     task = asyncio.create_task(
-        _run_chat_job(
-            job, _store(), sid, message, model, images, mode, plugin_files
-        ),
+        _run_chat_job(job, _store(), sid, message, model, images, mode, plugin_files),
         name=f"ai-dev-web:{sid}",
     )
     job["task"] = task
@@ -420,7 +424,7 @@ async def _run_chat_job(
         job["status"] = "cancelled"
         job["result"] = {"success": False, "message": "任务已取消", "iterations": 0}
         raise
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:
         log.exception("AI Web 后台任务异常: session=%s", session_id)
         message = f"{type(error).__name__}: {error}"
         store.add_event("error", {"message": message}, session_id)
@@ -447,7 +451,9 @@ async def _get_calls(request: web.Request):
 async def _clear(request: web.Request):
     body = await _json(request)
     if not isinstance(body, dict):
-        return web.json_response({"success": False, "error": "请求体必须是 JSON 对象"}, status=400)
+        return web.json_response(
+            {"success": False, "error": "请求体必须是 JSON 对象"}, status=400
+        )
     sid = str(body.get("session_id", ""))
     if _session_running(sid):
         return web.json_response(
@@ -479,7 +485,7 @@ async def _stream(request: web.Request):
         raise
     except (ConnectionResetError, RuntimeError):
         pass
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.debug("AI 开发事件流连接异常", exc_info=True)
     finally:
         store.unsubscribe(q)
@@ -556,9 +562,7 @@ def _validate_plugin_files(raw_files) -> list[dict]:
         folded_name = name.casefold()
         if kind == "file":
             extension = (
-                "." + folded_name.rsplit(".", 1)[-1]
-                if "." in folded_name
-                else ""
+                "." + folded_name.rsplit(".", 1)[-1] if "." in folded_name else ""
             )
             if (
                 extension not in _PLUGIN_SOURCE_EXTENSIONS

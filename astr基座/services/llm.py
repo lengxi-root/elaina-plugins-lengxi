@@ -195,11 +195,11 @@ class ToolSet:
     get_func = get_tool
 
     def openai_schema(self, omit_empty_parameter_field: bool = False) -> list[dict]:
-        schemas = []
+        schemas: list[dict[str, Any]] = []
         for tool in self.tools:
             if not getattr(tool, "active", True):
                 continue
-            function = {
+            function: dict[str, Any] = {
                 "name": str(getattr(tool, "name", "")),
                 "description": str(getattr(tool, "description", "")),
             }
@@ -325,7 +325,7 @@ def _tool_result_messages(tool_calls_result) -> list[dict]:
     results = tool_calls_result or []
     if not isinstance(results, list):
         results = [results]
-    messages = []
+        messages: list[dict[str, Any]] = []
     for result in results:
         converter = getattr(result, "to_openai_messages", None)
         if callable(converter):
@@ -387,10 +387,11 @@ async def _call_tool(tool, arguments: dict, *, event=None, context=None):
     handler = getattr(tool, "handler", None)
     if callable(handler):
         kwargs = dict(arguments)
+        parameters: dict[str, Any] = {}
         try:
-            parameters = inspect.signature(handler).parameters
+            parameters = dict(inspect.signature(handler).parameters)
         except (TypeError, ValueError):
-            parameters = {}
+            pass
         if event is not None and "event" in parameters:
             kwargs.setdefault("event", event)
         if context is not None and "context" in parameters:
@@ -655,11 +656,11 @@ class ProviderManager:
     def __init__(self) -> None:
         self._cache: dict[str, Provider] = {}
         self.llm_tools = FunctionToolManager()
-        self.personas = []
-        self.stt_provider_insts = []
-        self.tts_provider_insts = []
-        self.embedding_provider_insts = []
-        self.rerank_provider_insts = []
+        self.personas: list[Any] = []
+        self.stt_provider_insts: list[Any] = []
+        self.tts_provider_insts: list[Any] = []
+        self.embedding_provider_insts: list[Any] = []
+        self.rerank_provider_insts: list[Any] = []
         self.selected_default_persona = None
 
     def _snapshot(self) -> tuple[list[Provider], str]:

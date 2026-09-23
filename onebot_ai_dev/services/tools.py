@@ -1,13 +1,14 @@
 """Agent 工具集: 文件读写/编辑、目录、插件热重载与指令测试、配置读写、运行 Python、发消息。文件操作沙箱限定在仓库内且禁访 .git。"""
 
-import asyncio
 import ast
+import asyncio
 import fnmatch
 import json
 import os
 import platform
 import re
 import time
+from typing import Any
 
 from core.plugins import config as cfg
 
@@ -416,10 +417,18 @@ def _search_code(
                         candidate = line if case_sensitive else line.lower()
                         if needle in candidate:
                             results.append(
-                                {"path": rel, "line": number, "text": line.rstrip()[:500]}
+                                {
+                                    "path": rel,
+                                    "line": number,
+                                    "text": line.rstrip()[:500],
+                                }
                             )
                             if len(results) >= maximum:
-                                return {"query": query, "matches": results, "truncated": True}
+                                return {
+                                    "query": query,
+                                    "matches": results,
+                                    "truncated": True,
+                                }
             except OSError:
                 continue
     return {"query": query, "matches": results, "truncated": False}
@@ -490,7 +499,7 @@ async def _t_system_info() -> dict:
 
 
 def _collect_system_info() -> dict:
-    info = {
+    info: dict[str, Any] = {
         "os": platform.platform(),
         "system": platform.system(),
         "python": platform.python_version(),
@@ -532,15 +541,23 @@ async def _t_send_qq_message(target_type: str, target_id, text: str) -> dict:
         res = await api.send_private_msg(int(target_id), message)
     else:
         raise ValueError("target_type 仅支持 'group' 或 'private'")
-    if not isinstance(res, dict) or res.get("status") != "ok" or res.get("retcode") != 0:
-        detail = res.get("message") or res.get("wording") if isinstance(res, dict) else "无可用 OneBot 连接"
+    if (
+        not isinstance(res, dict)
+        or res.get("status") != "ok"
+        or res.get("retcode") != 0
+    ):
+        detail = (
+            res.get("message") or res.get("wording")
+            if isinstance(res, dict)
+            else "无可用 OneBot 连接"
+        )
         return {"sent": False, "error": detail or "OneBot 发送失败", "result": res}
     return {"sent": True, "result": res.get("data") if isinstance(res, dict) else res}
 
 
 # ==================== 调度表 ====================
 
-_DISPATCH = {
+_DISPATCH: dict[str, Any] = {
     "list_dir": _t_list_dir,
     "read_file": _t_read_file,
     "write_file": _t_write_file,
@@ -582,7 +599,10 @@ TOOLS_SCHEMA = [
                 "properties": {
                     "query": {"type": "string"},
                     "path": {"type": "string"},
-                    "pattern": {"type": "string", "description": "文件 glob，例如 *.py"},
+                    "pattern": {
+                        "type": "string",
+                        "description": "文件 glob，例如 *.py",
+                    },
                     "case_sensitive": {"type": "boolean"},
                     "limit": {"type": "integer"},
                 },
@@ -841,15 +861,15 @@ _READ_ONLY_TOOL_NAMES = {
 
 def schemas_for_mode(mode: str, allow_high_risk: bool = False) -> list[dict]:
     """返回开发执行或只读分析模式下明确开放的工具集合。"""
-    if mode == "dev":
-        return [
-            item
-            for item in TOOLS_SCHEMA
-            if allow_high_risk
-            or item.get("function", {}).get("name") not in _HIGH_RISK_TOOL_NAMES
-        ]
-    return [
-        item
-        for item in TOOLS_SCHEMA
-        if item.get("function", {}).get("name") in _READ_ONLY_TOOL_NAMES
-    ]
+    selected = []
+    for item in TOOLS_SCHEMA:
+        function = item.get("function")
+        if not isinstance(function, dict):
+            continue
+        name = function.get("name")
+        if mode == "dev":
+            if allow_high_risk or name not in _HIGH_RISK_TOOL_NAMES:
+                selected.append(item)
+        elif name in _READ_ONLY_TOOL_NAMES:
+            selected.append(item)
+    return selected

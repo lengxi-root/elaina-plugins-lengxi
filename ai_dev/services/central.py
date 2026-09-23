@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 _registered_service = None
 
 SELECTED_PLUGIN_READER_AGENT_ID = "selected-plugin-reader"
@@ -110,7 +112,7 @@ def _register_on(service) -> list[dict]:
     if hasattr(service, "unregister_plugin_capabilities"):
         service.unregister_plugin_capabilities("ai_dev")
 
-    definitions = [
+    definitions: list[tuple[str, dict[str, Any]]] = [
         (
             "skill",
             {

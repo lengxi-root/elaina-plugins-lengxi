@@ -8,8 +8,8 @@ from ...services.permissions import (
     is_group_admin,
 )
 from ...services.responses import join_review_buttons as join_review_buttons
-from ...storage.global_settings import get_global_settings
 from ...services.utils import reply_at
+from ...storage.global_settings import get_global_settings
 from .common import (
     HANDLER_OPTIONS,
     JOIN_REVIEW_HANDLER_OPTIONS,

@@ -5,26 +5,30 @@
 PEP 695 (type 语句 / def f[T]) 之类; 本机是新版解释器编译通过不代表线上 3.11 能跑。
 """
 
-from core.plugin.decorators import on_load, on_unload
 from core.plugin.context import ctx
+from core.plugin.decorators import on_load, on_unload
 
 __plugin_meta__ = {
     "name": "Plugin-GloryOfKings",
     "author": "冷曦",
-    "description": ("王者荣耀: 营地ID绑定(多账号) + 主页/战绩/单局详情/英雄战力/皮肤查询 "
-                    "+ 群战绩订阅推送"),
-    "version": "1.1.2",
+    "description": (
+        "王者荣耀: 营地ID绑定(多账号) + 主页/战绩/单局详情/英雄战力/皮肤查询 "
+        "+ 群战绩订阅推送"
+    ),
+    "version": "1.1.3",
     "github": "https://github.com/lengxi-root/elaina-plugins-lengxi",
 }
 
 # 导入 app/ 子模块, 触发 @handler 注册
-from .app import binding   # noqa: E402, F401
-from .app import query     # noqa: E402, F401
-from .app import hero      # noqa: E402, F401
-from .app import push      # noqa: E402, F401
-from .app import help      # noqa: E402, F401
-from .app import auth      # noqa: E402, F401
-from .app import advanced  # noqa: E402, F401
+from .app import (
+    advanced,  # noqa: F401
+    auth,  # noqa: F401
+    binding,  # noqa: F401
+    help,  # noqa: F401
+    hero,  # noqa: F401
+    push,  # noqa: F401
+    query,  # noqa: F401
+)
 
 _runtime = None
 
@@ -32,14 +36,14 @@ _runtime = None
 class PluginRuntime:
     """插件运行时 — 持有共享资源, 供 app/ 子模块调用"""
 
-    __slots__ = ("ctx", "db", "auth", "api", "push", "archive", "rank_snapshot")
+    __slots__ = ("api", "archive", "auth", "ctx", "db", "push", "rank_snapshot")
 
     def __init__(self, plugin_ctx):
-        from .lib.store import PluginDB
         from .lib.api import WzryAPI
         from .lib.auth import AuthStore
         from .lib.battle_archive import BattleArchive
         from .lib.rank import RankSnapshot
+        from .lib.store import PluginDB
 
         self.ctx = plugin_ctx
         db_path = plugin_ctx.get_data_path("wzry.db")
@@ -53,6 +57,7 @@ class PluginRuntime:
 
     async def start_push(self):
         from .app.push import PushScheduler
+
         self.push = PushScheduler(self)
         await self.push.start()
 
@@ -70,6 +75,7 @@ class PluginRuntime:
     def _bots() -> dict:
         try:
             from core.bot.manager import _bot_manager_ref
+
             if not _bot_manager_ref:
                 return {}
             return _bot_manager_ref._bots or {}
@@ -98,7 +104,8 @@ class PluginRuntime:
             try:
                 rows = bot.log_service.query_data(
                     "SELECT group_id FROM groups_users "
-                    "WHERE allow_proactive_msg = 1 AND in_group = 1")
+                    "WHERE allow_proactive_msg = 1 AND in_group = 1"
+                )
             except Exception:
                 continue
             if any(str(r.get("group_id")) == gid for r in (rows or [])):

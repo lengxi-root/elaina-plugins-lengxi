@@ -12,7 +12,8 @@ import os
 import threading
 import time
 
-from core.plugins import config as cfg, run_sync
+from core.plugins import config as cfg
+from core.plugins import run_sync
 
 _DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"

@@ -47,8 +47,8 @@ class Image(_Component):
     @classmethod
     def fromBytes(cls, data: bytes):
         obj = cls()
-        obj.bytes_ = data
-        obj.file = data
+        setattr(obj, "bytes_", data)
+        setattr(obj, "file", data)
         return obj
 
     @classmethod

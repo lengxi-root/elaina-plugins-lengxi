@@ -76,7 +76,9 @@ def tools(config: dict, personality: dict | None = None) -> list[dict]:
     ]
 
 
-def run(name: str, arguments: dict, config: dict, personality: dict | None = None) -> dict:
+def run(
+    name: str, arguments: dict, config: dict, personality: dict | None = None
+) -> dict:
     rows = dict(_rows(config, personality))
     if name == "list_character_sets":
         return {
@@ -101,8 +103,12 @@ def run(name: str, arguments: dict, config: dict, personality: dict | None = Non
                 "id": set_id,
                 "name": str(item.get("name") or set_id),
                 "description": str(item.get("description") or ""),
-                "characters": item.get("characters") if isinstance(item.get("characters"), list) else [],
-                "relationships": item.get("relationships") if isinstance(item.get("relationships"), list) else [],
+                "characters": item.get("characters")
+                if isinstance(item.get("characters"), list)
+                else [],
+                "relationships": item.get("relationships")
+                if isinstance(item.get("relationships"), list)
+                else [],
             },
         }
     return {"ok": False, "error": "未知人物集工具"}

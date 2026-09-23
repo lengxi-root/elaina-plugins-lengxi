@@ -3,13 +3,13 @@
 import contextlib
 
 from ...services.responses import api_error as api_error
+from ...services.utils import api_pair as api_pair
 from ...storage.audit import (
     current_action,
     record_audit,
     record_received,
     record_result,
 )
-from ...services.utils import api_pair as api_pair
 
 HANDLER_OPTIONS = dict(
     group_only=True,

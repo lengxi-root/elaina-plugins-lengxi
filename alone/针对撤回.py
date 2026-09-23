@@ -17,7 +17,7 @@ __plugin_meta__ = {
     "name": "针对撤回",
     "author": "ElainaBot",
     "description": "针对指定用户自动撤回消息",
-    "version": "2.0.4",
+    "version": "2.0.5",
 }
 
 # ==================== 数据持久化 ====================
@@ -61,7 +61,9 @@ def _load_targets():
 def _save_targets(snapshot=None):
     tmp = _TARGETS_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(_targets if snapshot is None else snapshot, f, ensure_ascii=False, indent=2)
+        json.dump(
+            _targets if snapshot is None else snapshot, f, ensure_ascii=False, indent=2
+        )
     os.replace(tmp, _TARGETS_FILE)
 
 

@@ -5,6 +5,7 @@
 """
 
 import base64
+import binascii
 import json
 import re
 import time
@@ -177,7 +178,7 @@ def _decode_pb_input(data: str, fmt: str) -> bytes:
         if fmt in ("auto", "base64"):
             try:
                 return base64.b64decode(cand, validate=True)
-            except (ValueError, base64.binascii.Error) as e:
+            except (ValueError, binascii.Error) as e:
                 errors.append(str(e))
     raise ValueError(errors[-1] if errors else "无法识别的输入")
 
@@ -938,8 +939,7 @@ async def run_tool(name: str, args: dict, meta: dict) -> dict:
         return await run_sync(tasks.list_tasks)
     if name == "toggle_scheduled_task":
         return await run_sync(
-            tasks.toggle_task,
-            str(args.get("task_id") or ""), bool(args.get("enabled"))
+            tasks.toggle_task, str(args.get("task_id") or ""), bool(args.get("enabled"))
         )
     if name == "run_scheduled_task_now":
         return await tasks.run_task_now(str(args.get("task_id") or ""))
@@ -950,29 +950,35 @@ async def run_tool(name: str, args: dict, meta: dict) -> dict:
             str(meta.get("self_id") or ""),
         )
     if name == "remove_user_watcher":
-        return await run_sync(watchers.remove_watcher, str(args.get("watcher_id") or ""))
+        return await run_sync(
+            watchers.remove_watcher, str(args.get("watcher_id") or "")
+        )
     if name == "list_user_watchers":
         return await run_sync(watchers.list_watchers)
     if name == "toggle_user_watcher":
         return await run_sync(
             watchers.toggle_watcher,
-            str(args.get("watcher_id") or ""), bool(args.get("enabled"))
+            str(args.get("watcher_id") or ""),
+            bool(args.get("enabled")),
         )
     if name == "add_custom_command":
         return await run_sync(customcmd.add_command, args)
     if name == "remove_custom_command":
-        return await run_sync(customcmd.remove_command, str(args.get("command_id") or ""))
+        return await run_sync(
+            customcmd.remove_command, str(args.get("command_id") or "")
+        )
     if name == "list_custom_commands":
         return await run_sync(customcmd.list_commands)
     if name == "toggle_custom_command":
         return await run_sync(
             customcmd.toggle_command,
-            str(args.get("command_id") or ""), bool(args.get("enabled"))
+            str(args.get("command_id") or ""),
+            bool(args.get("enabled")),
         )
     return {"ok": False, "error": f"未知工具: {name}"}
 
 
-def _session_context_line(meta: dict) -> str:
+def _session_context_line(meta: dict | None) -> str:
     """当前会话信息: 群号/发送者/权限, 已知信息无需向用户询问。"""
     if not meta:
         return ""
@@ -986,7 +992,7 @@ def _session_context_line(meta: dict) -> str:
     return "【当前会话】" + " | ".join(parts)
 
 
-def build_system_prompt(meta: dict = None) -> str:
+def build_system_prompt(meta: dict | None = None) -> str:
     """依据人设生成系统提示词; 若面板填写了 system_prompt 则优先使用 (仍附加当前会话信息)。"""
     ctx = _session_context_line(meta)
     override = aiconfig.system_prompt()

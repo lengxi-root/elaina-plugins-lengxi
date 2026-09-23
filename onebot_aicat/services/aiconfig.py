@@ -7,13 +7,14 @@ import json
 import os
 import threading
 import uuid
+from typing import Any
 
 from core.plugins import config as cfg
 
 # 内置 YTea 中转 (NewAPI, OpenAI 兼容) 固定域名
 YTEA_BASE_URL = "https://api.ytea.top/v1"
 
-DEFAULTS = {
+DEFAULTS: dict[str, Any] = {
     "enabled": True,
     # 接口提供方: ytea=内置 YTea 中转(api.ytea.top) / custom=自定义 OpenAI 兼容
     "provider": "ytea",
@@ -146,7 +147,7 @@ def _load_sites_raw() -> dict:
     global _sites_cache
     if _sites_cache is not None:
         return _sites_cache
-    data = {"active_id": "", "sites": []}
+    data: dict[str, Any] = {"active_id": "", "sites": []}
     try:
         if os.path.exists(_SITES_FILE):
             with open(_SITES_FILE, encoding="utf-8") as f:
@@ -398,7 +399,7 @@ def model() -> str:
 def model_priority() -> list:
     """模型优先级列表 (按顺序尝试); 兼容逗号分隔字符串。"""
     raw = get("model_priority")
-    items = []
+    items: list[str] = []
     if isinstance(raw, list):
         items = [str(x).strip() for x in raw]
     elif isinstance(raw, str) and raw.strip():

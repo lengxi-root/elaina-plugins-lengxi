@@ -10,7 +10,7 @@ __plugin_meta__ = {
     "name": "字符字",
     "author": "lengxi",
     "description": "将汉字转换为字符画",
-    "version": "1.0.2",
+    "version": "1.0.3",
 }
 
 

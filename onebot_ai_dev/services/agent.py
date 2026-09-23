@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from typing import Any
 
 import aiohttp
 
@@ -61,7 +62,8 @@ def _required_evidence_tools(user_text: str) -> list[str]:
         word in text for word in ("状态", "检查", "健康", "运行情况")
     )
     plugin_request = "插件" in text and any(
-        word in text for word in ("全部", "所有", "列表", "名字", "名称", "列出", "查看")
+        word in text
+        for word in ("全部", "所有", "列表", "名字", "名称", "列出", "查看")
     )
     if status_request:
         return ["system_info", "list_plugins"]
@@ -71,12 +73,37 @@ def _required_evidence_tools(user_text: str) -> list[str]:
 
 
 _CHANGE_WORDS = (
-    "写一个", "写个", "编写", "创建", "新建", "新增", "开发一个", "开发个",
-    "实现", "修改", "修复", "优化", "重构", "删除", "移除", "配置", "改成",
+    "写一个",
+    "写个",
+    "编写",
+    "创建",
+    "新建",
+    "新增",
+    "开发一个",
+    "开发个",
+    "实现",
+    "修改",
+    "修复",
+    "优化",
+    "重构",
+    "删除",
+    "移除",
+    "配置",
+    "改成",
 )
 _EXPLANATION_ONLY_WORDS = (
-    "只给代码", "仅给代码", "不要执行", "不要修改", "不用创建", "不需要创建",
-    "怎么写", "如何写", "示例代码", "代码示例", "讲解", "解释一下",
+    "只给代码",
+    "仅给代码",
+    "不要执行",
+    "不要修改",
+    "不用创建",
+    "不需要创建",
+    "怎么写",
+    "如何写",
+    "示例代码",
+    "代码示例",
+    "讲解",
+    "解释一下",
 )
 
 
@@ -89,7 +116,9 @@ def _successful_tool_event(event: dict) -> bool:
     return not result.get("error") and result.get("ok") is not False
 
 
-def _execution_validator(user_text: str, analysis_mode: bool, allow_high_risk: bool = False):
+def _execution_validator(
+    user_text: str, analysis_mode: bool, allow_high_risk: bool = False
+):
     """为开发类请求生成执行证据校验器。"""
     text = str(user_text or "").strip().casefold()
     if analysis_mode or any(word in text for word in _EXPLANATION_ONLY_WORDS):
@@ -99,24 +128,44 @@ def _execution_validator(user_text: str, analysis_mode: bool, allow_high_risk: b
 
     create_plugin = "插件" in text and any(
         word in text
-        for word in ("写一个插件", "写个插件", "编写插件", "创建插件", "新建插件",
-                     "新增插件", "开发一个插件", "开发个插件", "实现一个插件")
+        for word in (
+            "写一个插件",
+            "写个插件",
+            "编写插件",
+            "创建插件",
+            "新建插件",
+            "新增插件",
+            "开发一个插件",
+            "开发个插件",
+            "实现一个插件",
+        )
     )
-    write_tools = {"write_file"} if create_plugin else {"write_file", "edit_file", "delete_file", "set_config"}
-    plugin_delete = "插件" in text and any(word in text for word in ("删除", "移除", "卸载"))
+    write_tools = (
+        {"write_file"}
+        if create_plugin
+        else {"write_file", "edit_file", "delete_file", "set_config"}
+    )
+    plugin_delete = "插件" in text and any(
+        word in text for word in ("删除", "移除", "卸载")
+    )
 
     def validate(_final_text: str, events: list[dict]) -> str | None:
         completed_events = [item for item in events if _successful_tool_event(item)]
         completed = {str(item.get("name") or "") for item in completed_events}
-        if not completed.intersection({"list_plugins", "list_dir", "read_file", "search_code"}):
+        if not completed.intersection(
+            {"list_plugins", "list_dir", "read_file", "search_code"}
+        ):
             return "本任务尚未完成真实执行：下一步需要检查现有代码或插件。"
         if not completed.intersection(write_tools):
             return "本任务尚未完成真实执行：下一步需要实际写入改动。"
 
-        write_events = [item for item in completed_events if item.get("name") in write_tools]
+        write_events = [
+            item for item in completed_events if item.get("name") in write_tools
+        ]
         changed_paths = [
             str((item.get("arguments") or {}).get("path") or "").lower()
-            for item in write_events if isinstance(item.get("arguments"), dict)
+            for item in write_events
+            if isinstance(item.get("arguments"), dict)
         ]
         changed_python = any(path.endswith(".py") for path in changed_paths)
         plugin_code_change = "插件" in text and not plugin_delete and changed_python
@@ -130,13 +179,22 @@ def _execution_validator(user_text: str, analysis_mode: bool, allow_high_risk: b
 
         if plugin_code_change:
             names = [str(item.get("name") or "") for item in completed_events]
-            last_write = max(index for index, name in enumerate(names) if name in write_tools)
-            ordered = [("check_python", "写入后语法检查"), ("reload_plugin", "语法检查后热重载")]
+            last_write = max(
+                index for index, name in enumerate(names) if name in write_tools
+            )
+            ordered = [
+                ("check_python", "写入后语法检查"),
+                ("reload_plugin", "语法检查后热重载"),
+            ]
             if allow_high_risk and command_change:
                 ordered.append(("test_command", "热重载后真实命令测试"))
             previous = last_write
             for tool_name, label in ordered:
-                positions = [index for index, name in enumerate(names) if name == tool_name and index > previous]
+                positions = [
+                    index
+                    for index, name in enumerate(names)
+                    if name == tool_name and index > previous
+                ]
                 if not positions:
                     return "本任务尚未完成真实执行顺序：缺少" + label + "。"
                 previous = positions[-1]
@@ -167,7 +225,7 @@ async def _chat_completion(
     session: aiohttp.ClientSession,
     messages: list,
     model: str,
-    endpoint: dict = None,
+    endpoint: dict | None = None,
     schemas: list | None = None,
 ) -> dict:
     ep = endpoint or {}
@@ -266,7 +324,7 @@ def _build_user_content(user_text: str, images: list):
     """无图片时返回纯文本; 有图片时返回 OpenAI 多模态 content 数组 (文本 + image_url)。"""
     if not images:
         return user_text
-    content = [{"type": "text", "text": user_text}] if user_text else []
+    content: list[dict[str, Any]] = [{"type": "text", "text": user_text}] if user_text else []
     content.extend({"type": "image_url", "image_url": {"url": url}} for url in images)
     return content
 
@@ -286,7 +344,7 @@ async def run_agent(
     session_id: str,
     user_text: str,
     model: str = "",
-    images: list = None,
+    images: list | None = None,
     mode: str = "dev",
 ) -> dict:
     """执行一轮多步 Agent 对话。返回 {ok, message, iterations}。
@@ -315,15 +373,11 @@ async def run_agent(
         "analyze" if analysis_mode else "dev",
         allow_high_risk=allow_high_risk,
     )
-    allowed_tools = {
-        item.get("function", {}).get("name") for item in schemas
-    }
+    allowed_tools = {item.get("function", {}).get("name") for item in schemas}
     final_reasoning = ""
     history = store.get_messages(session_id)
     sys_prompt = (
-        aiconfig.analysis_system_prompt()
-        if analysis_mode
-        else aiconfig.system_prompt()
+        aiconfig.analysis_system_prompt() if analysis_mode else aiconfig.system_prompt()
     )
     user_content = _build_user_content(user_text, images)
     messages = _build_messages(
@@ -332,7 +386,12 @@ async def run_agent(
 
     await store.add_event(
         "user",
-        {"content": user_text, "images": images, "model": model, "mode": "analyze" if analysis_mode else "dev"},
+        {
+            "content": user_text,
+            "images": images,
+            "model": model,
+            "mode": "analyze" if analysis_mode else "dev",
+        },
         session_id,
     )
 
@@ -358,7 +417,7 @@ async def run_agent(
 
     max_iter = aiconfig.max_iterations()
     final_text = ""
-    tool_events = []
+    tool_events: list[dict[str, Any]] = []
     required_tools = _required_evidence_tools(user_text)
     completion_validator = _execution_validator(
         user_text, analysis_mode, allow_high_risk
@@ -433,7 +492,11 @@ async def run_agent(
                     else None
                 )
                 incomplete_reason = (
-                    ("本任务尚未完成证据收集：下一步需要调用 " + ", ".join(missing) + "。")
+                    (
+                        "本任务尚未完成证据收集：下一步需要调用 "
+                        + ", ".join(missing)
+                        + "。"
+                    )
                     if missing
                     else (validation_error or "")
                 )
@@ -447,7 +510,8 @@ async def run_agent(
                         messages.append(
                             {
                                 "role": "system",
-                                "content": incomplete_reason + " 请继续调用允许的工具完成，不要提前给出最终答复。",
+                                "content": incomplete_reason
+                                + " 请继续调用允许的工具完成，不要提前给出最终答复。",
                             }
                         )
                         continue
@@ -494,9 +558,7 @@ async def run_agent(
                 start = time.time()
                 try:
                     if name not in allowed_tools:
-                        raise PermissionError(
-                            f"当前模式或安全设置未授权工具: {name}"
-                        )
+                        raise PermissionError(f"当前模式或安全设置未授权工具: {name}")
                     result = await toolmod.run_tool(name, args)
                     ok = not (
                         isinstance(result, dict)

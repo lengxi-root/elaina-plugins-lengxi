@@ -1,8 +1,7 @@
 """Web 面板路由: /api/ext/play/* (config / meme 状态)。"""
 
 from aiohttp import web
-from core.plugins import PLUGIN, get_logger, run_sync
-from core.plugins import register_route
+from core.plugins import PLUGIN, get_logger, register_route, run_sync
 
 from ..services import config, draw, meme
 

@@ -4,7 +4,6 @@ import re
 from collections import OrderedDict
 
 import aiohttp
-
 from core.plugins import PLUGIN, get_logger
 
 from . import config

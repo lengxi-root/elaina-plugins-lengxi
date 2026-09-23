@@ -1,8 +1,7 @@
 """Web 面板路由: /api/ext/groupguard/* (config/groups/sessions/activity/logs/presets)。"""
 
 from aiohttp import web
-from core.plugins import PLUGIN, get_logger
-from core.plugins import register_route
+from core.plugins import PLUGIN, get_logger, register_route
 
 from ..services import logbuf
 from ..services.runtime import get_runtime

@@ -83,7 +83,7 @@ def delete_targets(group_id, user_ids):
     placeholders = ",".join("?" for _ in user_ids)
     connection = get_db()
     cursor = connection.execute(
-        f"DELETE FROM targets WHERE group_id = ? AND user_id IN ({placeholders})",  # noqa: S608 - 仅拼接参数占位符
+        f"DELETE FROM targets WHERE group_id = ? AND user_id IN ({placeholders})",
         (group_id, *user_ids),
     )
     connection.commit()

@@ -30,14 +30,14 @@ class RuntimeState:
         self.debug_enabled = False
 
     def add_log(self, level, message):
-        if str(level) == 'debug' and not self.debug_enabled:
+        if str(level) == "debug" and not self.debug_enabled:
             return
         self.log_cursor += 1
         entry = {
-            'id': self.log_cursor,
-            'time': int(time.time() * 1000),
-            'level': str(level),
-            'message': str(message),
+            "id": self.log_cursor,
+            "time": int(time.time() * 1000),
+            "level": str(level),
+            "message": str(message),
         }
         self.logs.append(entry)
         method = getattr(ctx.log, level, ctx.log.info)
@@ -50,7 +50,7 @@ class RuntimeState:
         return task
 
     def remember_gateway_event(self, key):
-        key = str(key or '').strip()
+        key = str(key or "").strip()
         if not key:
             return True
         if key in self.gateway_events:

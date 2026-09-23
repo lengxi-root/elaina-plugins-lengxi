@@ -6,12 +6,12 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 
-from .templates import _get_cached_template, validate_template
 from ..storage.audit import record_audit
 from ..storage.global_settings import (
     get_global_settings,
     redact_global_forbidden,
 )
+from .templates import _get_cached_template, validate_template
 
 _UNSET = object()
 

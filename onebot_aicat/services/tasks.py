@@ -12,8 +12,7 @@ import re
 import time
 
 import aiohttp
-from core.plugins import PLUGIN, get_logger, run_sync
-from core.plugins import get_api
+from core.plugins import PLUGIN, get_api, get_logger, run_sync
 
 log = get_logger(PLUGIN, "aicat.tasks")
 

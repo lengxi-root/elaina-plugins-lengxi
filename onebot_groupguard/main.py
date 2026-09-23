@@ -4,9 +4,15 @@ import asyncio
 import os
 import re
 
-from core.plugins import PLUGIN, get_logger
-from core.plugins import handler, on_load, on_unload
-from core.plugins import register_page, unregister_page
+from core.plugins import (
+    PLUGIN,
+    get_logger,
+    handler,
+    on_load,
+    on_unload,
+    register_page,
+    unregister_page,
+)
 
 from .services import commands, guard, logbuf, verify
 from .services.runtime import get_runtime, stop_background
@@ -18,7 +24,7 @@ __plugin_meta__ = {
     "name": "群管 (groupguard)",
     "author": "冷曦",
     "description": "全功能群管理: 入群验证/违禁词/防撤回/刷屏检测/问答/黑白名单/名片锁定/活跃统计, 支持 Web 面板配置",
-    "version": "1.0.1",
+    "version": "1.0.2",
 }
 
 log = get_logger(PLUGIN, "groupguard")
@@ -138,9 +144,7 @@ async def on_group_message(event, match):
         return
 
     if not is_white:
-        await guard.handle_spam_detect(
-            group_id, user_id, settings, self_id=self_id
-        )
+        await guard.handle_spam_detect(group_id, user_id, settings, self_id=self_id)
 
     store.record_activity(group_id, user_id)
 

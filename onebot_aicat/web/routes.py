@@ -2,8 +2,7 @@
 
 import aiohttp
 from aiohttp import web
-from core.plugins import PLUGIN, get_logger, run_sync
-from core.plugins import register_route
+from core.plugins import PLUGIN, get_logger, register_route, run_sync
 
 from ..services import agent as agentmod
 from ..services import aiconfig, modelmgr

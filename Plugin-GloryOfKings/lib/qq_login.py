@@ -1,9 +1,19 @@
 """王者营地 QQ OAuth 扫码登录 (纯接口, 无浏览器依赖)。"""
-import asyncio, base64, hashlib, hmac, json, re, time, uuid
+
+import asyncio
+import base64
+import hashlib
+import hmac
+import json
+import re
+import time
+import uuid
 from urllib.parse import quote, urlencode, urlsplit
+
 import aiohttp
+
 from . import crypto
-from .auth import _PUB_N, _PUB_E
+from .auth import _PUB_E, _PUB_N
 
 QQ_APP_ID = "1105200115"
 # QQ互联统一登录壳 (m_authorize 页面内嵌的 xlogin 参数)
@@ -12,35 +22,50 @@ PT_DAID = "381"
 PT_LANG = "2052"
 PT_UISTYLE = "35"
 S_URL = "http://connect.qq.com"
-M_AUTHORIZE_URL = "https://openmobile.qq.com/oauth2.0/m_authorize?" + urlencode({
-    "client_id": QQ_APP_ID, "scope": "all", "redirect_uri": "auth://tauth.qq.com/",
-    "style": "qr", "response_type": "code"})
+M_AUTHORIZE_URL = "https://openmobile.qq.com/oauth2.0/m_authorize?" + urlencode(
+    {
+        "client_id": QQ_APP_ID,
+        "scope": "all",
+        "redirect_uri": "auth://tauth.qq.com/",
+        "style": "qr",
+        "response_type": "code",
+    }
+)
 PTQRSHOW_URL = "https://ssl.ptlogin2.qq.com/ptqrshow"
 PTQRLOGIN_URL = "https://ssl.ptlogin2.qq.com/ptqrlogin"
 YSDK_URL = "https://ysdk.qq.com/cmd/QQCodeLogin?"
 CAMP_LOGIN_URL = "https://ssl.kohsocialapp.qq.com:10001/user/login"
 
-USER_AGENT = ("Mozilla/5.0 (Linux; Android 15; V2366GA Build/V417IR; wv) "
-              "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/110.0.5481.154 "
-              "Safari/537.36 tencent_game_emulator")
+USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 15; V2366GA Build/V417IR; wv) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/110.0.5481.154 "
+    "Safari/537.36 tencent_game_emulator"
+)
 
 _POLL_INTERVAL_S = 3.0
 # ptqrlogin 状态: 0=成功 66=二维码有效 67=已扫码待确认 65/68=已失效
 _PT_EXPIRED_CODES = (65, 68)
 
-_PTCB_RE = re.compile(r"ptuiCB\('(-?\d+)'\s*,\s*'\d+'\s*,\s*'([^']*)'\s*,\s*'\d+'\s*,\s*'([^']*)'")
+_PTCB_RE = re.compile(
+    r"ptuiCB\('(-?\d+)'\s*,\s*'\d+'\s*,\s*'([^']*)'\s*,\s*'\d+'\s*,\s*'([^']*)'"
+)
 _CODE_RE = re.compile(r"[?&]code=([0-9A-Za-z_-]+)")
 _AUTH_URL_RE = re.compile(r"auth://[^\"'<>\\\s]+")
 _TAUTH_URL_RE = re.compile(r"tauth\.qq\.com/[^\"'<>\\\s]+")
-_META_RE = re.compile(r"http-equiv=['\"]?refresh['\"]?[^>]*?url=([^\"'>\s]+)", re.I)
+_META_RE = re.compile(
+    r"http-equiv=['\"]?refresh['\"]?[^>]*?url=([^\"'>\s]+)", re.IGNORECASE
+)
 _JS_REDIRECT_RE = re.compile(
     r"(?:(?:window\.)?location(?:\.href)?\s*=\s*|(?:window\.)?location\.replace\(\s*|"
-    r"window\.open\(\s*|<iframe[^>]+?src=['\"])['\"]?([^'\"\s>]+)", re.I)
+    r"window\.open\(\s*|<iframe[^>]+?src=['\"])['\"]?([^'\"\s>]+)",
+    re.IGNORECASE,
+)
 
 
 class LoginError(Exception):
     def __init__(self, message, code=""):
-        super().__init__(message); self.code = code
+        super().__init__(message)
+        self.code = code
 
 
 def _hash33(text: str) -> int:
@@ -69,8 +94,12 @@ def _decode_js_escapes(text: str) -> str:
     if "\\" not in text:
         return text
     try:
-        return (text.encode("utf-8", "ignore").decode("unicode_escape")
-                .encode("latin-1", "ignore").decode("utf-8", "ignore"))
+        return (
+            text.encode("utf-8", "ignore")
+            .decode("unicode_escape")
+            .encode("latin-1", "ignore")
+            .decode("utf-8", "ignore")
+        )
     except Exception:
         return text
 
@@ -86,7 +115,9 @@ def _find_auth_code(text: str) -> str:
 
 def _special_encode_param():
     ts = int(time.time() * 1000)
-    raw = json.dumps({"timestamp": ts, "nonce": f":{uuid.uuid4().hex}:{ts}"}, separators=(",", ":")).encode()
+    raw = json.dumps(
+        {"timestamp": ts, "nonce": f":{uuid.uuid4().hex}:{ts}"}, separators=(",", ":")
+    ).encode()
     return base64.b64encode(crypto.rsa_public_encrypt(raw, _PUB_N, _PUB_E)).decode()
 
 
@@ -94,30 +125,114 @@ async def _exchange_code(code):
     ts = str(int(time.time()))
     body = json.dumps({"appID": QQ_APP_ID, "loginCode": code}, separators=(",", ":"))
     sign = f"POST\n/cmd/QQCodeLogin\njson\nysdk\n{ts}\n{body}"
-    digest = base64.b64encode(hmac.new(b"yyb@cloud_game:CQ8FA#", sign.encode(), hashlib.sha256).digest()).decode()
-    headers = {"Content-Type": "json", "Auth-Secret-ID": "ysdk", "Auth-Secret-Digest": digest, "Auth-Request-Time": ts}
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+    digest = base64.b64encode(
+        hmac.new(b"yyb@cloud_game:CQ8FA#", sign.encode(), hashlib.sha256).digest()
+    ).decode()
+    headers = {
+        "Content-Type": "json",
+        "Auth-Secret-ID": "ysdk",
+        "Auth-Secret-Digest": digest,
+        "Auth-Request-Time": ts,
+    }
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=30)
+    ) as session:
         async with session.post(YSDK_URL, headers=headers, data=body) as resp:
             result = await resp.json(content_type=None)
     data = result.get("data") or {}
     if resp.status != 200 or result.get("code") != 0 or data.get("ret") != 0:
-        raise LoginError(result.get("errmsg") or data.get("errmsg") or f"YSDK 请求失败 ({resp.status})", "YSDK_ERROR")
-    return {"accessToken": str(data.get("accessToken") or ""), "openId": str(data.get("openID") or ""), "payToken": str(data.get("payToken") or ""), "refreshToken": str(data.get("refreshToken") or ""), "expiresIn": int(data.get("expiresIn") or 0)}
+        raise LoginError(
+            result.get("errmsg")
+            or data.get("errmsg")
+            or f"YSDK 请求失败 ({resp.status})",
+            "YSDK_ERROR",
+        )
+    return {
+        "accessToken": str(data.get("accessToken") or ""),
+        "openId": str(data.get("openID") or ""),
+        "payToken": str(data.get("payToken") or ""),
+        "refreshToken": str(data.get("refreshToken") or ""),
+        "expiresIn": int(data.get("expiresIn") or 0),
+    }
 
 
 async def _camp_login(tokens):
-    form = {"delOldUser": "0", "key1": uuid.uuid4().hex, "lastLoginTime": "0", "lastGetRemarkTime": "0", "cChannelId": "10003391", "cClientVersionCode": "2057971306", "cClientVersionName": "10.114.0826", "cCurrentGameId": "20001", "cGameId": "20001", "cGzip": "1", "cIsArm64": "true", "cRand": str(int(time.time()*1000)), "cSupportArm64": "true", "cSystem": "android", "cSystemVersionCode": "35", "cSystemVersionName": "15", "cpuHardware": "qcom", "gameId": "20001", "tinkerId": "2057971306_64_0", "specialEncodeParam": _special_encode_param(), "loginType": "openSdk", "accessToken": tokens["accessToken"], "openId": tokens["openId"], "payToken": tokens["payToken"]}
-    headers = {"Content-Encrypt": "", "Accept-Encrypt": "", "NOENCRYPT": "1", "X-Client-Proto": "https", "User-Agent": "okhttp/4.9.1", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "x-log-uid": str(uuid.uuid4()).upper()}
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+    form = {
+        "delOldUser": "0",
+        "key1": uuid.uuid4().hex,
+        "lastLoginTime": "0",
+        "lastGetRemarkTime": "0",
+        "cChannelId": "10003391",
+        "cClientVersionCode": "2057971306",
+        "cClientVersionName": "10.114.0826",
+        "cCurrentGameId": "20001",
+        "cGameId": "20001",
+        "cGzip": "1",
+        "cIsArm64": "true",
+        "cRand": str(int(time.time() * 1000)),
+        "cSupportArm64": "true",
+        "cSystem": "android",
+        "cSystemVersionCode": "35",
+        "cSystemVersionName": "15",
+        "cpuHardware": "qcom",
+        "gameId": "20001",
+        "tinkerId": "2057971306_64_0",
+        "specialEncodeParam": _special_encode_param(),
+        "loginType": "openSdk",
+        "accessToken": tokens["accessToken"],
+        "openId": tokens["openId"],
+        "payToken": tokens["payToken"],
+    }
+    headers = {
+        "Content-Encrypt": "",
+        "Accept-Encrypt": "",
+        "NOENCRYPT": "1",
+        "X-Client-Proto": "https",
+        "User-Agent": "okhttp/4.9.1",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "x-log-uid": str(uuid.uuid4()).upper(),
+    }
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=30)
+    ) as session:
         async with session.post(CAMP_LOGIN_URL, headers=headers, data=form) as resp:
             result = await resp.json(content_type=None)
     data = result.get("data") or {}
-    if resp.status != 200 or result.get("returnCode") != 0 or not data.get("userId") or not data.get("token"):
-        raise LoginError(result.get("returnMsg") or f"营地登录失败 ({resp.status})", "CAMP_ERROR")
+    if (
+        resp.status != 200
+        or result.get("returnCode") != 0
+        or not data.get("userId")
+        or not data.get("token")
+    ):
+        raise LoginError(
+            result.get("returnMsg") or f"营地登录失败 ({resp.status})", "CAMP_ERROR"
+        )
     decoded = crypto.decode_encode_res(str(data.get("encodeRes") or ""), _PUB_N, _PUB_E)
-    keys = ("userId","token","encodeRes","appOpenid","avatar","bigAvatar","icon","nickname","snsnickname","userName","sex","expires","uin","userSig","realRegisterTime")
+    keys = (
+        "userId",
+        "token",
+        "encodeRes",
+        "appOpenid",
+        "avatar",
+        "bigAvatar",
+        "icon",
+        "nickname",
+        "snsnickname",
+        "userName",
+        "sex",
+        "expires",
+        "uin",
+        "userSig",
+        "realRegisterTime",
+    )
     account = {k: str(data.get(k) or "") for k in keys}
-    account.update(userKey=str(data.get("userKey") or decoded.get("userKey") or ""), accessToken=tokens["accessToken"], refreshToken=tokens["refreshToken"], loginPlatform="qq", lastLoginAt=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    account.update(
+        userKey=str(data.get("userKey") or decoded.get("userKey") or ""),
+        accessToken=tokens["accessToken"],
+        refreshToken=tokens["refreshToken"],
+        loginPlatform="qq",
+        lastLoginAt=time.strftime("%Y-%m-%dT%H:%M:%S"),
+    )
     return account
 
 
@@ -125,7 +240,7 @@ class QQLoginSession:
     """无浏览器 QQ OAuth 扫码会话: 同一个 Cookie 会话里完成出码/轮询/授权。"""
 
     def __init__(self):
-        self.qrcode = b''
+        self.qrcode = b""
         self.closed = False
         self._scanned = False
         self._http = None
@@ -133,8 +248,9 @@ class QQLoginSession:
         self._pt_openlogin_data = ""
 
     async def _init(self):
-        self._http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30),
-                                           headers={"User-Agent": USER_AGENT})
+        self._http = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=30), headers={"User-Agent": USER_AGENT}
+        )
         try:
             # 1. 授权页壳 → xlogin 地址 (带本次会话的 h5sig)
             async with self._http.get(M_AUTHORIZE_URL) as resp:
@@ -144,9 +260,13 @@ class QQLoginSession:
                 raise LoginError("获取 QQ 授权页失败, 请稍后重试", "OAUTH_PAGE_ERROR")
             self._xlogin_url = m.group(1).encode().decode("unicode_escape")
             # 官方 JS: pt_openlogin_data = xlogin 的 query + "&pt_flex=1"
-            self._pt_openlogin_data = quote(urlsplit(self._xlogin_url).query + "&pt_flex=1", safe="")
+            self._pt_openlogin_data = quote(
+                urlsplit(self._xlogin_url).query + "&pt_flex=1", safe=""
+            )
             # 2. 登录页 (落地 pt_login_sig 等 cookie)
-            async with self._http.get(self._xlogin_url, headers={"Referer": M_AUTHORIZE_URL}) as resp:
+            async with self._http.get(
+                self._xlogin_url, headers={"Referer": M_AUTHORIZE_URL}
+            ) as resp:
                 await resp.read()
             # 3. 出码
             await self._fetch_qrcode()
@@ -155,10 +275,13 @@ class QQLoginSession:
             raise
 
     async def _fetch_qrcode(self):
-        params = (f"s=8&e=0&appid={PT_APP_ID}&type=0&t={time.time():.3f}"
-                  f"&u1={quote(S_URL, safe='')}&daid={PT_DAID}&pt_3rd_aid={QQ_APP_ID}")
-        async with self._http.get(PTQRSHOW_URL + "?" + params,
-                                  headers={"Referer": self._xlogin_url}) as resp:
+        params = (
+            f"s=8&e=0&appid={PT_APP_ID}&type=0&t={time.time():.3f}"
+            f"&u1={quote(S_URL, safe='')}&daid={PT_DAID}&pt_3rd_aid={QQ_APP_ID}"
+        )
+        async with self._http.get(
+            PTQRSHOW_URL + "?" + params, headers={"Referer": self._xlogin_url}
+        ) as resp:
             data = await resp.read()
         if resp.status != 200 or data[:4] != b"\x89PNG":
             raise LoginError("获取 QQ 登录二维码失败, 请稍后重试", "QR_ERROR")
@@ -174,11 +297,16 @@ class QQLoginSession:
         qrsig = self._cookie("qrsig")
         if not qrsig:
             raise LoginError("QQ 登录会话异常, 请重新发起", "QR_SESSION_ERROR")
-        return PTQRLOGIN_URL + "?" + (
-            f"u1={quote(S_URL, safe='')}&from_ui=1&type=1&ptlang={PT_LANG}"
-            f"&ptqrtoken={_hash33(qrsig)}&daid={PT_DAID}&aid={PT_APP_ID}"
-            f"&pt_3rd_aid={QQ_APP_ID}&pt_openlogin_data={self._pt_openlogin_data}"
-            f"&device=2&ptopt=1&pt_uistyle={PT_UISTYLE}&jsver=20142&r={time.time():.6f}")
+        return (
+            PTQRLOGIN_URL
+            + "?"
+            + (
+                f"u1={quote(S_URL, safe='')}&from_ui=1&type=1&ptlang={PT_LANG}"
+                f"&ptqrtoken={_hash33(qrsig)}&daid={PT_DAID}&aid={PT_APP_ID}"
+                f"&pt_3rd_aid={QQ_APP_ID}&pt_openlogin_data={self._pt_openlogin_data}"
+                f"&device=2&ptopt=1&pt_uistyle={PT_UISTYLE}&jsver=20142&r={time.time():.6f}"
+            )
+        )
 
     async def wait_for_code(self, timeout_s=180, on_status=None) -> str:
         deadline = time.monotonic() + timeout_s
@@ -186,8 +314,9 @@ class QQLoginSession:
             if self.closed:
                 raise LoginError("登录会话已结束", "QR_CANCELED")
             try:
-                async with self._http.get(self._poll_url(),
-                                          headers={"Referer": self._xlogin_url}) as resp:
+                async with self._http.get(
+                    self._poll_url(), headers={"Referer": self._xlogin_url}
+                ) as resp:
                     text = await resp.text(errors="ignore")
                 status, url, msg = self._parse_ptcb(text)
             except LoginError:
@@ -244,8 +373,9 @@ class QQLoginSession:
             trace.append(hops)
         # 兜底: 登录态已建立时重放一次轮询, 部分流程会直接给出授权跳转
         try:
-            async with self._http.get(self._poll_url(),
-                                      headers={"Referer": self._xlogin_url}) as resp:
+            async with self._http.get(
+                self._poll_url(), headers={"Referer": self._xlogin_url}
+            ) as resp:
                 text = await resp.text(errors="ignore")
             status, url, _msg = self._parse_ptcb(text)
             if status == 0 and url:
@@ -255,18 +385,21 @@ class QQLoginSession:
                 trace.append("repoll:" + hops)
         except Exception as exc:
             trace.append(f"repoll-exc:{type(exc).__name__}")
-        raise LoginError("QQ 授权未返回 code [" + "; ".join(t[:64] for t in trace[-4:]) + "]",
-                         "OAUTH_CODE_ERROR")
+        raise LoginError(
+            "QQ 授权未返回 code [" + "; ".join(t[:64] for t in trace[-4:]) + "]",
+            "OAUTH_CODE_ERROR",
+        )
 
     async def _walk_redirects(self, url: str):
         """手动跟随 30x/JS/meta 跳转, 返回 (code, 链路追踪)。"""
-        hops = []
+        hops: list[str] = []
         for _ in range(12):
             if not url or not url.startswith(("http://", "https://")):
                 return "", " ".join(hops + ["stop"])
             try:
-                async with self._http.get(url, allow_redirects=False,
-                                          headers={"Referer": self._xlogin_url}) as resp:
+                async with self._http.get(
+                    url, allow_redirects=False, headers={"Referer": self._xlogin_url}
+                ) as resp:
                     status = resp.status
                     location = resp.headers.get("Location", "")
                     body = "" if location else await resp.text(errors="ignore")
@@ -285,7 +418,9 @@ class QQLoginSession:
             nxt = (nxt or "").replace("&amp;", "&")
             if not nxt or nxt == url:
                 if "code=" in plain or "tauth" in plain:
-                    hops.append("sniff:" + plain[max(0, plain.find("code=") - 40):][:90])
+                    hops.append(
+                        "sniff:" + plain[max(0, plain.find("code=") - 40) :][:90]
+                    )
                 return "", " ".join(hops)
             url = nxt
         return "", " ".join(hops[:6]) + " max"
@@ -327,6 +462,6 @@ async def wait_for_login(session: QQLoginSession, timeout_s=180, on_status=None)
     try:
         code = await session.wait_for_code(timeout_s, on_status=on_status)
         tokens = await _exchange_code(code)
-        return {'tokens': tokens, 'account': await _camp_login(tokens)}
+        return {"tokens": tokens, "account": await _camp_login(tokens)}
     finally:
         await session.close()

@@ -6,8 +6,8 @@ from ...services import remote
 from ...services.permissions import (
     check_bot_is_admin,
     check_has_full_msg,
-    get_event_member_role,
     get_bot_group_state,
+    get_event_member_role,
 )
 from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
 

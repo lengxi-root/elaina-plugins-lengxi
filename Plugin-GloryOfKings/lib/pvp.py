@@ -28,8 +28,13 @@ PVP_FIELDS = {
 
 # 品质配色, 和图上其它「强弱」语言保持一致
 QUALITY_COLOR = {
-    "典藏": "#d64545", "荣耀典藏": "#d64545", "传说": "#b67d22", "史诗": "#7559e8",
-    "无双": "#d64545", "勇者": "#2b7fd1", "伴生": "#109e6a",
+    "典藏": "#d64545",
+    "荣耀典藏": "#d64545",
+    "传说": "#b67d22",
+    "史诗": "#7559e8",
+    "无双": "#d64545",
+    "勇者": "#2b7fd1",
+    "伴生": "#109e6a",
 }
 _SKIN_TTL = 3600
 
@@ -124,9 +129,12 @@ async def get_item_map(api) -> dict:
         item_id = str((item or {}).get("item_id") or "")
         if not item_id:
             continue
-        mapping[item_id] = {"id": item_id, "name": str(item.get("item_name") or ""),
-                            "price": int(item.get("total_price") or 0),
-                            "icon": item_icon(item_id)}
+        mapping[item_id] = {
+            "id": item_id,
+            "name": str(item.get("item_name") or ""),
+            "price": int(item.get("total_price") or 0),
+            "icon": item_icon(item_id),
+        }
     _cache_set("pvp:items", mapping, _CATALOG_TTL)
     return mapping
 
@@ -157,15 +165,24 @@ def parse_builds(html: str, item_map: dict) -> list:
     """出装建议: 两个 tab 各一套, data-item 是装备ID串, 紧跟 equip-tips 是 Tips。"""
     builds = []
     for matched in re.finditer(
-            r'data-item="([^"]*)"[\s\S]*?class="equip-tips">([^<]*)<', html):
+        r'data-item="([^"]*)"[\s\S]*?class="equip-tips">([^<]*)<', html
+    ):
         ids = [x.strip() for x in matched.group(1).split("|") if x.strip()]
         if not ids:
             continue
-        builds.append({
-            "items": [{"id": i, "name": (item_map.get(i) or {}).get("name", ""),
-                       "icon": (item_map.get(i) or {}).get("icon") or item_icon(i)} for i in ids],
-            "tips": re.sub(r"^Tips[:：]\s*", "", _clean(matched.group(2))),
-        })
+        builds.append(
+            {
+                "items": [
+                    {
+                        "id": i,
+                        "name": (item_map.get(i) or {}).get("name", ""),
+                        "icon": (item_map.get(i) or {}).get("icon") or item_icon(i),
+                    }
+                    for i in ids
+                ],
+                "tips": re.sub(r"^Tips[:：]\s*", "", _clean(matched.group(2))),
+            }
+        )
     return builds
 
 
@@ -186,9 +203,14 @@ def parse_relations(html: str, by_ename: dict) -> list:
         heroes = []
         for idx, ename in enumerate(enames):
             hero = by_ename.get(ename) or {}
-            heroes.append({"ename": ename, "name": hero.get("name") or ename,
-                           "avatar": hero.get("avatar") or "",
-                           "desc": descs[idx] if idx < len(descs) else ""})
+            heroes.append(
+                {
+                    "ename": ename,
+                    "name": hero.get("name") or ename,
+                    "avatar": hero.get("avatar") or "",
+                    "desc": descs[idx] if idx < len(descs) else "",
+                }
+            )
         groups.append({"title": title, "heroes": heroes})
     return groups
 
@@ -198,20 +220,29 @@ def parse_skills(html: str) -> list:
     icon_block_match = re.search(r'<ul class="skill-u1">([\s\S]*?)</ul>', html)
     icon_block = icon_block_match.group(1) if icon_block_match else ""
     icons = [_abs_url(m) for m in re.findall(r'<img\s+src="([^"]+)"', icon_block)]
-    icons = [url for url in icons if re.search(r"\.(png|jpg)$", url, re.I)]
+    icons = [url for url in icons if re.search(r"\.(png|jpg)$", url, re.IGNORECASE)]
 
-    skills = []
+    skills: list[dict] = []
     for matched in re.finditer(
-            r'<p class="skill-name"><b>([^<]*)</b>([\s\S]*?)</p>\s*<p class="skill-desc">([\s\S]*?)</p>',
-            html):
+        r'<p class="skill-name"><b>([^<]*)</b>([\s\S]*?)</p>\s*<p class="skill-desc">([\s\S]*?)</p>',
+        html,
+    ):
         name = _clean(matched.group(1))
         desc = _clean(matched.group(3))
         if not name or not desc:
             continue
-        tags = [_clean(x) for x in re.findall(r"<span>([^<]*)</span>", matched.group(2))]
+        tags = [
+            _clean(x) for x in re.findall(r"<span>([^<]*)</span>", matched.group(2))
+        ]
         tags = [t for t in tags if t and not re.search(r"[:：]\s*$", t)]
-        skills.append({"name": name, "tags": tags, "desc": desc,
-                       "icon": icons[len(skills)] if len(skills) < len(icons) else ""})
+        skills.append(
+            {
+                "name": name,
+                "tags": tags,
+                "desc": desc,
+                "icon": icons[len(skills)] if len(skills) < len(icons) else "",
+            }
+        )
     return skills
 
 
@@ -241,6 +272,7 @@ async def get_hero_guide(api, name: str):
 
 async def _gather(*coros):
     import asyncio
+
     return await asyncio.gather(*coros)
 
 
@@ -254,6 +286,7 @@ async def get_camp_build(api, hero_id):
     result = None
     try:
         import asyncio
+
         equip_res, fringe_res = await asyncio.gather(
             api.get_hero_best_equip(hero_id),
             api.get_hero_fringe_data(hero_id),
@@ -269,16 +302,18 @@ async def get_camp_build(api, hero_id):
             name = str(item.get("szTitle") or "")
             if not name:
                 continue
-            core_equips.append({
-                "id": str(item.get("equipId") or ""),
-                "name": name,
-                "icon": str(item.get("szIcon") or ""),
-                "cate": str(item.get("szCate") or ""),
-                "money": int(item.get("szMoney") or 0),
-                "label": str(item.get("descLabel") or ""),
-                "winRate": _to_percent(item.get("winRate")),
-                "showRate": _to_percent(item.get("showRate")),
-            })
+            core_equips.append(
+                {
+                    "id": str(item.get("equipId") or ""),
+                    "name": name,
+                    "icon": str(item.get("szIcon") or ""),
+                    "cate": str(item.get("szCate") or ""),
+                    "money": int(item.get("szMoney") or 0),
+                    "label": str(item.get("descLabel") or ""),
+                    "winRate": _to_percent(item.get("winRate")),
+                    "showRate": _to_percent(item.get("showRate")),
+                }
+            )
 
         # 这个接口顶层就是数据 (没有 returnCode / data 包装), 别按常规响应解
         rune_sets = []
@@ -288,20 +323,28 @@ async def get_camp_build(api, hero_id):
                 name = re.sub(r"^\d+级铭文[:：]\s*", "", str(rune.get("szTitle") or ""))
                 if not name:
                     continue
-                runes.append({
-                    "id": str(rune.get("runeId") or ""),
-                    "name": name,
-                    "level": int(rune.get("iLevel") or 0),
-                    "num": int(rune.get("num") or 0),
-                    "color": str(rune.get("szColor") or ""),
-                    "colorCode": RUNE_COLOR.get(str(rune.get("szColor") or ""), "#c8d0dd"),
-                    "attr": str(rune.get("szCommAttr") or "").replace("|", " · "),
-                    "icon": str(rune.get("szIcon") or ""),
-                })
+                runes.append(
+                    {
+                        "id": str(rune.get("runeId") or ""),
+                        "name": name,
+                        "level": int(rune.get("iLevel") or 0),
+                        "num": int(rune.get("num") or 0),
+                        "color": str(rune.get("szColor") or ""),
+                        "colorCode": RUNE_COLOR.get(
+                            str(rune.get("szColor") or ""), "#c8d0dd"
+                        ),
+                        "attr": str(rune.get("szCommAttr") or "").replace("|", " · "),
+                        "icon": str(rune.get("szIcon") or ""),
+                    }
+                )
             if runes:
-                rune_sets.append({"winRate": _to_percent(rune_set.get("winRate")),
-                                  "showRate": _to_percent(rune_set.get("showRate")),
-                                  "runes": runes})
+                rune_sets.append(
+                    {
+                        "winRate": _to_percent(rune_set.get("winRate")),
+                        "showRate": _to_percent(rune_set.get("showRate")),
+                        "runes": runes,
+                    }
+                )
 
         if core_equips or rune_sets:
             result = {"coreEquips": core_equips, "runeSets": rune_sets}
@@ -334,16 +377,23 @@ def build_guide_view(guide: dict, camp_build: dict | None) -> dict:
 
 def render_guide_text(view: dict) -> str:
     """渲染失败时的文字兜底"""
-    lines = [f"📘 {view['heroName']}" + (f"（{view['heroRole']}）" if view["heroRole"] else "")]
+    lines = [
+        f"📘 {view['heroName']}"
+        + (f"（{view['heroRole']}）" if view["heroRole"] else "")
+    ]
     if view["heroIntro"]:
         lines.append(view["heroIntro"][:200])
     for idx, build in enumerate(view["builds"][:2]):
         items = " → ".join(it["name"] or f"装备{it['id']}" for it in build["items"])
-        lines.append(f"\n【推荐出装{['一', '二'][idx] if idx < 2 else idx + 1}】{items}")
+        lines.append(
+            f"\n【推荐出装{['一', '二'][idx] if idx < 2 else idx + 1}】{items}"
+        )
         if build["tips"]:
             lines.append(f"Tips: {build['tips'][:150]}")
     if view["coreEquips"]:
-        items = "、".join(f"{it['name']}({it['winRate'] or '—'})" for it in view["coreEquips"])
+        items = "、".join(
+            f"{it['name']}({it['winRate'] or '—'})" for it in view["coreEquips"]
+        )
         lines.append(f"\n【核心装备】{items}")
     for rs in view["runeSets"][:1]:
         runes = "、".join(f"{r['name']}x{r['num']}" for r in rs["runes"])
@@ -358,15 +408,21 @@ def render_guide_text(view: dict) -> str:
 
 # ==================== 皮肤日历 (皮肤上新) ====================
 
+
 def format_date(raw) -> str:
     """YYYYMMDD -> 2026-09-01"""
     text = str(raw or "")
-    return f"{text[:4]}-{text[4:6]}-{text[6:8]}" if len(text) == 8 and text.isdigit() else text
+    return (
+        f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+        if len(text) == 8 and text.isdigit()
+        else text
+    )
 
 
 def today_str() -> str:
     """今天的 YYYYMMDD (本地时区, 与官网写的日期同口径)"""
     import time as _t
+
     return _t.strftime("%Y%m%d")
 
 
@@ -376,6 +432,7 @@ async def get_skin_calendar(api) -> list:
     if hit is not None:
         return hit
     import asyncio
+
     raw, catalog = await asyncio.gather(api.get_pvp_skin_list(), get_hero_catalog(api))
     skins = []
     for s in (raw or {}).get(PVP_FIELDS["skinList"], []) or []:
@@ -386,15 +443,19 @@ async def get_skin_calendar(api) -> list:
         if not skin_id or not name or len(online) != 8 or not online.isdigit():
             continue
         hero = catalog["byName"].get(hero_name) or {}
-        skins.append({
-            "id": skin_id, "name": name, "hero": hero_name,
-            "heroAvatar": hero.get("avatar") or "",
-            "quality": str(s.get(PVP_FIELDS["skinQuality"]) or ""),
-            "online": online,
-            "intro": _clean(s.get(PVP_FIELDS["skinIntro"])),
-            "getWay": _clean(s.get(PVP_FIELDS["skinGet"])),
-            "cover": _abs_url(s.get(PVP_FIELDS["skinCover"])),
-        })
+        skins.append(
+            {
+                "id": skin_id,
+                "name": name,
+                "hero": hero_name,
+                "heroAvatar": hero.get("avatar") or "",
+                "quality": str(s.get(PVP_FIELDS["skinQuality"]) or ""),
+                "online": online,
+                "intro": _clean(s.get(PVP_FIELDS["skinIntro"])),
+                "getWay": _clean(s.get(PVP_FIELDS["skinGet"])),
+                "cover": _abs_url(s.get(PVP_FIELDS["skinCover"])),
+            }
+        )
     skins.sort(key=lambda x: x["online"], reverse=True)
     _cache_set("pvp:skinCalendar", skins, _SKIN_TTL)
     return skins
@@ -403,7 +464,8 @@ async def get_skin_calendar(api) -> list:
 def split_calendar(skins: list, recent_limit: int = 8) -> dict:
     """分「今日上线 / 即将上线 / 最近上线」三段 (边界含今天)"""
     now = today_str()
-    upcoming, today_list, recent = [], [], []
+    upcoming, today_list = [], []
+    recent: list[dict] = []
     for skin in skins:
         if skin["online"] > now:
             upcoming.append(skin)
@@ -419,8 +481,10 @@ def split_calendar(skins: list, recent_limit: int = 8) -> dict:
 def _decorate(skin: dict) -> dict:
     """补展示字段: 日期文案、倒计时/几天前、品质配色"""
     import datetime
+
     def as_date(text):
         return datetime.datetime.strptime(text, "%Y%m%d")
+
     try:
         diff = (as_date(skin["online"]) - as_date(today_str())).days
     except ValueError:
@@ -431,8 +495,12 @@ def _decorate(skin: dict) -> dict:
         countdown = "昨天" if diff == -1 else f"{-diff} 天前"
     else:
         countdown = "今天"
-    return {**skin, "dateText": format_date(skin["online"]), "countdown": countdown,
-            "color": QUALITY_COLOR.get(skin["quality"]) or "#c8d0dd"}
+    return {
+        **skin,
+        "dateText": format_date(skin["online"]),
+        "countdown": countdown,
+        "color": QUALITY_COLOR.get(skin["quality"]) or "#c8d0dd",
+    }
 
 
 async def build_skin_news_view(api) -> dict:

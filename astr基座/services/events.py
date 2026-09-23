@@ -412,12 +412,10 @@ class Context:
         """登记插件后端 Web API, 由基座面板插件页 (page-api) 分发调用。"""
         if view_handler is not None:
             state.register_web_api(route, view_handler, methods, desc)
-        return None
 
     def unregister_web_api(self, route=None, methods=None, *_a, **_k):
         if route is not None:
             state.unregister_web_api(route, methods)
-        return None
 
     def add_llm_tools(self, *tools):
         for tool in tools:
@@ -563,7 +561,7 @@ class Star:
         if cls not in state.STAR_SUBCLASSES:
             state.STAR_SUBCLASSES.append(cls)
 
-    def __init__(self, context: Context = None, *args, **kwargs):
+    def __init__(self, context: Context | None = None, *args, **kwargs):
         self.context = context
 
     async def initialize(self):
@@ -701,7 +699,7 @@ class AstrBotConfig(dict):
     def save_config(self, *_a, **_k):
         """兼容 AstrBot 的 config.save_config(): 本基座配置由 config.yaml 管理,
         运行时修改仅内存生效, 不落盘。"""
-        return None
+        return
 
     def save(self, *_a, **_k):
         return None

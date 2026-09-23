@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import hashlib
 import io
+from typing import Any
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -37,7 +38,7 @@ async def _upload_meme(image_data: bytes, name: str):
     return r if isinstance(r, dict) and r.get("file_url") else None
 
 
-_font_cache = {}
+_font_cache: dict[tuple[int, bool], Any] = {}
 
 
 def _font(size, bold=False):

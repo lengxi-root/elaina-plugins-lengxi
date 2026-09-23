@@ -13,6 +13,7 @@
 """
 
 import json
+from typing import Any
 import re
 
 from core.plugins import PLUGIN, get_logger
@@ -163,7 +164,9 @@ async def send_packet(event, cmd: str, content) -> dict:
                 if native_failed or native_error:
                     return {
                         "success": False,
-                        "error": str(native_error or f"QQ 原始发包失败 ({native_code})"),
+                        "error": str(
+                            native_error or f"QQ 原始发包失败 ({native_code})"
+                        ),
                     }
             hex_data = _extract_hex_data(result)
             if hex_data:
@@ -261,11 +264,12 @@ def extract_sender_info(pb_data: dict):
 
 
 def extract_body_data(pb_data: dict):
-    try:
-        node = pb_data.get(3).get(6).get(3).get(1).get(2)
-        return node
-    except Exception:  # noqa: BLE001
-        return None
+    node: Any = pb_data
+    for field in (3, 6, 3, 1, 2):
+        if not isinstance(node, dict):
+            return None
+        node = node.get(field)
+    return node
 
 
 def _flat_node(bot_id, title, content):
@@ -419,9 +423,8 @@ async def handle_get_reply(event, group_id: str):
     try:
         msg_info = await _call(event, "get_msg", {"message_id": int(reply_id)})
         msg_data = _resp_data(msg_info)
-        real_seq = (
-            _extract_real_seq(msg_info)
-            or _event_real_seq(event, fallback=reply_id)
+        real_seq = _extract_real_seq(msg_info) or _event_real_seq(
+            event, fallback=reply_id
         )
 
         pb_data = None

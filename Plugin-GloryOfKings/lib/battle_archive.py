@@ -9,15 +9,40 @@ ARCHIVE_KEEP_DAYS = 35
 
 # 落库只留报告真正会用到的字段 (完整列表项 60+ 字段 ≈ 1.5KB/场)
 KEEP_FIELDS = (
-    "gameSeq", "dtEventTime", "gameresult", "heroId", "gradeGame",
-    "mvpcnt", "losemvp", "mapName", "usedTime",
-    "killcnt", "deadcnt", "assistcnt",
-    "roleJobName", "roleJob", "stars",
-    "oldMasterMatchScore", "newMasterMatchScore", "desc",
+    "gameSeq",
+    "dtEventTime",
+    "gameresult",
+    "heroId",
+    "gradeGame",
+    "mvpcnt",
+    "losemvp",
+    "mapName",
+    "usedTime",
+    "killcnt",
+    "deadcnt",
+    "assistcnt",
+    "roleJobName",
+    "roleJob",
+    "stars",
+    "oldMasterMatchScore",
+    "newMasterMatchScore",
+    "desc",
 )
-_INT_FIELDS = {"dtEventTime", "gameresult", "heroId", "mvpcnt", "losemvp",
-               "usedTime", "killcnt", "deadcnt", "assistcnt", "roleJob",
-               "stars", "oldMasterMatchScore", "newMasterMatchScore"}
+_INT_FIELDS = {
+    "dtEventTime",
+    "gameresult",
+    "heroId",
+    "mvpcnt",
+    "losemvp",
+    "usedTime",
+    "killcnt",
+    "deadcnt",
+    "assistcnt",
+    "roleJob",
+    "stars",
+    "oldMasterMatchScore",
+    "newMasterMatchScore",
+}
 
 
 def _int(value) -> int:
@@ -37,7 +62,7 @@ class BattleArchive:
 
     def __init__(self, path: str):
         self._path = path
-        self._cache = None
+        self._cache: dict | None = None
 
     def _load_all(self) -> dict:
         if self._cache is not None:
@@ -147,8 +172,9 @@ class BattleArchive:
 
     # -------------------- 采集 --------------------
 
-    async def collect_battles(self, api, camp_id, from_sec: int,
-                              max_pages: int = 12, to_sec: int = 0) -> dict:
+    async def collect_battles(
+        self, api, camp_id, from_sec: int, max_pages: int = 12, to_sec: int = 0
+    ) -> dict:
         """取 [from_sec, to_sec] 的战绩: 实拉第一页保证库是新的, 不够才翻页补。"""
         key = str(camp_id or "")
         from_sec = _int(from_sec)
@@ -180,7 +206,12 @@ class BattleArchive:
                 break
             # 水位说更早的翻过了, 且这页接上了原库的头 —— 没有空洞, 收工
             watermark = self.get_watermark(key)
-            if watermark > 0 and watermark <= from_sec and head_before > 0 and reached <= head_before:
+            if (
+                watermark > 0
+                and watermark <= from_sec
+                and head_before > 0
+                and reached <= head_before
+            ):
                 reached = watermark
                 break
             if not data.get("hasMore") or not data.get("lastTime"):
@@ -195,9 +226,12 @@ class BattleArchive:
             self.set_watermark(key, reached)
 
         final_mark = self.get_watermark(key)
-        in_range = [x for x in self.load_archive(key)
-                    if _int(x.get("dtEventTime")) >= from_sec
-                    and (to_sec <= 0 or _int(x.get("dtEventTime")) <= to_sec)]
+        in_range = [
+            x
+            for x in self.load_archive(key)
+            if _int(x.get("dtEventTime")) >= from_sec
+            and (to_sec <= 0 or _int(x.get("dtEventTime")) <= to_sec)
+        ]
         return {
             "battles": in_range,
             "covered_from": max(final_mark, from_sec) if final_mark > 0 else from_sec,
@@ -206,7 +240,20 @@ class BattleArchive:
         }
 
 
-_CSV_COLUMNS = ("对局时间", "模式", "结果", "英雄", "击杀", "死亡", "助攻", "KDA",
-                "评分", "MVP", "时长(分)", "段位", "星数", "巅峰分变化", "评价")
-
-
+_CSV_COLUMNS = (
+    "对局时间",
+    "模式",
+    "结果",
+    "英雄",
+    "击杀",
+    "死亡",
+    "助攻",
+    "KDA",
+    "评分",
+    "MVP",
+    "时长(分)",
+    "段位",
+    "星数",
+    "巅峰分变化",
+    "评价",
+)
