@@ -331,7 +331,7 @@
               <div class="sec-t">验证参数</div>
               <div class="grid-4">
                 <div class="field"><label>验证超时(秒)</label><input type="number" id="c-vt" min="30" value="300"></div>
-                <div class="field"><label>最大尝试次数</label><input type="number" id="c-ma" min="1" value="5"></div>
+                <div class="field"><label>最大尝试次数</label><input type="number" id="c-ma" min="1" value="3"></div>
                 <div class="field"><label>数值最小值</label><input type="number" id="c-mn" min="0" value="1"></div>
                 <div class="field"><label>数值最大值</label><input type="number" id="c-mx" min="1" value="100"></div>
               </div>
@@ -599,7 +599,7 @@ async function loadGrps(){ try{ const d=await af('/groups'); if(d.success) GL=d.
 function fillGlobal(){
   const g=C.global||{};
   sck('c-aa',g.autoApprove); sck('c-ev',g.enableVerify); sck('c-sbv',g.skipBotVerify);
-  sv('c-vt',g.verifyTimeout||300); sv('c-ma',g.maxAttempts||5); sv('c-mn',g.mathMin??1); sv('c-mx',g.mathMax??100);
+  sv('c-vt',g.verifyTimeout||300); sv('c-ma',g.maxAttempts||3); sv('c-mn',g.mathMin??1); sv('c-mx',g.mathMax??100);
   sv('c-tu',(g.targetUsers||[]).join(','));
   sv('c-vm',g.verifyMessage||'');
   sv('c-wm',C.welcomeMessage||'');
@@ -623,7 +623,7 @@ function fillGlobal(){
 function fillGroup(gid){
   const gs=(C.groups||{})[gid]||{}, g=C.global||{};
   sck('c-aa',gs.autoApprove??g.autoApprove); sck('c-ev',gs.enableVerify??g.enableVerify); sck('c-sbv',gs.skipBotVerify??g.skipBotVerify);
-  sv('c-vt',gs.verifyTimeout||g.verifyTimeout||300); sv('c-ma',gs.maxAttempts||g.maxAttempts||5);
+  sv('c-vt',gs.verifyTimeout||g.verifyTimeout||300); sv('c-ma',gs.maxAttempts||g.maxAttempts||3);
   sv('c-mn',gs.mathMin??g.mathMin??1); sv('c-mx',gs.mathMax??g.mathMax??100);
   sv('c-tu',(gs.targetUsers||[]).join(','));
   sv('c-vm',gs.verifyMessage??g.verifyMessage??'');
@@ -643,7 +643,7 @@ function fillGroup(gid){
 }
 
 function collectGlobal(){
-  C.global={useGlobal:false,autoApprove:chk('c-aa'),enableVerify:chk('c-ev'),skipBotVerify:chk('c-sbv'),verifyTimeout:gn('c-vt',300),maxAttempts:gn('c-ma',5),mathMin:gn('c-mn',1),mathMax:gn('c-mx',100),verifyMessage:$('c-vm').value||'',targetUsers:fromCsv($('c-tu').value)};
+  C.global={useGlobal:false,autoApprove:chk('c-aa'),enableVerify:chk('c-ev'),skipBotVerify:chk('c-sbv'),verifyTimeout:gn('c-vt',300),maxAttempts:gn('c-ma',3),mathMin:gn('c-mn',1),mathMax:gn('c-mx',100),verifyMessage:$('c-vm').value||'',targetUsers:fromCsv($('c-tu').value)};
   C.welcomeMessage=$('c-wm').value||'';
   C.rejectKeywords=fromLines($('c-rk').value);
   C.filterKeywords=fromLines($('c-fk').value);
@@ -660,7 +660,7 @@ function collectGroup(gid){
   C.groups=C.groups||{};
   C.groups[gid]={
     useGlobal:false,autoApprove:chk('c-aa'),enableVerify:chk('c-ev'),skipBotVerify:chk('c-sbv'),
-    verifyTimeout:gn('c-vt',300),maxAttempts:gn('c-ma',5),mathMin:gn('c-mn',1),mathMax:gn('c-mx',100),
+    verifyTimeout:gn('c-vt',300),maxAttempts:gn('c-ma',3),mathMin:gn('c-mn',1),mathMax:gn('c-mx',100),
     verifyMessage:$('c-vm').value||'',
     targetUsers:fromCsv($('c-tu').value),
     groupBlacklist:fromLines($('c-bl').value),

@@ -20,6 +20,11 @@ MEMBERSHIP_PATH = ctx.get_data_path("membership.json")
 _LOCK = threading.RLock()
 _MEMBERSHIP_WRITE_LOCK = asyncio.Lock()
 
+# 按钮映射的结构版本。旧版本解析器会把 QQNT commonElem.serviceType（内联键盘
+# 为 46）误当成 button_id，导致 QQ 以原生错误 10022 拒绝点击。版本号变化后
+# 旧映射会被视为失效并重新建链，无需用户手动清理 mappings.json。
+MAPPING_SCHEMA_VERSION = 2
+
 
 def _read_json(path, default):
     if not os.path.isfile(path):
@@ -50,10 +55,18 @@ if not isinstance(_MEMBERSHIP, dict):
 
 async def ensure_files():
     with _LOCK:
+        stale = [
+            group_id
+            for group_id, value in _MAPPINGS.items()
+            if not isinstance(value, dict)
+            or _mapping_version(value) != MAPPING_SCHEMA_VERSION
+        ]
+        for group_id in stale:
+            # 旧版解析器写下的映射（含错误的 button_id）直接丢弃，避免面板
+            # 显示不可用的映射，也避免旧记录挡住重新建链。
+            _MAPPINGS.pop(group_id, None)
         config_value = deepcopy(_CONFIG) if not os.path.isfile(CONFIG_PATH) else None
-        mappings_value = (
-            deepcopy(_MAPPINGS) if not os.path.isfile(MAPPINGS_PATH) else None
-        )
+        mappings_value = deepcopy(_MAPPINGS) if not os.path.isfile(MAPPINGS_PATH) or stale else None
         membership_value = (
             deepcopy(_MEMBERSHIP) if not os.path.isfile(MEMBERSHIP_PATH) else None
         )
@@ -90,9 +103,21 @@ def public_config():
     return result
 
 
+def _mapping_version(value):
+    try:
+        return int(value.get("version") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def mappings():
     with _LOCK:
-        return deepcopy(_MAPPINGS)
+        return {
+            group_id: deepcopy(value)
+            for group_id, value in _MAPPINGS.items()
+            if isinstance(value, dict)
+            and _mapping_version(value) == MAPPING_SCHEMA_VERSION
+        }
 
 
 def membership(group_id, qq_number):
@@ -150,6 +175,7 @@ async def set_mapping(group_id, value):
             # because older callers used message_seq.
             "msg_seq": str(value.get("msg_seq") or value.get("message_seq") or ""),
             "updated_at": int(value.get("updated_at") or 0),
+            "version": MAPPING_SCHEMA_VERSION,
         }
         saved = deepcopy(_MAPPINGS)
     await write_json(MAPPINGS_PATH, saved)

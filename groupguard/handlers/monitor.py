@@ -214,22 +214,35 @@ def _contains_forward_marker(value, max_nodes=256):
     return None if pending or truncated else False
 
 
+_MEDIA_URL_RE = re.compile(
+    r"!?\[[^\]]*\]\(\s*(https?://[^\s)]+)\s*\)",
+    re.IGNORECASE,
+)
+
+
 def _strip_media_urls(event):
-    """从文本中去掉富媒体附件 URL, 只检测纯文本链接"""
-    content = str(getattr(event, "content", "") or "").strip()
+    """从文本中去掉富媒体 URL, 只留下用户实际发送的纯文本链接。
+
+    附件 (attachments) 是消息自带的富媒体, 其 URL 一定不是用户手打的文本
+    链接, 因此不再看 content_type: QQ 表情包常缺省或使用非标准 content_type
+    (如空串或 "image"), 早期按 "image/" 前缀判断会漏掉, 导致表情包 URL 被
+    当成链接撤回。图片 markdown (``![...](url)``, 由框架发图时生成) 一并剥离。
+    """
+    content = str(getattr(event, "content", "") or "")
+    urls = []
     for att in getattr(event, "attachments", None) or []:
-        if not isinstance(att, dict):
-            continue
-        url = att.get("url")
-        content_type = str(att.get("content_type") or "").lower()
-        if isinstance(url, str) and any(
-            content_type.startswith(prefix)
-            for prefix in ("image/", "video/", "audio/", "voice")
-        ):
-            content = content.replace(url, "")
-    if getattr(event, "image_url", None):
-        image_url = str(event.image_url)
-        content = content.replace(f"<{image_url}>", "").replace(image_url, "")
+        if isinstance(att, dict) and isinstance(att.get("url"), str) and att["url"]:
+            urls.append(att["url"])
+    image_url = getattr(event, "image_url", None)
+    if image_url:
+        urls.append(str(image_url))
+    for url in urls:
+        # 先按括号/尖括号形态整体剥离 markdown, 再兜底裸串替换
+        content = _MEDIA_URL_RE.sub(
+            lambda m, u=url: "" if m.group(1) == u else m.group(0), content
+        )
+        content = content.replace(f"<{url}>", "").replace(f"({url})", "")
+        content = content.replace(url, "")
     return content.strip()
 
 

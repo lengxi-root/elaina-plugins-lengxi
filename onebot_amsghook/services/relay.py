@@ -37,6 +37,7 @@ EVENT_ID_TTL = 270
 EVENT_ID_MAX_USES = 5
 MEMBERSHIP_CACHE_TTL = 24 * 60 * 60
 PROACTIVE_FAILURE_TTL = 300
+MAPPING_REBUILD_COOLDOWN = 300
 
 CALLBACK_KEYBOARD = {
     "content": {
@@ -441,6 +442,45 @@ def _mapping_message_sequence(mapping):
     return 0
 
 
+async def _invalidate_mapping(group_id, reason):
+    """丢弃已失效的按钮映射，让下一条消息重新走自动建链。
+
+    映射里的 button_id/callback_data/msg_seq 一旦和官机消息不再对应，
+    QQ 会持续以原生错误（如 10022 操作失败）拒绝点击；只有清掉映射
+    并重新提取按钮参数，代发链路才能恢复。
+    """
+    group_id = str(group_id or "")
+    runtime.event_ids.pop(group_id, None)
+    runtime.bootstraps.pop(group_id, None)
+    # 记录失效时间。刚失效的群在冷却期内不再重复建链，避免官机按钮持续
+    # 不可用时每条消息都往群里发一次验证码。
+    runtime.mapping_rebuilds[group_id] = time.time()
+    try:
+        removed = await store.delete_mapping(group_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        removed = False
+        _trace(
+            "按钮映射清除失败",
+            level="warning",
+            group_id=group_id,
+            error=str(exc),
+        )
+    _trace("按钮映射失效", level="warning", group_id=group_id, reason=reason, removed=removed)
+
+
+def _rebuild_allowed(group_id):
+    """判断失效映射是否已过重建冷却期。"""
+    last = runtime.mapping_rebuilds.get(str(group_id or ""))
+    if last is None:
+        return True
+    if time.time() - last < MAPPING_REBUILD_COOLDOWN:
+        return False
+    runtime.mapping_rebuilds.pop(str(group_id or ""), None)
+    return True
+
+
 async def wake_event(group_id, self_id, *, force=False):
     group_id = str(group_id)
     if force:
@@ -498,12 +538,20 @@ async def wake_event(group_id, self_id, *, force=False):
             if not waiter.done():
                 waiter.cancel()
             _trace("按钮点击失败", level="error", group_id=group_id, response=response)
+            await _invalidate_mapping(group_id, "按钮点击被拒绝")
             return None
         data = unwrap_response(response)
         if isinstance(data, dict) and data.get("ok") is False:
             runtime.event_waiters.pop(group_id, None)
             if not waiter.done():
                 waiter.cancel()
+            _trace(
+                "按钮点击原生失败",
+                level="error",
+                group_id=group_id,
+                data=data,
+            )
+            await _invalidate_mapping(group_id, "按钮点击原生失败")
             return None
         try:
             await asyncio.wait_for(
@@ -1266,8 +1314,17 @@ async def intercept_api(request, call_next):
         bool(mapping.get("callback_data")) and _mapping_message_sequence(mapping) > 0
     )
     if not mapping_ready:
-        if mapping.get("callback_data"):
-            await store.delete_mapping(group_id)
+        if not _rebuild_allowed(group_id):
+            _trace(
+                "原路发送",
+                group_id=group_id,
+                reason="映射重建冷却中",
+            )
+            return await call_next()
+        # 存在但不完整的映射先清掉再重建，否则旧记录会一直挡住新的按钮参数。
+        # 旧版结构的映射已被 repository 过滤掉，这里只会看到当前版本的记录。
+        if mapping:
+            await _invalidate_mapping(group_id, "映射不完整")
         if await queue_bootstrap(request, message):
             _trace("拦截结果", group_id=group_id, result="等待自动建链")
             return synthetic_success()

@@ -24,7 +24,7 @@ __plugin_meta__ = {
     "name": "官机代发拦截",
     "author": "冷曦",
     "description": "拦截插件出站消息，支持官方机器人收发与按钮建链",
-    "version": "1.3.3",
+    "version": "1.3.4",
     "license": "MIT",
 }
 

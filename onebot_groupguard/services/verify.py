@@ -101,7 +101,7 @@ def create_verify_session(
         int(settings.get("mathMin", 1)), int(settings.get("mathMax", 100))
     )
     timeout = int(settings.get("verifyTimeout", 300))
-    max_attempts = int(settings.get("maxAttempts", 5))
+    max_attempts = int(settings.get("maxAttempts", 3))
 
     task = asyncio.create_task(_timeout_kick(self_id, group_id, user_id, timeout))
     rt.sessions[key] = {
@@ -157,24 +157,9 @@ async def handle_verify_answer(
         return False
 
     trimmed = (raw_message or "").strip()
-    if not _NUM_RE.match(trimmed):
-        await call_api("delete_msg", {"message_id": message_id}, self_id=self_id)
-        await send_group_msg(
-            group_id,
-            [
-                {"type": "at", "data": {"qq": user_id}},
-                {
-                    "type": "text",
-                    "data": {
-                        "text": f" 请发送数字答案，计算「{session['expression']}」的结果。"
-                    },
-                },
-            ],
-            self_id=self_id,
-        )
-        return True
+    is_number = bool(_NUM_RE.match(trimmed))
 
-    if int(trimmed) == session["answer"]:
+    if is_number and int(trimmed) == session["answer"]:
         if session.get("task"):
             session["task"].cancel()
         rt.sessions.pop(key, None)
@@ -189,6 +174,7 @@ async def handle_verify_answer(
         )
         return True
 
+    # 非数字输入同样计入尝试次数, 否则用户可无限发送非数字消息逃避踢出。
     session["attempts"] += 1
     await call_api("delete_msg", {"message_id": message_id}, self_id=self_id)
     if session["attempts"] >= session["maxAttempts"]:
@@ -220,15 +206,18 @@ async def handle_verify_answer(
         )
     else:
         remaining = session["maxAttempts"] - session["attempts"]
+        prompt = (
+            f"回答错误，还剩 {remaining} 次机会。请重新计算"
+            if is_number
+            else f"请发送数字答案，还剩 {remaining} 次机会。请重新计算"
+        )
         await send_group_msg(
             group_id,
             [
                 {"type": "at", "data": {"qq": user_id}},
                 {
                     "type": "text",
-                    "data": {
-                        "text": f" 回答错误，还剩 {remaining} 次机会。请重新计算「{session['expression']}」的结果。"
-                    },
+                    "data": {"text": f" {prompt}「{session['expression']}」的结果。"},
                 },
             ],
             self_id=self_id,

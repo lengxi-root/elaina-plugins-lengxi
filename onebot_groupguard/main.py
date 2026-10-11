@@ -24,7 +24,7 @@ __plugin_meta__ = {
     "name": "群管 (groupguard)",
     "author": "冷曦",
     "description": "全功能群管理: 入群验证/违禁词/防撤回/刷屏检测/问答/黑白名单/名片锁定/活跃统计, 支持 Web 面板配置",
-    "version": "1.0.2",
+    "version": "1.0.3",
 }
 
 log = get_logger(PLUGIN, "groupguard")
@@ -113,6 +113,14 @@ async def on_group_message(event, match):
     ):
         return
 
+    # 入群验证优先处理: 未通过验证的成员消息一律交给验证流程消费,
+    # 避免被命令/问答/过滤提前拦截而绕过尝试次数限制。
+    if not is_white and await verify.handle_verify_answer(
+        self_id, group_id, user_id, text, message_id
+    ):
+        store.record_activity(group_id, user_id)
+        return
+
     if await commands.handle_command(event):
         return
 
@@ -158,8 +166,6 @@ async def on_group_message(event, match):
     )
 
     await guard.handle_emoji_react(group_id, user_id, message_id, self_id)
-
-    await verify.handle_verify_answer(self_id, group_id, user_id, text, message_id)
 
 
 @handler(

@@ -42,7 +42,7 @@ DEFAULT_GROUP_SETTINGS = {
     "enableVerify": True,
     "skipBotVerify": False,
     "verifyTimeout": 300,
-    "maxAttempts": 5,
+    "maxAttempts": 3,
     "mathMin": 1,
     "mathMax": 100,
     "verifyMessage": DEFAULT_VERIFY_MESSAGE,

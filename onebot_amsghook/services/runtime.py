@@ -22,6 +22,7 @@ class RuntimeState:
         self.event_locks = {}
         self.membership_cache = {}
         self.membership_locks = {}
+        self.mapping_rebuilds = {}
         self.proactive_cache = {}
         self.gateway_events = {}
         self.tasks = set()
@@ -81,6 +82,7 @@ class RuntimeState:
         self.event_locks.clear()
         self.membership_cache.clear()
         self.membership_locks.clear()
+        self.mapping_rebuilds.clear()
         self.proactive_cache.clear()
         self.gateway_events.clear()
 
