@@ -17,7 +17,7 @@ __plugin_meta__ = {
     "name": "针对撤回",
     "author": "ElainaBot",
     "description": "针对指定用户自动撤回消息",
-    "version": "2.0.5",
+    "version": "2.0.6",
 }
 
 # ==================== 数据持久化 ====================
@@ -153,13 +153,13 @@ def _avatar(uid):
     return f"https://q.qlogo.cn/qqapp/{appid}/{uid}/100"
 
 
-def _is_bot_admin(group_id):
+def _is_bot_admin(group_id, appid):
     """检查机器人是否为该群管理员 (从 data.db 查询)"""
     from core.bot.manager import _bot_manager_ref
 
     if not _bot_manager_ref:
         return False
-    bot = next(iter(_bot_manager_ref._bots.values()), None)
+    bot = _bot_manager_ref.get_bot(str(appid))
     if not bot:
         return False
     rows = bot.log_service.query_data(
@@ -279,7 +279,7 @@ async def target_user(event, match):
         await event.reply("仅管理员或群主可使用")
         return
 
-    if not await asyncio.to_thread(_is_bot_admin, event.group_id):
+    if not await asyncio.to_thread(_is_bot_admin, event.group_id, event.appid):
         await event.reply(
             "机器人不是管理员，请先设置机器人为群管理员\n\n>如果已授权管理员，请艾特机器人发送任意消息验证管理员"
         )

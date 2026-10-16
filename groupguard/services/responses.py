@@ -662,7 +662,16 @@ async def respond(
         event,
         action,
         "reply",
-        success=True,
+        success=bool(result)
+        and not (
+            isinstance(result, dict)
+            and (
+                result.get("error")
+                or any(
+                    str(result.get(key) or "0") != "0" for key in ("code", "err_code")
+                )
+            )
+        ),
         details={
             "reply_key": key,
             "length": len(message.content),

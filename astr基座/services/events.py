@@ -378,10 +378,10 @@ class Context:
             return False
         try:
             if scene == "group":
-                await sending.send_chain(sender, chain, group_id=target)
+                result = await sending.send_chain(sender, chain, group_id=target)
             else:
-                await sending.send_chain(sender, chain, user_id=target)
-            return True
+                result = await sending.send_chain(sender, chain, user_id=target)
+            return bool(result)
         except Exception as e:
             log.warning(f"[astr基座] 主动消息发送失败 umo={umo}: {e}")
             return False

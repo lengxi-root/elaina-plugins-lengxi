@@ -63,19 +63,14 @@ def _raw(data):
 
 
 def _get_bot(appid=""):
-    """按 appid 取 bot, 留空/取不到时回退第一个 bot"""
+    """按 appid 取 bot, 只有未指定账号时才使用第一个 bot。"""
     try:
         from core.bot.manager import _bot_manager_ref
 
         if not _bot_manager_ref:
             return None
         if appid:
-            try:
-                bot = _bot_manager_ref.get_bot(appid)
-                if bot:
-                    return bot
-            except Exception:
-                pass
+            return _bot_manager_ref.get_bot(str(appid))
         return next(iter(_bot_manager_ref._bots.values()), None)
     except Exception:
         return None
@@ -85,32 +80,34 @@ def _bot_appid(bot):
     return str(getattr(bot, "appid", "") or "")
 
 
+def _require_table(service, table, required):
+    # query_data 在 SQL 错误时也返回空列表, 不能据此判断没有目标。
+    columns = {row["name"] for row in service.query_data(f"PRAGMA table_info({table})")}
+    if not set(required) <= columns:
+        raise RuntimeError(f"{table} 数据库不可读或结构未升级, 请先完成框架数据库迁移")
+
+
 def get_full_access_groups(appid=""):
-    """读取全量群，兼容群数据表合并前后的框架版本。"""
+    """读取当前框架中允许主动消息且仍在群内的群。保留旧函数名兼容指令。"""
     bot = _get_bot(appid)
     if bot is None:
         return []
-    errors = []
-    queries = (
-        (
-            "SELECT group_id FROM groups_users "
-            "WHERE is_full_access=1 AND in_group=1 ORDER BY rowid DESC",
+    try:
+        _require_table(
+            bot.log_service,
             "groups_users",
-        ),
-        (
-            "SELECT group_id FROM full_access_groups ORDER BY first_seen DESC",
-            "full_access_groups",
-        ),
-    )
-    for sql, table in queries:
-        try:
-            rows = bot.log_service.query_data(sql)
-            return [r["group_id"] for r in rows if r.get("group_id")]
-        except Exception as e:
-            errors.append(f"{table}: {e}")
-    with contextlib.suppress(Exception):
-        log.warning(f"读取全量群失败: {'; '.join(errors)}")
-    return []
+            ("group_id", "in_group", "allow_proactive_msg"),
+        )
+        rows = bot.log_service.query_data(
+            "SELECT group_id FROM groups_users "
+            "WHERE allow_proactive_msg=1 AND in_group=1 AND group_id!='' "
+            "UNION ALL SELECT '' ORDER BY group_id"
+        )
+        if not rows:
+            raise RuntimeError("框架群数据查询失败")
+        return [str(row["group_id"]) for row in rows if row.get("group_id")]
+    except Exception as e:
+        raise RuntimeError(f"读取主动推送群失败: {e}") from e
 
 
 def get_private_users(appid=""):
@@ -119,13 +116,16 @@ def get_private_users(appid=""):
     if bot is None:
         return []
     try:
+        _require_table(bot.log_service, "members", ("user_id",))
         rows = bot.log_service.query_data(
-            "SELECT user_id FROM members ORDER BY user_id"
+            "SELECT user_id FROM members WHERE user_id!='' "
+            "UNION ALL SELECT '' ORDER BY user_id"
         )
+        if not rows:
+            raise RuntimeError("框架私聊用户数据查询失败")
         return [row["user_id"] for row in rows if row.get("user_id")]
     except Exception as e:
-        log.warning(f"读取私聊用户失败: {e}")
-        return []
+        raise RuntimeError(f"读取私聊用户失败: {e}") from e
 
 
 def get_targets(mode, appid=""):
@@ -360,8 +360,11 @@ async def broadcast(
         if bot is None or not getattr(bot, "sender", None):
             return {"ok": False, "message": "没有可用的机器人"}
         resolved_appid = _bot_appid(bot)
-        targets = await asyncio.to_thread(get_targets, mode, appid)
-        target_label = "全量群" if mode == "group" else "私聊用户"
+        try:
+            targets = await asyncio.to_thread(get_targets, mode, resolved_appid)
+        except RuntimeError as e:
+            return {"ok": False, "message": str(e)}
+        target_label = "可主动推送群" if mode == "group" else "私聊用户"
         if not targets:
             return {"ok": False, "message": f"暂无{target_label}记录"}
         skipped = 0

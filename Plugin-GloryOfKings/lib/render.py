@@ -579,6 +579,16 @@ async def _render_and_host(template: str, data: dict, name_hint: str = ""):
     return img, w, h, url
 
 
+def _reply_succeeded(response) -> bool:
+    if not response:
+        return False
+    if isinstance(response, dict):
+        return not response.get("error") and not any(
+            str(response.get(key) or "0") != "0" for key in ("code", "err_code")
+        )
+    return True
+
+
 async def send_html(
     event,
     template: str,
@@ -594,8 +604,10 @@ async def send_html(
         cached = _cache_get(cache_key)
         if cached:
             url, w, h = cached
-            if await event.reply(
-                f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons
+            if _reply_succeeded(
+                await event.reply(
+                    f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons
+                )
             ):
                 return True
             # 直链发不出去 (图床挂了 / 平台不认): 丢掉缓存, 重新渲染并重新上传
@@ -604,14 +616,15 @@ async def send_html(
     if not res:
         return False
     img, w, h, url = res
-    if url and await event.reply(
-        f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons
+    if url and _reply_succeeded(
+        await event.reply(
+            f"{caption}\n![战绩 #{w}px #{h}px]({url})".strip(), buttons=buttons
+        )
     ):
         # 只缓存发成功了的直链, 免得坏链被复用 12 小时
         _cache_put(cache_key, url, w, h, cache_ttl)
         return True
-    await event.reply_image(img, caption or "王者荣耀")
-    return True
+    return _reply_succeeded(await event.reply_image(img, caption or "王者荣耀"))
 
 
 async def send_html_to_group(

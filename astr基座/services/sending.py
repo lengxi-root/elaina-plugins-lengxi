@@ -207,6 +207,21 @@ def _clip_text(content: str) -> str:
     return content
 
 
+def _successful_response(result):
+    """被动回复返回 JSON, 主动文本/图片分别返回三元组/二元组。"""
+    if isinstance(result, tuple):
+        if not result or not result[0]:
+            return False
+        result = result[1] if len(result) > 1 else True
+    if isinstance(result, dict):
+        if result.get("error") or any(
+            str(result.get(key) or "0") != "0" for key in ("code", "err_code")
+        ):
+            return False
+        return result
+    return bool(result)
+
+
 async def _send_text(
     sender, *, event=None, group_id=None, user_id=None, content, buttons=None
 ):
@@ -222,7 +237,7 @@ async def _send_text(
             res = await sender.send_to_user(user_id, content, buttons=buttons)
         else:
             return False
-        return res if isinstance(res, dict) else True
+        return _successful_response(res)
     except Exception as e:
         log.warning(f"[astr基座] 文本发送失败: {e}")
         return False
@@ -279,7 +294,7 @@ async def _send_one_image(
             res = await sender.send_image("user", user_id, data, content=caption)
         else:
             return False
-        return res if isinstance(res, dict) else True
+        return _successful_response(res)
     except Exception as e:
         log.warning(f"[astr基座] 原生图片发送失败: {e}")
         return False
@@ -313,7 +328,13 @@ async def send_chain(sender, chain, *, event=None, group_id=None, user_id=None):
     返回最后一次发送的 API 结果 (dict) 或 None。"""
     if sender is None or chain is None:
         return None
-    if group_id and event is None and not state.can_proactively_message(str(group_id)):
+    if (
+        group_id
+        and event is None
+        and not await asyncio.to_thread(
+            state.can_proactively_message, str(group_id), getattr(sender, "_appid", "")
+        )
+    ):
         log.debug(f"[astr基座] 群 {group_id} 未开主动消息权限, 跳过主动推送")
         return None
 

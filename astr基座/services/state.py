@@ -103,8 +103,9 @@ def sender_for_appid(appid: str):
     if not pool:
         return None
     appid = str(appid or "").strip() or default_appid()  # 缺 appid 时回退到配置的
-    if appid and appid in pool:
-        return pool[appid].sender
+    if appid:
+        bot = pool.get(appid)
+        return bot.sender if bot is not None else None
     return next(iter(pool.values())).sender
 
 
@@ -134,7 +135,8 @@ def proactive_group_set() -> set:
     _proactive_groups = set()
     try:
         pool = bots()
-        bot = pool.get(default_appid()) or next(iter(pool.values()), None)
+        selected = default_appid()
+        bot = pool.get(selected) if selected else next(iter(pool.values()), None)
         if bot is not None:
             rows = bot.log_service.query_data(
                 "SELECT group_id FROM groups_users "
@@ -149,14 +151,15 @@ def proactive_group_set() -> set:
     return _proactive_groups
 
 
-def can_proactively_message(group_id: str) -> bool:
+def can_proactively_message(group_id: str, appid: str = "") -> bool:
     """实时检查指定群是否允许主动消息。"""
     gid = str(group_id or "").strip()
     if not gid:
         return False
     try:
         pool = bots()
-        bot = pool.get(default_appid()) or next(iter(pool.values()), None)
+        selected = str(appid or default_appid()).strip()
+        bot = pool.get(selected) if selected else next(iter(pool.values()), None)
         if bot is None:
             return False
         rows = bot.log_service.query_data(

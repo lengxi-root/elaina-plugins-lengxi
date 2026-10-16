@@ -50,7 +50,12 @@ async def _has_proactive_message(event):
         from .. import get_runtime
 
         runtime = get_runtime()
-        return bool(runtime and runtime.is_full_access(str(event.group_id)))
+        return bool(
+            runtime
+            and await asyncio.to_thread(
+                runtime.is_full_access, str(event.group_id), str(event.appid)
+            )
+        )
     except Exception:
         return False
 
@@ -361,7 +366,7 @@ class PushScheduler:
             if self._stop.is_set():
                 return
             # 与订阅入口保持一致：仅向已开启主动消息且仍在群内的群推送。
-            if not self._rt.is_full_access(group_id):
+            if not await asyncio.to_thread(self._rt.is_full_access, group_id, appid):
                 continue
             if not last_id:
                 self._rt.db.set_sub_last_battle(group_id, camp_id, newest_id)
@@ -388,7 +393,7 @@ class PushScheduler:
         appid: str = "",
     ) -> bool:
         """单局推当局详情图; 多局合成一条消息、一张列表图 (不逐局推)。"""
-        sender = self._rt.get_sender_for(appid)
+        sender = await asyncio.to_thread(self._rt.get_sender_for, appid, group_id)
         if not sender:
             return False
         name = role_name or camp_id
@@ -534,13 +539,13 @@ class PushScheduler:
     async def _check_play_group(self, gid: str, subs: list):
         """查本群订阅账号的在线状态; 从"不在游戏"变成"游戏中"就播报一次。"""
         targets = self._play_targets(gid, subs)
-        if not targets or not self._rt.is_full_access(gid):
+        if not targets:
             return
         appid = next((str(s.get("appid") or "") for s in subs if s.get("appid")), "")
         subscriber = next(
             (str(s.get("subscriber") or "") for s in subs if s.get("subscriber")), ""
         )
-        sender = self._rt.get_sender_for(appid)
+        sender = await asyncio.to_thread(self._rt.get_sender_for, appid, gid)
         if not sender:
             return
 

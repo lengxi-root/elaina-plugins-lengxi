@@ -14,8 +14,8 @@ from .web import routes as webapi
 __plugin_meta__ = {
     "name": "主动推送",
     "author": "ElainaBot",
-    "description": "向全部全量群或私聊用户发送主动消息, 支持推送记录与断点继续",
-    "version": "2.0.2",
+    "description": "向全部可主动推送群或私聊用户发送主动消息, 支持推送记录与断点继续",
+    "version": "2.1.1",
 }
 
 log = get_logger(PLUGIN, "主动推送")
@@ -35,7 +35,7 @@ _ICON = (
 @handler(
     r"^全量推送\s+([\s\S]+)$",
     name="全量推送",
-    desc="向所有全量群发送主动消息",
+    desc="向所有可主动推送群发送主动消息",
     owner_only=True,
     priority=10,
 )
@@ -44,12 +44,15 @@ async def cmd_broadcast(event, match):
     if not content:
         return await event.reply("消息内容不能为空")
     cfg = await asyncio.to_thread(store.get_mode_config, "group")
-    groups = await asyncio.to_thread(
-        push.get_full_access_groups, cfg.get("push_appid", "")
-    )
+    try:
+        groups = await asyncio.to_thread(
+            push.get_full_access_groups, cfg.get("push_appid", "")
+        )
+    except RuntimeError as e:
+        return await event.reply(str(e))
     if not groups:
-        return await event.reply("暂无全量群记录")
-    await event.reply(f"开始推送到 {len(groups)} 个全量群…")
+        return await event.reply("暂无可主动推送群记录")
+    await event.reply(f"开始推送到 {len(groups)} 个可主动推送群…")
 
     async def _progress(done, total, ok_count):
         await event.reply(f"推送进度: {done}/{total} (成功 {ok_count})")
@@ -104,9 +107,12 @@ async def cmd_private_broadcast(event, match):
     if not content:
         return await event.reply("消息内容不能为空")
     private_cfg = await asyncio.to_thread(store.get_mode_config, "private")
-    users = await asyncio.to_thread(
-        push.get_private_users, private_cfg.get("push_appid", "")
-    )
+    try:
+        users = await asyncio.to_thread(
+            push.get_private_users, private_cfg.get("push_appid", "")
+        )
+    except RuntimeError as e:
+        return await event.reply(str(e))
     if not users:
         return await event.reply("暂无私聊用户记录")
     await event.reply(f"开始推送到 {len(users)} 个私聊用户…")
@@ -152,12 +158,19 @@ async def cmd_broadcast_tip(event, match):
         asyncio.to_thread(store.get_mode_config, "group"),
         asyncio.to_thread(store.get_mode_config, "private"),
     )
-    groups, users = await asyncio.gather(
-        asyncio.to_thread(push.get_full_access_groups, group_cfg.get("push_appid", "")),
-        asyncio.to_thread(push.get_private_users, private_cfg.get("push_appid", "")),
-    )
+    try:
+        groups, users = await asyncio.gather(
+            asyncio.to_thread(
+                push.get_full_access_groups, group_cfg.get("push_appid", "")
+            ),
+            asyncio.to_thread(
+                push.get_private_users, private_cfg.get("push_appid", "")
+            ),
+        )
+    except RuntimeError as e:
+        return await event.reply(str(e))
     await event.reply(
-        f"当前全量群 {len(groups)} 个, 私聊用户 {len(users)} 个\n"
+        f"当前可主动推送群 {len(groups)} 个, 私聊用户 {len(users)} 个\n"
         "群聊: 全量推送 / 继续群推送 / 测试推送 + 消息内容\n"
         "私聊: 私聊推送 / 继续私聊推送 / 私聊测试推送 + 消息内容"
     )

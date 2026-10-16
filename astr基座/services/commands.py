@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import os
 import re
@@ -658,7 +659,9 @@ def make_wrapper(spec: PluginSpec, cmd: CommandSpec):
                 cmd.is_subscribe
                 and getattr(event, "group_id", "")
                 and not getattr(event, "is_direct", False)
-                and not state.can_proactively_message(str(event.group_id))
+                and not await asyncio.to_thread(
+                    state.can_proactively_message, str(event.group_id), event.appid
+                )
             ):
                 await sending._send_text(
                     event.sender, event=event, content=_FULL_ACCESS_TIP

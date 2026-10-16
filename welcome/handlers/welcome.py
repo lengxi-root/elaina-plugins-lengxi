@@ -2,18 +2,18 @@
 
 功能概览:
   两种工作模式 (各自独立模板/按钮):
-    召回模式 (all_groups_mode=0):
+    召回模式 (recall_enabled=1):
       从框架群成员表中提取「N 天内无人发言」的群存入群列表,
       仅群列表中的群 (或测试群) 有新成员入群时推送 recall_template。
 
-    欢迎模式 (all_groups_mode=1):
+    欢迎模式 (welcome_enabled=1):
       任何群有人入群都推送 welcome_template, 支持黑名单/白名单过滤。
-      每群每日上限 (daily_group_limit), 不同群独立计数。
+      两种模式可同时开启, 分别使用各自模板, 欢迎次数不限。
       支持合并用户欢迎 (merge_welcome + merge_template)。
 
   Web 面板 (侧边栏导航, 各模式页面自含设置):
     召回模式: 模板/按钮、不活跃阈值、群列表管理
-    欢迎模式: 模板/按钮、合并、名单模式、每群上限、黑/白名单
+    欢迎模式: 模板/按钮、合并、名单模式、黑/白名单
     延迟队列 / 发送记录
 """
 
@@ -33,8 +33,8 @@ from core.plugin.web_pages import register_page, register_route, unregister_page
 __plugin_meta__ = {
     "name": "群成员入群欢迎",
     "author": "ElainaBot",
-    "description": "群成员入群自动欢迎推送, 支持召回模式/欢迎模式、黑白名单、每日上限, 含 Web 面板",
-    "version": "2.0.3",
+    "description": "群成员入群自动推送, 召回与欢迎可同时开启, 支持黑白名单与合并欢迎, 含 Web 面板",
+    "version": "2.1.1",
     "github": "https://github.com/ElainaCore/Elaina-plugins",
     "license": "MIT",
 }
@@ -56,7 +56,6 @@ DEFAULT_TEMPLATE = (
     "🎉 欢迎新朋友加入本群！\n\n群里好久没热闹啦，快发条消息冒个泡，和大家打个招呼吧～"
 )
 DEFAULT_INACTIVE_DAYS = 3
-MAX_REPLY_DELAY = 300  # 延迟回复上限 (秒)
 PAGE_SIZE = 1000  # 群列表 / 发送记录分页每页条数
 SCAN_BATCH = 500  # 扫描框架群成员表每批行数
 SCAN_BATCH_PAUSE = 0.05  # 每批之间让出事件循环的间隔 (秒)
@@ -66,7 +65,8 @@ _DEFAULT_CONFIG = {
     "test_group": "",
     "inactive_days": str(DEFAULT_INACTIVE_DAYS),
     "reply_delay": "0",
-    "all_groups_mode": "0",
+    "recall_enabled": "1",
+    "welcome_enabled": "0",
     "list_mode": "blacklist",
     # 召回模式独立模板/按钮
     "recall_template": DEFAULT_TEMPLATE,
@@ -74,8 +74,6 @@ _DEFAULT_CONFIG = {
     # 欢迎模式独立模板/按钮
     "welcome_template": DEFAULT_TEMPLATE,
     "welcome_buttons": "[]",
-    # 欢迎模式: 每群每日上限
-    "daily_group_limit": "0",
     # 欢迎模式: 合并用户欢迎
     "merge_welcome": "0",
     "merge_template": "欢迎 {user_ids} 加入本群！",
@@ -136,6 +134,18 @@ def _ensure_db() -> sqlite3.Connection:
                 PRIMARY KEY (group_id, date)
             );
             """
+        )
+        # 将旧互斥模式迁为独立开关, 已保存的新开关不被热重载覆盖。
+        legacy = _conn.execute(
+            "SELECT value FROM config WHERE key='all_groups_mode'"
+        ).fetchone()
+        welcome = legacy is not None and legacy["value"] == "1"
+        _conn.executemany(
+            "INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)",
+            [
+                ("recall_enabled", "0" if welcome else "1"),
+                ("welcome_enabled", "1" if welcome else "0"),
+            ],
         )
         _conn.commit()
     return _conn
@@ -249,33 +259,23 @@ async def _count_pending() -> int:
     return row["c"]
 
 
-def _add_pending_batch_sync(conn, items: dict) -> int:
-    """批量新增或更新待发群，返回新增数。"""
+def _sync_pending_batch_sync(conn, items: dict) -> tuple[int, int]:
+    """用完整扫描结果同步待发群, 同一事务移除已活跃/已退群的旧记录。"""
     now = _now()
-    gids = list(items)
-    existing: set = set()
-    for i in range(0, len(gids), 500):
-        chunk = gids[i : i + 500]
-        ph = ",".join("?" * len(chunk))
-        existing.update(
-            r["group_id"]
-            for r in conn.execute(
-                f"SELECT group_id FROM pending_groups WHERE group_id IN ({ph})", chunk
-            ).fetchall()
+    existing = {
+        row["group_id"] for row in conn.execute("SELECT group_id FROM pending_groups")
+    }
+    stale = existing - items.keys()
+    with conn:
+        conn.executemany(
+            "DELETE FROM pending_groups WHERE group_id=?", [(gid,) for gid in stale]
         )
-    conn.executemany(
-        "INSERT INTO pending_groups (group_id, last_active, added_at) VALUES (?, ?, ?) "
-        "ON CONFLICT(group_id) DO UPDATE SET last_active=excluded.last_active",
-        [(gid, la or "", now) for gid, la in items.items()],
-    )
-    conn.commit()
-    return len(gids) - len(existing)
-
-
-async def _add_pending_batch(items: dict) -> int:
-    if not items:
-        return 0
-    return await _run_db(_add_pending_batch_sync, items)
+        conn.executemany(
+            "INSERT INTO pending_groups (group_id, last_active, added_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(group_id) DO UPDATE SET last_active=excluded.last_active",
+            [(gid, la or "", now) for gid, la in items.items()],
+        )
+    return len(items.keys() - existing), len(stale)
 
 
 # ---- 已发送记录 ----
@@ -312,7 +312,7 @@ async def _clear_records() -> int:
     return await _run_db(_execute, "DELETE FROM sent_records")
 
 
-# ---- whitelist (all_groups_mode 下的群白名单) ----
+# ---- 欢迎模式的群白名单 ----
 
 
 async def _add_whitelist(group_id: str) -> bool:
@@ -399,16 +399,6 @@ async def _count_disabled() -> int:
 # ---- 每群每日计数 (欢迎模式下按群独立计数) ----
 
 
-async def _daily_group_count(group_id: str) -> int:
-    today = datetime.now().strftime("%Y-%m-%d")
-    row = await _run_db(
-        _fetch_one,
-        "SELECT count FROM daily_group_counts WHERE group_id=? AND date=?",
-        (group_id, today),
-    )
-    return row["count"] if row else 0
-
-
 async def _increment_daily_group(group_id: str) -> None:
     today = datetime.now().strftime("%Y-%m-%d")
     await _run_db(
@@ -417,16 +407,6 @@ async def _increment_daily_group(group_id: str) -> None:
         "ON CONFLICT(group_id, date) DO UPDATE SET count=count+1",
         (group_id, today),
     )
-
-
-async def _check_daily_group_limit(group_id: str) -> bool:
-    try:
-        limit = int(await _get_cfg("daily_group_limit", "0"))
-    except (TypeError, ValueError):
-        limit = 0
-    if limit <= 0:
-        return True
-    return await _daily_group_count(group_id) < limit
 
 
 def _status_counts(conn: sqlite3.Connection, today: str) -> dict:
@@ -467,15 +447,24 @@ def _iter_log_services() -> list:
     return out
 
 
-def _any_sender():
+def _sender_for_group(group_id: str):
     from core.bot.manager import _bot_manager_ref
 
     if not _bot_manager_ref:
         return None
     for bot in _bot_manager_ref._bots.values():
         sender = getattr(bot, "sender", None)
-        if sender is not None:
-            return sender
+        service = getattr(bot, "log_service", None)
+        if sender is not None and service is not None:
+            try:
+                _require_group_schema(service)
+                if service.query_data(
+                    "SELECT 1 FROM groups_users WHERE group_id=? AND in_group=1 LIMIT 1",
+                    (group_id,),
+                ):
+                    return sender
+            except Exception as e:
+                log.warning(f"读取机器人群状态失败: {e}")
     return None
 
 
@@ -484,83 +473,119 @@ def _is_inactive(last_active: str, days: int, today) -> bool:
     if not last_active:
         return True
     try:
-        d = datetime.strptime(last_active, "%Y-%m-%d").date()
+        d = datetime.strptime(last_active[:10], "%Y-%m-%d").date()
     except ValueError:
         return True
     return (today - d).days >= days
 
 
-def _scan_batch(ls, limit: int, offset: int, days: int, today) -> tuple[dict, int]:
-    """读取一批群及其最后活跃日期 (在工作线程中执行), 返回 ({gid: last_active}, 本批行数)。
+def _require_group_schema(service, *, members=False):
+    # 框架 query_data 会吞掉 SQL 错误并返回 [], 先校验结构以免误清空待发群。
+    tables = {"groups_users": {"group_id", "in_group"}}
+    if members:
+        tables["group_members"] = {"group_id", "last_active"}
+    for table, required in tables.items():
+        columns = {
+            row["name"] for row in service.query_data(f"PRAGMA table_info({table})")
+        }
+        if not required <= columns:
+            raise RuntimeError(
+                f"{table} 数据库不可读或结构未升级, 请先完成框架数据库迁移"
+            )
 
-    成员存储细节由框架接口封装, 插件不直接依赖表结构。
-    """
-    rows = ls.group_last_active_map_sync(limit, offset) or []
-    inactive: dict = {}
+
+def _query_group_page(service, limit: int, offset: int, *, activity=False) -> list:
+    columns = "g.group_id"
+    sentinel = "''"
+    if activity:
+        columns += (
+            ", (SELECT MAX(m.last_active) FROM group_members m "
+            "WHERE m.group_id=g.group_id) AS last_active"
+        )
+        sentinel += ", ''"
+    # 即使结果为空也返回占位行, 以区别 query_data 吞掉的 SQL 错误。
+    rows = service.query_data(
+        f"WITH page AS (SELECT {columns} FROM groups_users g "
+        "WHERE g.in_group=1 AND g.group_id!='' ORDER BY g.group_id LIMIT ? OFFSET ?) "
+        f"SELECT * FROM page UNION ALL SELECT {sentinel}",
+        (limit, offset),
+    )
+    if not rows:
+        raise RuntimeError("框架群数据查询失败, 已保留原有群列表")
+    return [row for row in rows if row.get("group_id")]
+
+
+def _scan_batch(ls, limit: int, offset: int) -> tuple[dict, int]:
+    """读取当前 groups_users / group_members 的一页群活跃日期。"""
+    rows = _query_group_page(ls, limit, offset, activity=True)
+    latest: dict = {}
     for r in rows:
         gid = r.get("group_id") or ""
         if not gid:
             continue
         la = str(r.get("last_active") or "")
-        if _is_inactive(la, days, today):
-            inactive[gid] = la
-    return inactive, len(rows)
+        latest[str(gid)] = la
+    return latest, len(rows)
 
 
 async def _scan_inactive(days: int) -> tuple[dict, int]:
     """分批扫描所有机器人群成员表 (每批在线程中执行, 批间让出事件循环),
     避免一次性拉取全表阻塞框架; 返回 ({gid: last_active}, 扫描群总数)。"""
     today = datetime.now().date()
-    inactive: dict = {}
-    total = 0
-    for ls in _iter_log_services():
+    latest: dict[str, str] = {}
+    services = _iter_log_services()
+    if not services:
+        raise RuntimeError("没有可用的机器人数据库")
+    for ls in services:
+        await asyncio.to_thread(_require_group_schema, ls, members=True)
         offset = 0
         while True:
             try:
-                batch, n = await asyncio.to_thread(
-                    _scan_batch, ls, SCAN_BATCH, offset, days, today
-                )
+                batch, n = await asyncio.to_thread(_scan_batch, ls, SCAN_BATCH, offset)
             except Exception as e:
-                log.warning(f"读取 groups_users 失败: {e}")
-                break
-            inactive.update(batch)
-            total += n
+                raise RuntimeError(f"读取框架群成员数据失败: {e}") from e
+            for gid, last_active in batch.items():
+                latest[gid] = max(latest.get(gid, ""), last_active)
             if n < SCAN_BATCH:
                 break
             offset += SCAN_BATCH
             await asyncio.sleep(SCAN_BATCH_PAUSE)
-    return inactive, total
+    return {
+        gid: la for gid, la in latest.items() if _is_inactive(la, days, today)
+    }, len(latest)
 
 
 async def _list_db_groups(limit: int = PAGE_SIZE, offset: int = 0) -> tuple[list, int]:
     """从框架 groups_users 表中分批获取所有群 ID (分页), 返回 (群列表, 总数)。"""
     all_groups: list[str] = []
     seen: set[str] = set()
-    for ls in _iter_log_services():
+    services = _iter_log_services()
+    if not services:
+        raise RuntimeError("没有可用的机器人数据库")
+    for ls in services:
+        await asyncio.to_thread(_require_group_schema, ls)
         batch_offset = 0
         while True:
             try:
                 rows = (
                     await asyncio.to_thread(
-                        ls.query_data,
-                        "SELECT group_id FROM groups_users LIMIT ? OFFSET ?",
-                        (SCAN_BATCH, batch_offset),
+                        _query_group_page, ls, SCAN_BATCH, batch_offset
                     )
                     or []
                 )
-            except Exception:
-                break
+            except Exception as e:
+                raise RuntimeError(f"读取框架群列表失败: {e}") from e
             for r in rows:
                 gid = r.get("group_id") or ""
                 if gid and gid not in seen:
-                    seen.add(gid)
-                    all_groups.append(gid)
+                    seen.add(str(gid))
+                    all_groups.append(str(gid))
             if len(rows) < SCAN_BATCH:
                 break
             batch_offset += SCAN_BATCH
             await asyncio.sleep(SCAN_BATCH_PAUSE)
     total = len(all_groups)
-    page_data = all_groups[offset : offset + limit]
+    page_data = sorted(all_groups)[offset : offset + limit]
     return page_data, total
 
 
@@ -585,11 +610,12 @@ async def _run_extract(days: int) -> dict | None:
         return None
     async with _extract_lock:
         inactive, total = await _scan_inactive(days)
-        added = await _add_pending_batch(inactive)
+        added, removed = await _run_db(_sync_pending_batch_sync, inactive)
         return {
             "total_groups": total,
             "inactive": len(inactive),
             "added": added,
+            "removed": removed,
             "pending_total": await _count_pending(),
         }
 
@@ -653,14 +679,15 @@ async def _push_with(sender, group_id: str, content: str, buttons=None):
 
 
 async def _push_via_sender(group_id: str, content: str, buttons=None):
-    """用任意机器人 sender 主动推送到指定群; 返回 (status, response)。"""
-    return await _push_with(_any_sender(), group_id, content, buttons)
+    """使用仍在目标群中的机器人发送。"""
+    sender = await asyncio.to_thread(_sender_for_group, group_id)
+    return await _push_with(sender, group_id, content, buttons)
 
 
 def _clamp_delay(value) -> int:
-    """延迟秒数归一到 [0, MAX_REPLY_DELAY]; 非法值按 0 (立即) 处理。"""
+    """延迟为非负整数, 不设插件上限; 非法值按 0 处理。"""
     try:
-        return max(0, min(MAX_REPLY_DELAY, int(value)))
+        return max(0, int(value))
     except (TypeError, ValueError):
         return 0
 
@@ -670,8 +697,9 @@ _delay_queue: dict[int, dict] = {}
 _delay_lock = asyncio.Lock()
 _delay_seq = 0
 _delay_tasks: set[asyncio.Task] = set()
-# 合并模式: group_id -> qid 映射, 用于追加 user_id 到已有的延迟任务
-_merge_group_qid: dict[str, int] = {}
+# 合并模式按机器人和群隔离。
+_merge_group_qid: dict[tuple[str, str], int] = {}
+_recall_inflight: set[str] = set()
 
 
 def _start_delay_task(coro) -> None:
@@ -681,13 +709,17 @@ def _start_delay_task(coro) -> None:
     task.add_done_callback(_delay_tasks.discard)
 
 
-async def _delay_enqueue(group_id: str, user_id: str, delay: int) -> int:
+async def _delay_enqueue(
+    group_id: str, user_id: str, delay: int, *, appid: str = "", mode: str = "recall"
+) -> int:
     """登记一个待延迟发送项, 返回队列 id。"""
     global _delay_seq
     async with _delay_lock:
         _delay_seq += 1
         qid = _delay_seq
         _delay_queue[qid] = {
+            "appid": appid,
+            "mode": mode,
             "group_id": group_id,
             "user_id": user_id,
             "user_ids": [user_id] if user_id else [],
@@ -698,12 +730,13 @@ async def _delay_enqueue(group_id: str, user_id: str, delay: int) -> int:
 
 
 async def _delay_merge_or_enqueue(
-    group_id: str, user_id: str, delay: int
+    group_id: str, user_id: str, delay: int, *, appid: str = ""
 ) -> tuple[int, bool]:
     """合并模式: 若同群已有待发任务则追加 user_id, 否则新建。返回 (qid, is_new)。"""
     global _delay_seq
     async with _delay_lock:
-        existing_qid = _merge_group_qid.get(group_id)
+        key = (appid, group_id)
+        existing_qid = _merge_group_qid.get(key)
         if existing_qid is not None and existing_qid in _delay_queue:
             entry = _delay_queue[existing_qid]
             if user_id and user_id not in entry["user_ids"]:
@@ -713,13 +746,15 @@ async def _delay_merge_or_enqueue(
         _delay_seq += 1
         qid = _delay_seq
         _delay_queue[qid] = {
+            "appid": appid,
+            "mode": "welcome",
             "group_id": group_id,
             "user_id": user_id,
             "user_ids": [user_id] if user_id else [],
             "delay": delay,
             "fire_at": time.time() + delay,
         }
-        _merge_group_qid[group_id] = qid
+        _merge_group_qid[key] = qid
     return qid, True
 
 
@@ -727,9 +762,9 @@ async def _delay_dequeue(qid: int) -> None:
     async with _delay_lock:
         entry = _delay_queue.pop(qid, None)
         if entry:
-            gid = entry.get("group_id", "")
-            if _merge_group_qid.get(gid) == qid:
-                del _merge_group_qid[gid]
+            key = (entry.get("appid", ""), entry["group_id"])
+            if _merge_group_qid.get(key) == qid:
+                del _merge_group_qid[key]
 
 
 async def _delay_get_user_ids(qid: int) -> list[str]:
@@ -746,9 +781,9 @@ async def _delay_pop_user_ids(qid: int) -> list[str]:
     async with _delay_lock:
         entry = _delay_queue.pop(qid, None)
         if entry:
-            gid = entry.get("group_id", "")
-            if _merge_group_qid.get(gid) == qid:
-                del _merge_group_qid[gid]
+            key = (entry.get("appid", ""), entry["group_id"])
+            if _merge_group_qid.get(key) == qid:
+                del _merge_group_qid[key]
             return list(entry.get("user_ids", []))
     return []
 
@@ -760,6 +795,8 @@ async def _delay_snapshot() -> list:
         items = list(_delay_queue.values())
     out = [
         {
+            "appid": it["appid"],
+            "mode": it["mode"],
             "group_id": it["group_id"],
             "user_id": it["user_id"],
             "user_ids": it.get("user_ids", []),
@@ -772,6 +809,42 @@ async def _delay_snapshot() -> list:
     return out
 
 
+def _reply_succeeded(data) -> bool:
+    """框架 reply 会原样返回错误 JSON, 不能只判断字典是否非空。"""
+    if not data:
+        return False
+    if isinstance(data, dict):
+        return not any(
+            str(data.get(key) or "0") != "0" for key in ("code", "err_code")
+        ) and not data.get("error")
+    return True
+
+
+async def _welcome_allowed(group_id: str, cfg: dict) -> bool:
+    if cfg.get("list_mode", "blacklist") == "whitelist":
+        return await _is_whitelisted(group_id)
+    return not await _is_disabled(group_id)
+
+
+async def _deliver_member_reply(event, content, buttons, mode, gid, source):
+    status, resp = "failed", None
+    try:
+        resp = await event.reply(content, buttons=buttons, skip_suffix=True)
+        if _reply_succeeded(resp):
+            status = "success"
+            if mode == "recall":
+                await _remove_pending(gid)
+            else:
+                await _increment_daily_group(gid)
+        elif resp is None:
+            resp = {"error": "发送返回空 (可能被平台拦截或事件已过期)"}
+    except Exception as e:
+        status = "failed"
+        resp = {"error": str(e)}
+        report_error(PLUGIN, "群成员入群欢迎", e, context={"group_id": gid})
+    await _add_record(gid, status, resp, source)
+
+
 async def _delayed_member_reply(
     event,
     content: str,
@@ -781,36 +854,38 @@ async def _delayed_member_reply(
     merge_mode=False,
     merge_template="",
     group_id="",
+    mode="recall",
 ):
     """延迟 delay 秒后用 event_id 被动回复入群事件; 完成后记录 (后台任务, 不阻塞)。
     合并模式下, 延迟结束时原子地取出累积的全部 user_ids 并移除队列项, 再渲染 merge_template。"""
     gid = group_id or event.group_id or ""
-    status, resp = "success", None
     try:
         await asyncio.sleep(delay)
+        cfg = await _all_cfg()
+        if cfg.get("monitor_enabled") != "1" or cfg.get(f"{mode}_enabled") != "1":
+            return
+        if mode == "welcome" and not await _welcome_allowed(gid, cfg):
+            return
+        if (
+            mode == "recall"
+            and gid != cfg.get("test_group")
+            and not await _is_pending(gid)
+        ):
+            return
         # 合并模式: 原子取出 user_ids 并移除队列 (避免取完到移除之间新用户被合并但漏发)
         if merge_mode and qid is not None:
             user_ids = await _delay_pop_user_ids(qid)
             qid = None  # 已移除, finally 中不再重复 dequeue
             if user_ids:
                 content = _render_merged(merge_template, gid, user_ids)
-        data = await event.reply(content, buttons=buttons, skip_suffix=True)
-        if data:
-            resp = data
-        else:
-            status, resp = (
-                "failed",
-                {"error": "发送返回空 (可能被平台拦截或 event_id 过期)"},
-            )
-    except Exception as e:
-        status, resp = "failed", {"error": str(e)}
-        report_error(
-            PLUGIN, "群成员入群欢迎", e, context={"group_id": gid, "delay": delay}
+        await _deliver_member_reply(
+            event, content, buttons, mode, gid, f"{mode}_member_add_delay{delay}s"
         )
     finally:
         if qid is not None:
             await _delay_dequeue(qid)
-    await _add_record(gid, status, resp, f"member_add_delay{delay}s")
+        if mode == "recall":
+            _recall_inflight.discard(gid)
 
 
 # ==================== 指令 ====================
@@ -827,7 +902,10 @@ async def cmd_extract(event, match):
         await _get_cfg("inactive_days", str(DEFAULT_INACTIVE_DAYS))
         or DEFAULT_INACTIVE_DAYS
     )
-    result = await _run_extract(days)
+    try:
+        result = await _run_extract(days)
+    except RuntimeError as e:
+        return await event.reply(f"提取失败: {e}")
     if result is None:
         return await event.reply("⏳ 已有提取任务正在进行中, 请稍后再试")
     await event.reply(
@@ -835,6 +913,7 @@ async def cmd_extract(event, match):
         f"扫描群数: {result['total_groups']}\n"
         f"命中不活跃群: {result['inactive']}\n"
         f"本次新增: {result['added']}\n"
+        f"移除已活跃或退群记录: {result['removed']}\n"
         f"当前群列表总数: {result['pending_total']}"
     )
 
@@ -877,13 +956,13 @@ async def cmd_set_test_group(event, match):
 )
 async def cmd_test_send(event, match):
     cfg = await _all_cfg()
-    is_welcome = cfg.get("all_groups_mode", "0") == "1"
+    is_welcome = cfg.get("welcome_enabled", "0") == "1"
     tpl_key = "welcome_template" if is_welcome else "recall_template"
     btn_key = "welcome_buttons" if is_welcome else "recall_buttons"
     content = _render(cfg.get(tpl_key, DEFAULT_TEMPLATE), event.group_id, event.user_id)
     buttons = _build_button_rows(cfg.get(btn_key, "[]"))
     data = await event.reply(content, buttons=buttons, skip_suffix=True)
-    status = "success" if data else "failed"
+    status = "success" if _reply_succeeded(data) else "failed"
     await _add_record(event.chat_id or event.group_id or "", status, data, "test")
 
 
@@ -906,7 +985,7 @@ async def cmd_test_merge_send(event, match):
     content = _render_merged(merge_tpl, gid, user_ids)
     buttons = _build_button_rows(cfg.get("welcome_buttons", "[]"))
     data = await event.reply(content, buttons=buttons, skip_suffix=True)
-    status = "success" if data else "failed"
+    status = "success" if _reply_succeeded(data) else "failed"
     await _add_record(event.chat_id or gid, status, data, "test_merge")
 
 
@@ -921,7 +1000,7 @@ async def cmd_disable_welcome(event, match):
     gid = event.group_id or ""
     if not gid:
         return
-    if await _get_cfg("all_groups_mode", "0") != "1":
+    if await _get_cfg("welcome_enabled", "0") != "1":
         return await event.reply("⚠️ 当前未开启欢迎模式 (全群模式), 无需关闭")
     list_mode = await _get_cfg("list_mode", "blacklist")
     if list_mode == "blacklist":
@@ -946,7 +1025,7 @@ async def cmd_enable_welcome(event, match):
     gid = event.group_id or ""
     if not gid:
         return
-    if await _get_cfg("all_groups_mode", "0") != "1":
+    if await _get_cfg("welcome_enabled", "0") != "1":
         return await event.reply("⚠️ 当前未开启欢迎模式 (全群模式), 无需操作")
     list_mode = await _get_cfg("list_mode", "blacklist")
     if list_mode == "blacklist":
@@ -980,50 +1059,39 @@ async def on_member_add(event, match):
         return
 
     cfg = await _all_cfg()
-    all_groups = cfg.get("all_groups_mode", "0") == "1"
     test_group = (cfg.get("test_group", "") or "").strip()
-    in_pending = await _is_pending(gid)
-
-    if all_groups:
-        # 欢迎模式: 根据名单模式过滤
-        list_mode = cfg.get("list_mode", "blacklist")
-        if list_mode == "whitelist":
-            if not await _is_whitelisted(gid):
-                return
-        else:
-            if await _is_disabled(gid):
-                return
-        if not await _check_daily_group_limit(gid):
-            return
-    else:
-        # 召回模式: 仅群列表/测试群
-        if not in_pending and gid != test_group:
-            return
-
-    # 根据模式选择模板和按钮
-    if all_groups:
-        tpl = cfg.get("welcome_template", DEFAULT_TEMPLATE)
-        btns_raw = cfg.get("welcome_buttons", "[]")
-    else:
-        tpl = cfg.get("recall_template", DEFAULT_TEMPLATE)
-        btns_raw = cfg.get("recall_buttons", "[]")
-
-    merge_welcome = all_groups and cfg.get("merge_welcome", "0") == "1"
-    merge_template = cfg.get("merge_template", "欢迎 {user_ids} 加入本群！")
-    content = _render(tpl, gid, event.user_id)
-    buttons = _build_button_rows(btns_raw)
     delay = _clamp_delay(cfg.get("reply_delay", "0"))
+    appid = str(getattr(event, "appid", "") or "")
+    for mode in ("recall", "welcome"):
+        if cfg.get(f"{mode}_enabled") != "1":
+            continue
+        if mode == "recall":
+            in_pending = await _is_pending(gid)
+            if (not in_pending and gid != test_group) or gid in _recall_inflight:
+                continue
+            _recall_inflight.add(gid)
+        elif not await _welcome_allowed(gid, cfg):
+            continue
 
-    if in_pending and not all_groups:
-        await _remove_pending(gid)
-
-    if all_groups:
-        await _increment_daily_group(gid)
-
-    if delay > 0:
-        # 合并模式: 同群延迟期间多人入群只发一条消息
-        if merge_welcome:
-            qid, is_new = await _delay_merge_or_enqueue(gid, event.user_id or "", delay)
+        merge = mode == "welcome" and cfg.get("merge_welcome") == "1"
+        merge_template = cfg.get("merge_template", "欢迎 {user_ids} 加入本群！")
+        template = cfg.get(f"{mode}_template", DEFAULT_TEMPLATE)
+        content = (
+            _render_merged(merge_template, gid, [event.user_id])
+            if merge
+            else _render(template, gid, event.user_id)
+        )
+        buttons = _build_button_rows(cfg.get(f"{mode}_buttons", "[]"))
+        if delay > 0:
+            if merge:
+                qid, is_new = await _delay_merge_or_enqueue(
+                    gid, event.user_id or "", delay, appid=appid
+                )
+            else:
+                qid = await _delay_enqueue(
+                    gid, event.user_id or "", delay, appid=appid, mode=mode
+                )
+                is_new = True
             if is_new:
                 _start_delay_task(
                     _delayed_member_reply(
@@ -1032,31 +1100,20 @@ async def on_member_add(event, match):
                         delay,
                         buttons,
                         qid,
-                        merge_mode=True,
+                        merge_mode=merge,
                         merge_template=merge_template,
                         group_id=gid,
+                        mode=mode,
                     )
                 )
-            # 非新建时, user_id 已追加到现有队列项, 无需创建新任务
         else:
-            qid = await _delay_enqueue(gid, event.user_id or "", delay)
-            _start_delay_task(
-                _delayed_member_reply(event, content, delay, buttons, qid)
-            )
-        return
-
-    # 立即回复
-    status, resp = "success", None
-    try:
-        data = await event.reply(content, buttons=buttons, skip_suffix=True)
-        if data:
-            resp = data
-        else:
-            status, resp = "failed", {"error": "发送返回空 (可能被平台拦截)"}
-    except Exception as e:
-        status, resp = "failed", {"error": str(e)}
-        report_error(PLUGIN, "群成员入群欢迎", e, context={"group_id": gid})
-    await _add_record(gid, status, resp, "member_add")
+            try:
+                await _deliver_member_reply(
+                    event, content, buttons, mode, gid, f"{mode}_member_add"
+                )
+            finally:
+                if mode == "recall":
+                    _recall_inflight.discard(gid)
 
 
 # ==================== Web 面板接口 ====================
@@ -1092,13 +1149,13 @@ async def api_status(request):
                     or DEFAULT_INACTIVE_DAYS
                 ),
                 "reply_delay": _clamp_delay(cfg.get("reply_delay", "0")),
-                "all_groups_mode": cfg.get("all_groups_mode", "0") == "1",
+                "recall_enabled": cfg.get("recall_enabled") == "1",
+                "welcome_enabled": cfg.get("welcome_enabled") == "1",
                 "list_mode": cfg.get("list_mode", "blacklist"),
                 "recall_template": cfg.get("recall_template", DEFAULT_TEMPLATE),
                 "recall_buttons": _parse_buttons(cfg.get("recall_buttons", "[]")),
                 "welcome_template": cfg.get("welcome_template", DEFAULT_TEMPLATE),
                 "welcome_buttons": _parse_buttons(cfg.get("welcome_buttons", "[]")),
-                "daily_group_limit": int(cfg.get("daily_group_limit", "0") or "0"),
                 "daily_total_count": counts["daily_total_count"],
                 "merge_welcome": cfg.get("merge_welcome", "0") == "1",
                 "merge_template": cfg.get(
@@ -1124,72 +1181,54 @@ async def api_delayed_queue(request):
 @register_route("POST", f"{_API}/config")
 async def api_config(request):
     body = await _body(request)
-    if "monitor_enabled" in body:
-        await _set_cfg("monitor_enabled", "1" if body["monitor_enabled"] else "0")
-    if "test_group" in body:
-        await _set_cfg("test_group", str(body["test_group"] or "").strip())
-    if "recall_template" in body:
-        await _set_cfg("recall_template", str(body["recall_template"] or ""))
-    if "recall_buttons" in body:
-        rows = body["recall_buttons"]
-        if not isinstance(rows, list):
-            return _json(
-                {"success": False, "message": "recall_buttons 必须为 JSON 数组"},
-                status=400,
-            )
-        await _set_cfg("recall_buttons", json.dumps(rows, ensure_ascii=False))
-    if "welcome_template" in body:
-        await _set_cfg("welcome_template", str(body["welcome_template"] or ""))
-    if "welcome_buttons" in body:
-        rows = body["welcome_buttons"]
-        if not isinstance(rows, list):
-            return _json(
-                {"success": False, "message": "welcome_buttons 必须为 JSON 数组"},
-                status=400,
-            )
-        await _set_cfg("welcome_buttons", json.dumps(rows, ensure_ascii=False))
-    if "reply_delay" in body:
-        try:
-            delay = int(body["reply_delay"])
-        except (TypeError, ValueError):
-            return _json(
-                {"success": False, "message": "reply_delay 必须为整数"}, status=400
-            )
-        if not (0 <= delay <= MAX_REPLY_DELAY):
-            return _json(
-                {
-                    "success": False,
-                    "message": f"reply_delay 取值范围 0-{MAX_REPLY_DELAY} 秒",
-                },
-                status=400,
-            )
-        await _set_cfg("reply_delay", str(delay))
-    if "inactive_days" in body:
-        try:
-            days = max(1, int(body["inactive_days"]))
-        except (TypeError, ValueError):
-            return _json(
-                {"success": False, "message": "inactive_days 必须为正整数"}, status=400
-            )
-        await _set_cfg("inactive_days", str(days))
-    if "all_groups_mode" in body:
-        await _set_cfg("all_groups_mode", "1" if body["all_groups_mode"] else "0")
-    if "daily_group_limit" in body:
-        try:
-            dl = max(0, int(body["daily_group_limit"]))
-        except (TypeError, ValueError):
-            return _json(
-                {"success": False, "message": "daily_group_limit 必须为非负整数"},
-                status=400,
-            )
-        await _set_cfg("daily_group_limit", str(dl))
-    if "merge_welcome" in body:
-        await _set_cfg("merge_welcome", "1" if body["merge_welcome"] else "0")
-    if "merge_template" in body:
-        await _set_cfg("merge_template", str(body["merge_template"] or ""))
+    if not isinstance(body, dict):
+        return _json({"success": False, "message": "配置必须为 JSON 对象"}, status=400)
+    updates = {}
+    for key in (
+        "monitor_enabled",
+        "recall_enabled",
+        "welcome_enabled",
+        "merge_welcome",
+    ):
+        if key in body:
+            if not isinstance(body[key], bool):
+                return _json(
+                    {"success": False, "message": f"{key} 必须为布尔值"}, status=400
+                )
+            updates[key] = "1" if body[key] else "0"
+    for key in ("test_group", "recall_template", "welcome_template", "merge_template"):
+        if key in body:
+            updates[key] = str(body[key] or "")
+    if "test_group" in updates:
+        updates["test_group"] = updates["test_group"].strip()
+    for key in ("recall_buttons", "welcome_buttons"):
+        if key in body:
+            if not isinstance(body[key], list):
+                return _json(
+                    {"success": False, "message": f"{key} 必须为 JSON 数组"}, status=400
+                )
+            updates[key] = json.dumps(body[key], ensure_ascii=False)
+    for key, minimum in (("reply_delay", 0), ("inactive_days", 1)):
+        if key in body:
+            try:
+                raw = body[key]
+                if isinstance(raw, bool) or str(int(raw)) != str(raw):
+                    raise ValueError
+                value = int(raw)
+                if value < minimum:
+                    raise ValueError
+            except (TypeError, ValueError, OverflowError):
+                return _json(
+                    {
+                        "success": False,
+                        "message": f"{key} 必须为不小于 {minimum} 的整数",
+                    },
+                    status=400,
+                )
+            updates[key] = str(value)
     if "list_mode" in body:
-        lm = str(body["list_mode"] or "blacklist").strip()
-        if lm not in ("blacklist", "whitelist"):
+        mode = str(body["list_mode"] or "").strip()
+        if mode not in ("blacklist", "whitelist"):
             return _json(
                 {
                     "success": False,
@@ -1197,7 +1236,17 @@ async def api_config(request):
                 },
                 status=400,
             )
-        await _set_cfg("list_mode", lm)
+        updates["list_mode"] = mode
+
+    def save(conn):
+        with conn:
+            conn.executemany(
+                "INSERT INTO config (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                updates.items(),
+            )
+
+    await _run_db(save)
     return _json({"success": True, "message": "已保存"})
 
 
@@ -1207,7 +1256,10 @@ async def api_extract(request):
         await _get_cfg("inactive_days", str(DEFAULT_INACTIVE_DAYS))
         or DEFAULT_INACTIVE_DAYS
     )
-    result = await _run_extract(days)
+    try:
+        result = await _run_extract(days)
+    except RuntimeError as e:
+        return _json({"success": False, "message": str(e)}, status=503)
     if result is None:
         return _json(
             {"success": False, "message": "已有提取任务正在进行中, 请稍后再试"},
@@ -1217,7 +1269,7 @@ async def api_extract(request):
         {
             "success": True,
             "data": result,
-            "message": f"提取完成, 新增 {result['added']} 个群",
+            "message": f"提取完成, 新增 {result['added']} 个群, 移除 {result['removed']} 条已活跃或退群记录",
         }
     )
 
@@ -1239,7 +1291,7 @@ async def api_test_send(request):
         tpl = cfg.get("recall_template", DEFAULT_TEMPLATE)
         btns = cfg.get("recall_buttons", "[]")
     else:
-        is_welcome = cfg.get("all_groups_mode", "0") == "1"
+        is_welcome = cfg.get("welcome_enabled", "0") == "1"
         tpl = cfg.get(
             "welcome_template" if is_welcome else "recall_template", DEFAULT_TEMPLATE
         )
@@ -1384,7 +1436,10 @@ async def api_whitelist_delete(request):
 async def api_db_groups(request):
     """从框架数据库中获取所有已知群 (分页), 供白名单选择使用。"""
     page = _page_param(request)
-    data, total = await _list_db_groups(PAGE_SIZE, (page - 1) * PAGE_SIZE)
+    try:
+        data, total = await _list_db_groups(PAGE_SIZE, (page - 1) * PAGE_SIZE)
+    except RuntimeError as e:
+        return _json({"success": False, "message": str(e)}, status=503)
     return _json(
         {
             "success": True,
@@ -1465,6 +1520,7 @@ async def _cleanup():
     async with _delay_lock:
         _delay_queue.clear()
         _merge_group_qid.clear()
+        _recall_inflight.clear()
 
     def close_connection():
         global _conn

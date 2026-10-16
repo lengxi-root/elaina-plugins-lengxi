@@ -15,7 +15,7 @@ __plugin_meta__ = {
         "王者荣耀: 营地ID绑定(多账号) + 主页/战绩/单局详情/英雄战力/皮肤查询 "
         "+ 群战绩订阅推送"
     ),
-    "version": "1.1.3",
+    "version": "1.1.4",
     "github": "https://github.com/lengxi-root/elaina-plugins-lengxi",
 }
 
@@ -87,34 +87,45 @@ class PluginRuntime:
         if not bots:
             return None
         appid = self.db.get_setting("push_appid", "")
-        if appid and appid in bots:
-            return bots[appid].sender
+        if appid:
+            bot = bots.get(appid)
+            return bot.sender if bot is not None else None
         return next(iter(bots.values())).sender
 
-    def get_sender_for(self, appid: str):
+    def get_sender_for(self, appid: str, group_id: str = ""):
         appid = str(appid or "").strip()
         bots = self._bots()
-        if appid and appid in bots:
-            return bots[appid].sender
+        if group_id:
+            appid = self.appid_for_group(group_id, appid)
+            if not appid:
+                return None
+        if appid:
+            bot = bots.get(appid)
+            return bot.sender if bot is not None else None
         return self.get_sender()
 
-    def appid_for_group(self, group_id) -> str:
+    def appid_for_group(self, group_id, appid: str = "") -> str:
         gid = str(group_id)
-        for appid, bot in self._bots().items():
+        bots = self._bots()
+        candidates = [(appid, bots.get(appid))] if appid else list(bots.items())
+        for appid, bot in candidates:
+            if bot is None:
+                continue
             try:
                 rows = bot.log_service.query_data(
-                    "SELECT group_id FROM groups_users "
-                    "WHERE allow_proactive_msg = 1 AND in_group = 1"
+                    "SELECT 1 FROM groups_users WHERE group_id=? "
+                    "AND allow_proactive_msg=1 AND in_group=1 LIMIT 1",
+                    (gid,),
                 )
             except Exception:
                 continue
-            if any(str(r.get("group_id")) == gid for r in (rows or [])):
+            if rows:
                 return str(appid)
         return ""
 
-    def is_full_access(self, group_id) -> bool:
+    def is_full_access(self, group_id, appid: str = "") -> bool:
         """检查群是否允许主动消息。"""
-        return bool(self.appid_for_group(group_id))
+        return bool(self.appid_for_group(group_id, appid))
 
 
 def get_runtime() -> "PluginRuntime | None":

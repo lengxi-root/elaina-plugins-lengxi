@@ -244,7 +244,7 @@ html, body, body *, body *::before, body *::after {
   <!-- 主内容区 -->
   <div class="eb-main">
     <div class="eb-header">
-      <h1 id="page-title">默认设置 <span id="mode-indicator"></span></h1>
+      <h1 id="page-title"><span id="page-title-text">默认设置</span> <span id="mode-indicator"></span></h1>
       <div class="header-right">
         <button class="btn btn-sm" onclick="loadStatus()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>刷新</button>
       </div>
@@ -261,10 +261,10 @@ html, body, body *, body *::before, body *::after {
               <label class="toggle-switch"><input type="checkbox" id="sw-monitor" onchange="toggleMonitor()"><span class="toggle-track"></span></label>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
-              <div><div style="font-weight:600;font-size:13px">工作模式</div><div style="font-size:11px;color:var(--text3)">召回: 仅群列表触发 | 欢迎: 全群推送+名单过滤</div></div>
+              <div><div style="font-weight:600;font-size:13px">工作模式（可同时开启）</div><div style="font-size:11px;color:var(--text3)">召回: 群列表触发 | 欢迎: 全群推送+名单过滤。两项开启时分别发送各自模板。</div></div>
               <div class="mode-select">
-                <label><input type="radio" name="work_mode" value="recall" onchange="switchMode('recall')"><span>召回模式</span></label>
-                <label><input type="radio" name="work_mode" value="welcome" onchange="switchMode('welcome')"><span>欢迎模式</span></label>
+                <label><input type="checkbox" id="sw-recall" onchange="toggleMode('recall')"><span>召回模式</span></label>
+                <label><input type="checkbox" id="sw-welcome" onchange="toggleMode('welcome')"><span>欢迎模式</span></label>
               </div>
             </div>
           </div>
@@ -276,7 +276,7 @@ html, body, body *, body *::before, body *::after {
             </div>
             <div class="field" style="margin-bottom:0">
               <label>延迟回复</label>
-              <div class="input-inline"><input type="number" id="reply_delay" min="0" max="300" class="input-sm"><span class="muted">秒 (0=立即, 1-300=延迟)</span></div>
+              <div class="input-inline"><input type="number" id="reply_delay" min="0" step="1" class="input-sm"><span class="muted">秒 (0=立即)</span></div>
               <div class="hint">新成员入群后等待多少秒再发模板</div>
             </div>
           </div>
@@ -306,7 +306,7 @@ html, body, body *, body *::before, body *::after {
 
       <!-- ========== 召回模式 ========== -->
       <div class="page" id="page-recall">
-        <div id="recall-warn" class="notice inactive-warn hidden">当前为欢迎模式，以下设置不会生效。如需使用召回模式，请在默认设置中切换。</div>
+        <div id="recall-warn" class="notice inactive-warn hidden">召回模式已关闭，可在默认设置中开启。设置仍可编辑和保存。</div>
         <div id="recall-content">
           <!-- 撤回设置 -->
           <div class="card">
@@ -356,17 +356,13 @@ html, body, body *, body *::before, body *::after {
 
       <!-- ========== 欢迎模式 ========== -->
       <div class="page" id="page-welcome">
-        <div id="welcome-warn" class="notice inactive-warn hidden">当前为召回模式，以下设置不会生效。如需使用欢迎模式，请在默认设置中切换。</div>
+        <div id="welcome-warn" class="notice inactive-warn hidden">欢迎模式已关闭，可在默认设置中开启。设置仍可编辑和保存。</div>
         <div id="welcome-content">
           <!-- 欢迎设置行 -->
           <div class="grid-2" style="margin-bottom:12px">
             <div class="card" style="margin-bottom:0">
               <div class="card-title">欢迎参数</div>
               <div class="grid-2" style="gap:8px;margin-bottom:8px">
-                <div class="field" style="margin-bottom:0">
-                  <label>每群日限</label>
-                  <div class="input-inline"><input type="number" id="daily_group_limit" min="0" class="input-sm"><span class="muted">次/天 (0=无限)</span></div>
-                </div>
                 <div class="field" style="margin-bottom:0">
                   <label>名单模式</label>
                   <div class="mode-select">
@@ -383,7 +379,7 @@ html, body, body *, body *::before, body *::after {
             <div class="card" style="margin-bottom:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px">
               <div style="font-size:11px;color:var(--text3)">今日全群发送统计</div>
               <div style="font-size:28px;font-weight:700;color:var(--accent)" id="stat-today">0</div>
-              <div class="muted" id="daily-sent-stat"></div>
+              <div class="muted">欢迎次数不限，按成功发送的消息计数</div>
             </div>
           </div>
 
@@ -511,7 +507,7 @@ let PAGE = 'settings';
 const PAGE_SIZE = 1000;
 
 let STATE = {
-  monitor: false, allGroups: false, listMode: 'blacklist', mergeWelcome: false,
+  monitor: false, recall: true, welcome: false, listMode: 'blacklist', mergeWelcome: false,
   pendingPage:1, wlPage:1, dbPage:1, blPage:1
 };
 
@@ -545,7 +541,7 @@ function go(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   const el = $('page-'+page);
   if(el) el.classList.add('on');
-  $('page-title').innerHTML=TITLES[page]||page;
+  $('page-title-text').textContent=TITLES[page]||page;
   stopDelayTimer();
   if(page==='recall') loadPending();
   if(page==='welcome') loadWelcomePage();
@@ -556,22 +552,18 @@ function go(page){
 function updateNavLock(){
   document.querySelectorAll('.nav-item').forEach(el=>{
     const p = el.dataset.page;
-    if(p==='recall') el.classList.toggle('inactive', STATE.allGroups);
-    if(p==='welcome') el.classList.toggle('inactive', !STATE.allGroups);
+    if(p==='recall') el.classList.toggle('inactive', !STATE.recall);
+    if(p==='welcome') el.classList.toggle('inactive', !STATE.welcome);
   });
-  $('recall-warn').classList.toggle('hidden', !STATE.allGroups);
-  $('recall-content').classList.toggle('page-dimmed', STATE.allGroups);
-  $('welcome-warn').classList.toggle('hidden', STATE.allGroups);
-  $('welcome-content').classList.toggle('page-dimmed', !STATE.allGroups);
+  $('recall-warn').classList.toggle('hidden', STATE.recall);
+  $('welcome-warn').classList.toggle('hidden', STATE.welcome);
 }
 
 function updateModeIndicator(){
   const ind = $('mode-indicator');
-  if(STATE.allGroups){
-    ind.innerHTML = '<span class="mode-badge welcome">欢迎模式</span>';
-  } else {
-    ind.innerHTML = '<span class="mode-badge recall">召回模式</span>';
-  }
+  ind.innerHTML = (STATE.recall ? '<span class="mode-badge recall">召回模式</span>' : '')
+    + (STATE.welcome ? '<span class="mode-badge welcome">欢迎模式</span>' : '')
+    || '<span class="muted">模式均未开启</span>';
 }
 
 // ==================== Status ====================
@@ -581,13 +573,15 @@ async function loadStatus(){
   if(!j.success){ toast('加载失败'); return; }
   const d = j.data;
   STATE.monitor = d.monitor_enabled;
-  STATE.allGroups = d.all_groups_mode;
+  STATE.recall = d.recall_enabled;
+  STATE.welcome = d.welcome_enabled;
   STATE.listMode = d.list_mode || 'blacklist';
   STATE.mergeWelcome = d.merge_welcome;
 
   // settings page
   $('sw-monitor').checked = d.monitor_enabled;
-  document.querySelector(`input[name=work_mode][value=${d.all_groups_mode?'welcome':'recall'}]`).checked = true;
+  $('sw-recall').checked = STATE.recall;
+  $('sw-welcome').checked = STATE.welcome;
   $('test_group').value = d.test_group || '';
   $('reply_delay').value = d.reply_delay;
 
@@ -603,7 +597,6 @@ async function loadStatus(){
   $('btn_json_recall').value = rbtns.length ? JSON.stringify(rbtns, null, 2) : '';
 
   // welcome settings
-  $('daily_group_limit').value = d.daily_group_limit || 0;
   $('welcome_template').value = d.welcome_template || '';
   var wbtns = Array.isArray(d.welcome_buttons) ? d.welcome_buttons : [];
   $('btn_json_welcome').value = wbtns.length ? JSON.stringify(wbtns, null, 2) : '';
@@ -617,9 +610,7 @@ async function loadStatus(){
 
   // daily stat
   var sentToday = d.daily_total_count || 0;
-  var limitVal = d.daily_group_limit || 0;
   $('stat-today').textContent = sentToday;
-  $('daily-sent-stat').textContent = limitVal>0 ? `每群上限 ${limitVal} 次/天` : '无上限';
 
   // badges
   $('b-recall').textContent = d.pending_count || 0;
@@ -643,17 +634,15 @@ async function toggleMonitor(){
   else { $('sw-monitor').checked=!next; toast(j.message||'失败'); }
 }
 
-async function switchMode(mode){
-  const isWelcome = mode==='welcome';
-  const j = await api('/config','POST',{ all_groups_mode: isWelcome });
+async function toggleMode(mode){
+  const next = $('sw-'+mode).checked;
+  const j = await api('/config','POST',{ [mode+'_enabled']: next });
   if(j.success){
-    STATE.allGroups = isWelcome;
-    document.querySelector(`input[name=work_mode][value=${mode}]`).checked = true;
+    STATE[mode] = next;
     updateNavLock(); updateModeIndicator();
-    toast(isWelcome?'已切换欢迎模式':'已切换召回模式');
+    toast((mode==='welcome'?'欢迎模式':'召回模式')+(next?'已开启':'已关闭'));
   } else {
-    var cur = STATE.allGroups?'welcome':'recall';
-    document.querySelector(`input[name=work_mode][value=${cur}]`).checked = true;
+    $('sw-'+mode).checked = STATE[mode];
     toast(j.message||'失败');
   }
 }
@@ -693,7 +682,8 @@ function formatBtnJson(mode){
 }
 
 async function saveGlobalConfig(){
-  let delay = parseInt($('reply_delay').value,10); if(!(delay>=0)) delay=0; if(delay>300) delay=300;
+  let delay = Number($('reply_delay').value);
+  if(!Number.isSafeInteger(delay) || delay<0){ toast('延迟必须为非负整数'); return; }
   const j = await api('/config','POST',{
     test_group: $('test_group').value.trim(),
     reply_delay: delay
@@ -716,11 +706,9 @@ async function saveRecallConfig(){
 }
 
 async function saveWelcomeConfig(){
-  let dl = parseInt($('daily_group_limit').value,10); if(!(dl>=0)) dl=0;
   const br = parseBtnJson('welcome');
   if(!br.ok){ toast(br.err); return; }
   const j = await api('/config','POST',{
-    daily_group_limit: dl,
     welcome_template: $('welcome_template').value,
     welcome_buttons: br.buttons,
     merge_template: $('merge_template').value
@@ -844,6 +832,7 @@ function hideDbGroups(){ $('db-groups-panel').classList.add('hidden'); }
 async function loadDbGroups(page){
   if(page) STATE.dbPage = page;
   const j = await api('/db_groups?page='+STATE.dbPage,'GET');
+  if(!j.success){ toast(j.message||'群列表读取失败'); return; }
   const rows = (j.data||[]); const total = j.total!=null ? j.total : rows.length;
   STATE.dbPage = j.page || STATE.dbPage;
   if(!rows.length && STATE.dbPage>1){ return loadDbGroups(STATE.dbPage-1); }
@@ -893,9 +882,9 @@ function renderDelay(rows){
   $('delay-stat').textContent = `共 ${rows.length} 个`;
   $('delay-empty').classList.toggle('hidden', rows.length>0);
   $('delay-body').innerHTML = rows.map(r=>{
-    const uids = (r.user_ids && r.user_ids.length > 1) ? r.user_ids.join(', ') : esc(r.user_id||'-');
+    const uids = esc((r.user_ids && r.user_ids.length > 1) ? r.user_ids.join(', ') : (r.user_id||'-'));
     return `<tr>
-      <td class="mono">${esc(r.group_id)}</td><td class="mono">${uids}</td>
+      <td class="mono">${esc(r.group_id)}<div class="muted">${r.mode==='welcome'?'欢迎':'召回'} · ${esc(r.appid||'')}</div></td><td class="mono">${uids}</td>
       <td>${esc(r.delay)}秒</td>
       <td class="delay-rem mono" data-rem="${r.remaining}">${fmtSec(r.remaining)}</td>
     </tr>`;

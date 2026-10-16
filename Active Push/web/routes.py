@@ -48,10 +48,16 @@ def _mode_state(mode, cfg):
     mode_cfg = cfg[mode]
     bot = push._get_bot(mode_cfg.get("push_appid", ""))
     appid = push._bot_appid(bot) if bot else ""
-    targets = push.get_targets(mode, mode_cfg.get("push_appid", ""))
+    error = "" if bot else "所选机器人未启动或不存在"
+    try:
+        targets = push.get_targets(mode, mode_cfg.get("push_appid", ""))
+    except RuntimeError as e:
+        targets = []
+        error = str(e)
     records = store.get_sent_records(appid, mode) if appid else []
     sent_ids = store.get_sent_target_ids(appid, mode) if appid else set()
     return {
+        "error": error,
         "target_count": len(targets),
         "sent_count": len(sent_ids),
         "pending_count": len(
