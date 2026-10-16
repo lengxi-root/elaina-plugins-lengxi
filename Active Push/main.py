@@ -14,8 +14,8 @@ from .web import routes as webapi
 __plugin_meta__ = {
     "name": "主动推送",
     "author": "ElainaBot",
-    "description": "向全部可主动推送群或私聊用户发送主动消息, 支持推送记录与断点继续",
-    "version": "2.1.2",
+    "description": "群聊与私聊可同时主动推送, 支持独立配置、推送记录与断点继续",
+    "version": "2.1.3",
 }
 
 log = get_logger(PLUGIN, "主动推送")

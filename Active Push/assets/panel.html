@@ -109,7 +109,7 @@ html, body, body *, body *::before, body *::after {
       </div>
       <button class="btn btn-accent" id="btn-save" onclick="saveMode()">保存设置</button>
     </div>
-    <div class="hint" style="margin-top:8px">启动间隔用于控制请求发起频率，0.1 秒 = 100 毫秒；接口响应不会再阻塞下一次发送。</div>
+    <div class="hint" style="margin-top:8px">群聊与私聊可同时推送，各自按启动间隔和并发数运行。启动间隔 0.1 秒约为每秒发起 10 条请求。</div>
     <div class="field" style="margin-top:13px;margin-bottom:0">
       <label>消息按钮 JSON
         <button class="btn-link" onclick="fillBtnSample()">示例</button>
@@ -163,12 +163,16 @@ const META={
 };
 let mode='group';
 let data={config:{group:{},private:{}},stats:{group:{},private:{}},bots:[]};
+let jobs={group:{state:'idle',mode:'group'},private:{state:'idle',mode:'private'}};
+const modeResults={group:null,private:null};
+const pendingActions={group:new Set(),private:new Set()};
 let broadcastTimer=null;
+let statusRequestId=0;
 
 function $(id){return document.getElementById(id)}
 function headers(){return {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}}
 async function api(path,method='GET',body){
-  const suffix=method==='GET'?('?token='+encodeURIComponent(TOKEN)):'';
+  const suffix=method==='GET'?((path.includes('?')?'&':'?')+'token='+encodeURIComponent(TOKEN)):'';
   const response=await fetch(API+path+suffix,{method,headers:headers(),body:body?JSON.stringify(body):undefined});
   return response.json();
 }
@@ -176,6 +180,18 @@ function esc(value){return String(value??'').replace(/[&<>"]/g,char=>({'&':'&amp
 function toast(message){const el=$('toast');el.textContent=message;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
 function updateCount(){$('cnt').textContent=($('content').value||'').length}
 function setBusy(button,busy,text){button.disabled=busy;button.innerHTML=busy?'<span class="spin"></span>处理中…':text}
+function isJobActive(job){return job?.state==='queued'||job?.state==='running'}
+function updateButtons(){
+  const actions=pendingActions[mode],busy=actions.size>0,active=isJobActive(jobs[mode]);
+  for(const [id,action,label] of [['btn-save','save','保存设置'],['btn-test','test','测试发送'],['btn-push','push','全部发送'],['btn-continue','continue','继续推送'],['btn-clear','clear','删除已推送记录']]){
+    const button=$(id);setBusy(button,actions.has(action),label);
+    button.disabled=busy||(active&&(action==='push'||action==='continue'));
+  }
+}
+function setActionBusy(targetMode,action,busy){
+  if(busy)pendingActions[targetMode].add(action);else pendingActions[targetMode].delete(action);
+  updateButtons();
+}
 function parseButtons(){
   const raw=($('btn_json').value||'').trim();
   if(!raw)return {ok:true,value:[]};
@@ -214,55 +230,86 @@ function captureCurrent(){
     content:$('content').value
   };
 }
+function renderStats(){
+  const stats=data.stats[mode]||{};
+  $('st-targets').textContent=stats.target_count??0;$('st-sent').textContent=stats.sent_count??0;$('st-pending').textContent=stats.pending_count??0;$('st-bots').textContent=(data.bots||[]).length;
+  renderRecords(stats.records||[]);
+}
 function render(){
   const meta=META[mode],cfg=data.config[mode]||{},stats=data.stats[mode]||{};
   $('hero-title').textContent=meta.title;$('hero-sub').textContent=meta.sub;$('mode-badge').textContent=meta.badge;
   $('mode-switch').textContent=meta.next;$('st-target-label').textContent=meta.targetLabel;$('settings-hint').textContent=meta.hint;
   $('test-label').textContent=meta.testLabel;$('test_target').placeholder=meta.placeholder;$('content-title').innerHTML=meta.badge+'发送内容 <span class="hint">群聊与私聊内容分别保存</span>';
-  $('st-targets').textContent=stats.target_count??0;$('st-sent').textContent=stats.sent_count??0;$('st-pending').textContent=stats.pending_count??0;$('st-bots').textContent=(data.bots||[]).length;
+  renderStats();
   $('test_target').value=cfg.test_target||'';$('interval').value=cfg.interval??0.5;$('concurrency').value=cfg.concurrency??20;$('content').value=cfg.content||'';
   const buttons=Array.isArray(cfg.buttons)?cfg.buttons:[];$('btn_json').value=buttons.length?JSON.stringify(buttons,null,2):'';
-  renderBots(cfg.push_appid||'');renderRecords(stats.records||[]);updateCount();$('send-result').className='result';
-  if(stats.error)showResult({success:false,message:stats.error});
+  renderBots(cfg.push_appid||'');updateCount();$('send-result').className='result';
+  if(isJobActive(jobs[mode]))showBroadcastResult(mode);
+  else if(modeResults[mode])showResult(modeResults[mode]);
+  else if(stats.error)showResult({success:false,message:stats.error});
+  else showBroadcastResult(mode);
+  updateButtons();
 }
-function switchMode(){captureCurrent();mode=mode==='group'?'private':'group';render()}
+function switchMode(){captureCurrent();mode=mode==='group'?'private':'group';statusRequestId++;render();scheduleBroadcastStatus(0)}
 async function load(){
   const result=await api('/config');
   if(!result.success)return toast(result.message||'加载失败');
-  data=result.data||data;render();
+  data=result.data||data;jobs={...jobs,...data.jobs};render();
 }
-function scheduleBroadcastStatus(){clearTimeout(broadcastTimer);broadcastTimer=setTimeout(pollBroadcastStatus,1000)}
+async function refreshStats(){
+  const result=await api('/config');
+  if(!result.success){toast(result.message||'加载失败');return false}
+  data.stats=result.data?.stats||data.stats;data.bots=result.data?.bots||data.bots;renderStats();
+  return true;
+}
+function scheduleBroadcastStatus(delay=1000){clearTimeout(broadcastTimer);broadcastTimer=setTimeout(pollBroadcastStatus,delay)}
 function formatRate(value){const rate=Number(value||0);return rate>=100?rate.toFixed(0):rate>=10?rate.toFixed(1):rate.toFixed(2)}
 function broadcastStats(job){
   const done=job.done||0,total=job.total||0,success=job.success||0,failed=job.failed_count||0;
   return `${done}/${total||'…'}，成功 ${success}，失败 ${failed}，平均 ${formatRate(job.average_per_second)} 条/秒 · ${formatRate(job.average_per_minute)} 条/分钟`;
 }
-async function pollBroadcastStatus(){
-  const result=await api('/broadcast/status');
-  if(!result.success)return;
-  const job=result.data||{},active=job.state==='queued'||job.state==='running';
-  if(active){
-    showResult({success:true,message:`后台推送中: ${broadcastStats(job)}`,data:{error_stats:job.error_stats||[]}});
-    scheduleBroadcastStatus();
-    return;
+function showBroadcastResult(targetMode){
+  const job=jobs[targetMode];
+  if(isJobActive(job)){
+    showResult({success:true,message:`${META[targetMode].badge}进行中: ${broadcastStats(job)}`,data:{error_stats:job.error_stats||[]}},targetMode);
+  }else if(['completed','failed','cancelled'].includes(job?.state)){
+    showResult({success:job.state==='completed',message:job.message,stats:broadcastStats(job),data:{failed:job.failed||[],error_stats:job.error_stats||[]}},targetMode);
   }
-  if(['completed','failed','cancelled'].includes(job.state)){
-    showResult({success:job.state==='completed',message:job.message,stats:broadcastStats(job),data:{failed:job.failed||[],error_stats:job.error_stats||[]}});
-    await load();
+}
+async function pollBroadcastStatus(){
+  const targetMode=mode,requestId=++statusRequestId;
+  try{
+    const result=await api('/broadcast/status?mode='+encodeURIComponent(targetMode));
+    if(requestId!==statusRequestId||mode!==targetMode||!result.success)return;
+    const previous=jobs[targetMode],job=result.data||{};
+    if(job.mode!==targetMode)return;
+    jobs[targetMode]=job;updateButtons();
+    if(isJobActive(job))showBroadcastResult(targetMode);
+    else if(['completed','failed','cancelled'].includes(job.state)&&(previous?.job_id!==job.job_id||previous?.state!==job.state||!modeResults[targetMode])){
+      showBroadcastResult(targetMode);
+      await refreshStats();
+    }
+  }catch(error){
+    // 短暂断网后继续查询，保留当前模式的进度及尚未保存的内容。
+  }finally{
+    if(requestId===statusRequestId&&mode===targetMode)scheduleBroadcastStatus();
   }
 }
 async function saveMode(silent=false){
   const parsed=parseButtons();if(!parsed.ok){toast(parsed.message);return false}
   captureCurrent();
-  const button=$('btn-save');if(!silent)setBusy(button,true,'保存设置');
+  const targetMode=mode,settings={...data.config[mode]};
+  if(!silent)setActionBusy(targetMode,'save',true);
   try{
-    const result=await api('/save','POST',{mode,data:data.config[mode]});
+    const result=await api('/save','POST',{mode:targetMode,data:settings});
     if(!result.success){toast(result.message||'保存失败');return false}
-    if(!silent)toast('当前模式设置已保存');
+    if(!silent)toast(META[targetMode].badge+'设置已保存');
     return true;
-  }finally{if(!silent)setBusy(button,false,'保存设置')}
+  }finally{if(!silent)setActionBusy(targetMode,'save',false)}
 }
-function showResult(result){
+function showResult(result,targetMode=mode){
+  modeResults[targetMode]=result;
+  if(targetMode!==mode)return;
   const box=$('send-result');box.className='result show '+(result.success?'ok':'err');
   let text=esc(result.message|| (result.success?'发送完成':'发送失败'));
   if(result.stats)text+='<br>'+esc(result.stats);
@@ -274,35 +321,37 @@ function showResult(result){
 }
 async function testSend(){
   const content=$('content').value.trim();if(!content)return toast('请输入消息内容');
-  if(!await saveMode(true))return;
-  const button=$('btn-test');setBusy(button,true,'测试发送');
-  try{showResult(await api('/test','POST',{mode,content}))}finally{setBusy(button,false,'测试发送')}
+  const targetMode=mode;setActionBusy(targetMode,'test',true);
+  try{
+    if(!await saveMode(true))return;
+    showResult(await api('/test','POST',{mode:targetMode,content}),targetMode);
+  }finally{setActionBusy(targetMode,'test',false)}
 }
 async function broadcast(continueOnly){
   const content=$('content').value.trim();if(!content)return toast('请输入消息内容');
-  if(!await saveMode(true))return;
-  await load();
-  const stats=data.stats[mode]||{},meta=META[mode];
-  const count=continueOnly?(stats.pending_count??0):(stats.target_count??0);
-  const action=continueOnly?'继续推送':'全部发送';
-  if(!confirm(`确认${action}到 ${count} 个${meta.targetLabel.replace('数','')}？`))return;
-  const button=continueOnly?$('btn-continue'):$('btn-push');setBusy(button,true,action);
+  const targetMode=mode,action=continueOnly?'continue':'push';
+  setActionBusy(targetMode,action,true);
   try{
-    const result=await api('/broadcast','POST',{mode,content,continue_only:continueOnly});
-    showResult(result);
-    if(result.success)scheduleBroadcastStatus();
-  }finally{setBusy(button,false,action)}
+    if(!await saveMode(true)||!await refreshStats())return;
+    const stats=data.stats[targetMode]||{},meta=META[targetMode];
+    const count=continueOnly?(stats.pending_count??0):(stats.target_count??0);
+    const label=continueOnly?'继续推送':'全部发送';
+    if(!confirm(`确认${label}到 ${count} 个${meta.targetLabel.replace('数','')}？`))return;
+    const result=await api('/broadcast','POST',{mode:targetMode,content,continue_only:continueOnly});
+    if(result.success)jobs[targetMode]=result.data;
+    showResult(result,targetMode);
+    if(mode===targetMode){statusRequestId++;scheduleBroadcastStatus(0)}
+  }finally{setActionBusy(targetMode,action,false)}
 }
 async function clearRecords(){
-  if(!await saveMode(true))return;
-  await load();
-  if(!confirm('确认删除当前模式、当前机器人下的全部已推送记录？删除后继续推送会重新发送所有目标。'))return;
-  const button=$('btn-clear');setBusy(button,true,'删除已推送记录');
+  const targetMode=mode;setActionBusy(targetMode,'clear',true);
   try{
-    const result=await api('/records/clear','POST',{mode});
+    if(!await saveMode(true)||!await refreshStats())return;
+    if(!confirm(`确认删除${META[targetMode].badge}当前机器人下的全部已推送记录？删除后继续推送会重新发送所有目标。`))return;
+    const result=await api('/records/clear','POST',{mode:targetMode});
     toast(result.message||'操作完成');
-    if(result.success)await load();
-  }finally{setBusy(button,false,'删除已推送记录')}
+    if(result.success)await refreshStats();
+  }finally{setActionBusy(targetMode,'clear',false)}
 }
 (function(){
   try{

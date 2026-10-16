@@ -11,28 +11,49 @@ from ..storage import repository as store
 
 log = get_logger(PLUGIN, "主动推送")
 
-_push_lock = asyncio.Lock()
-_job_task = None
-_job_status = {
-    "state": "idle",
-    "mode": "",
-    "total": 0,
-    "done": 0,
-    "success": 0,
-    "failed_count": 0,
-    "skipped": 0,
-    "failed": [],
-    "error_stats": [],
-    "message": "",
-    "_started_at": 0.0,
-    "_finished_at": 0.0,
-}
-
 _RAW_MAX = 1000
 _MAX_ERROR_TYPES = 100
 _INVALID_PRIVATE_USER_CODES = {"11255", "40054004"}
 _PERMANENT_SKIP_PRIVATE_USER_CODES = {"11500", "40054013"}
-_MODES = {"group", "private"}
+_MODES = ("group", "private")
+
+
+def _new_job_status(mode, *, queued=False):
+    return {
+        "job_id": str(time.monotonic_ns()) if queued else "",
+        "state": "queued" if queued else "idle",
+        "mode": mode,
+        "total": 0,
+        "done": 0,
+        "success": 0,
+        "failed_count": 0,
+        "skipped": 0,
+        "failed": [],
+        "error_stats": [],
+        "message": "推送任务已进入后台队列" if queued else "",
+        "_started_at": time.monotonic() if queued else 0.0,
+        "_finished_at": 0.0,
+    }
+
+
+_push_locks = {mode: asyncio.Lock() for mode in _MODES}
+_job_tasks = {mode: None for mode in _MODES}
+_job_status = {mode: _new_job_status(mode) for mode in _MODES}
+_stopping_modes = set()
+
+
+def _mode_busy(mode, owner=None):
+    task = _job_tasks[mode]
+    return (
+        mode in _stopping_modes
+        or _push_locks[mode].locked()
+        or (task is not None and not task.done() and task is not owner)
+    )
+
+
+def _busy_result(mode):
+    label = "群聊" if mode == "group" else "私聊"
+    return {"ok": False, "message": f"已有{label}推送任务进行中, 请稍后再试"}
 
 
 def build_button_rows(buttons_cfg):
@@ -200,18 +221,19 @@ async def send_to_test_target(mode, content, source="web"):
     return False, f"发送失败: {msg}"
 
 
-def get_broadcast_status():
-    started_at = _job_status.get("_started_at", 0.0)
-    finished_at = _job_status.get("_finished_at", 0.0)
+def get_broadcast_status(mode="group"):
+    job = _job_status[mode]
+    started_at = job.get("_started_at", 0.0)
+    finished_at = job.get("_finished_at", 0.0)
     elapsed = (
         max((finished_at or time.monotonic()) - started_at, 0.0) if started_at else 0.0
     )
-    done = _job_status.get("done", 0)
+    done = job.get("done", 0)
     per_second = done / elapsed if elapsed else 0.0
     status = {
-        **_job_status,
-        "failed": list(_job_status.get("failed") or []),
-        "error_stats": [dict(item) for item in _job_status.get("error_stats") or []],
+        **job,
+        "failed": [dict(item) for item in job.get("failed") or []],
+        "error_stats": [dict(item) for item in job.get("error_stats") or []],
         "elapsed": round(elapsed, 1),
         "average_per_second": round(per_second, 2),
         "average_per_minute": round(per_second * 60, 2),
@@ -222,32 +244,43 @@ def get_broadcast_status():
 
 
 def start_broadcast(mode, content, source="web", continue_only=False):
-    global _job_task
     if mode not in _MODES:
         return {"ok": False, "message": "未知推送模式"}
-    if (_job_task is not None and not _job_task.done()) or _push_lock.locked():
-        return {"ok": False, "message": "已有推送任务进行中, 请稍后再试"}
+    if _mode_busy(mode):
+        return _busy_result(mode)
+
+    _job_status[mode] = _new_job_status(mode, queued=True)
+    _job_tasks[mode] = asyncio.create_task(
+        broadcast(mode, content, source=source, continue_only=continue_only),
+        name=f"broadcast-{mode}",
+    )
+    return {"ok": True, "message": "推送任务已在后台启动"}
+
+
+async def broadcast(
+    mode,
+    content,
+    source="web",
+    progress=None,
+    continue_only=False,
+    progress_every=20,
+    failure=None,
+):
+    """群聊与私聊各自运行一个任务，指令和面板共享同模式的占用状态。"""
+    if mode not in _MODES:
+        return {"ok": False, "message": "未知推送模式"}
+    task = asyncio.current_task()
+    if _mode_busy(mode, owner=task):
+        return _busy_result(mode)
+    if _job_tasks[mode] is not task:
+        _job_status[mode] = _new_job_status(mode, queued=True)
+    _job_tasks[mode] = task
+    job = _job_status[mode]
 
     error_counts = {}
-    _job_status.update(
-        {
-            "state": "queued",
-            "mode": mode,
-            "total": 0,
-            "done": 0,
-            "success": 0,
-            "failed_count": 0,
-            "skipped": 0,
-            "failed": [],
-            "error_stats": [],
-            "message": "推送任务已进入后台队列",
-            "_started_at": time.monotonic(),
-            "_finished_at": 0.0,
-        }
-    )
 
-    async def progress(done, total, ok_count):
-        _job_status.update(
+    async def on_progress(done, total, ok_count):
+        job.update(
             {
                 "state": "running",
                 "total": total,
@@ -256,8 +289,10 @@ def start_broadcast(mode, content, source="web", continue_only=False):
                 "failed_count": done - ok_count,
             }
         )
+        if progress and (done % callback_every == 0 or done == total):
+            await progress(done, total, ok_count)
 
-    async def failure(data):
+    async def on_failure(data):
         if isinstance(data, dict):
             code = str(data.get("code") or "")
             message = str(data.get("message") or data)[:100]
@@ -268,7 +303,7 @@ def start_broadcast(mode, content, source="web", continue_only=False):
         if key not in error_counts and len(error_counts) >= _MAX_ERROR_TYPES:
             key = ("other", "其他错误")
         error_counts[key] = error_counts.get(key, 0) + 1
-        _job_status["error_stats"] = [
+        job["error_stats"] = [
             {"code": item_code, "message": item_message, "count": count}
             for (item_code, item_message), count in sorted(
                 error_counts.items(),
@@ -276,67 +311,84 @@ def start_broadcast(mode, content, source="web", continue_only=False):
                 reverse=True,
             )
         ]
+        if failure:
+            await failure(data)
 
-    async def run():
-        try:
-            result = await broadcast(
-                mode,
-                content,
-                source=source,
-                progress=progress,
-                continue_only=continue_only,
-                progress_every=1,
-                failure=failure,
-            )
-            _job_status["_finished_at"] = time.monotonic()
-            _job_status.update(
-                {
-                    "state": "completed" if result.get("ok") else "failed",
-                    "total": result.get("total", 0),
-                    "done": result.get("total", 0)
-                    if result.get("ok")
-                    else _job_status["done"],
-                    "success": result.get("success", 0),
-                    "failed_count": result.get("failed_count", 0),
-                    "skipped": result.get("skipped", 0),
-                    "failed": result.get("failed", []),
-                    "message": result.get("message", "推送结束"),
-                }
-            )
-        except asyncio.CancelledError:
-            _job_status.update(
-                {
-                    "state": "cancelled",
-                    "message": "推送任务已取消",
-                    "_finished_at": time.monotonic(),
-                }
-            )
-            raise
-        except Exception as e:
-            log.exception(f"后台推送任务异常: {e}")
-            _job_status.update(
-                {
-                    "state": "failed",
-                    "message": f"推送异常: {e}",
-                    "_finished_at": time.monotonic(),
-                }
-            )
+    try:
+        callback_every = max(int(progress_every or 1), 1)
+        result = await _broadcast(
+            mode,
+            content,
+            source=source,
+            progress=on_progress,
+            continue_only=continue_only,
+            progress_every=1,
+            failure=on_failure,
+        )
+    except asyncio.CancelledError:
+        job.update({"state": "cancelled", "message": "推送任务已取消"})
+        raise
+    except Exception as e:
+        log.exception(f"{mode} 推送任务异常: {e}")
+        result = {
+            "ok": False,
+            "message": f"推送异常: {e}",
+            **{
+                key: job[key]
+                for key in ("total", "success", "failed_count", "skipped", "failed")
+            },
+        }
+    finally:
+        job["_finished_at"] = time.monotonic()
+        if _job_tasks[mode] is task:
+            _job_tasks[mode] = None
 
-    _job_task = asyncio.create_task(run(), name=f"broadcast-{mode}")
-    return {"ok": True, "message": "推送任务已在后台启动"}
+    job.update(
+        {
+            "state": "completed" if result.get("ok") else "failed",
+            "total": result.get("total", 0),
+            "done": result.get("total", 0) if result.get("ok") else job["done"],
+            "success": result.get("success", 0),
+            "failed_count": result.get("failed_count", 0),
+            "skipped": result.get("skipped", 0),
+            "failed": result.get("failed", []),
+            "message": result.get("message", "推送结束"),
+        }
+    )
+    return result
 
 
-async def stop_broadcast():
-    global _job_task
-    task = _job_task
-    if task is not None and not task.done():
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    _job_task = None
+async def stop_broadcast(mode=None):
+    modes = _MODES if mode is None else (mode,)
+    if any(item not in _MODES for item in modes):
+        raise ValueError("未知推送模式")
+    _stopping_modes.update(modes)
+    try:
+        tasks = {item: _job_tasks[item] for item in modes}
+        for task in tasks.values():
+            if task is not None and not task.done() and not task.cancelling():
+                task.cancel()
+        await asyncio.gather(
+            *(task for task in tasks.values() if task is not None),
+            return_exceptions=True,
+        )
+        for item, task in tasks.items():
+            if _job_tasks[item] is task:
+                _job_tasks[item] = None
+            # 未开始执行就被取消的后台任务也要结束 queued 状态。
+            if _job_status[item]["state"] in ("queued", "running"):
+                _job_status[item].update(
+                    {
+                        "state": "cancelled",
+                        "message": "推送任务已取消",
+                        "_finished_at": time.monotonic(),
+                    }
+                )
+    finally:
+        _stopping_modes.difference_update(modes)
 
 
-async def broadcast(
+async def _broadcast(
     mode,
     content,
     source="web",
@@ -351,9 +403,10 @@ async def broadcast(
     """
     if mode not in _MODES:
         return {"ok": False, "message": "未知推送模式"}
-    if _push_lock.locked():
-        return {"ok": False, "message": "已有推送任务进行中, 请稍后再试"}
-    async with _push_lock:
+    push_lock = _push_locks[mode]
+    if push_lock.locked():
+        return _busy_result(mode)
+    async with push_lock:
         cfg = await asyncio.to_thread(store.get_mode_config, mode)
         appid = cfg.get("push_appid", "")
         bot = _get_bot(appid)
@@ -483,7 +536,18 @@ async def broadcast(
         if progress:
             with contextlib.suppress(Exception):
                 await progress(0, len(targets), 0)
-        await asyncio.gather(*(worker() for _ in range(min(concurrency, len(targets)))))
+        workers = [
+            asyncio.create_task(worker())
+            for _ in range(min(concurrency, len(targets)))
+        ]
+        try:
+            await asyncio.gather(*workers)
+        finally:
+            for task in workers:
+                if not task.done() and not task.cancelling():
+                    task.cancel()
+            # 等待所有发送及正在提交的记录结束，再释放该模式或卸载数据库。
+            await asyncio.gather(*workers, return_exceptions=True)
         if fatal_error:
             if progress:
                 with contextlib.suppress(Exception):

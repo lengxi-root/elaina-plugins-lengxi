@@ -80,6 +80,9 @@ async def api_get_config(request):
                 "group": group_state,
                 "private": private_state,
             },
+            "jobs": {
+                mode: push.get_broadcast_status(mode) for mode in ("group", "private")
+            },
         }
     )
 
@@ -151,11 +154,14 @@ async def api_broadcast(request):
     )
     if not result.get("ok"):
         return _fail(result.get("message", "推送失败"))
-    return _ok(push.get_broadcast_status(), message=result.get("message", ""))
+    return _ok(push.get_broadcast_status(mode), message=result.get("message", ""))
 
 
 async def api_broadcast_status(request):
-    return _ok(push.get_broadcast_status())
+    mode = _mode(request.query.get("mode", "group"))
+    if not mode:
+        return _fail("推送模式错误", status=400)
+    return _ok(push.get_broadcast_status(mode))
 
 
 async def api_clear_records(request):
