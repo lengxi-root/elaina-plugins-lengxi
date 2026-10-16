@@ -22,6 +22,7 @@ import contextlib
 import json
 import os
 import sqlite3
+import threading
 import time
 from datetime import datetime
 
@@ -34,7 +35,7 @@ __plugin_meta__ = {
     "name": "群成员入群欢迎",
     "author": "ElainaBot",
     "description": "群成员入群自动推送, 召回与欢迎可同时开启, 支持黑白名单与合并欢迎, 含 Web 面板",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "github": "https://github.com/ElainaCore/Elaina-plugins",
     "license": "MIT",
 }
@@ -90,16 +91,21 @@ _ICON = (
 # ==================== SQLite (全异步) ====================
 
 _conn_lock = asyncio.Lock()
+_db_thread_lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
 
 
 def _ensure_db() -> sqlite3.Connection:
-    """惰性创建连接并建表; 调用方须持有 _conn_lock。"""
+    """惰性创建写连接并建表; 调用方须持有 _db_thread_lock。"""
     global _conn
-    if _conn is None:
-        _conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
-        _conn.row_factory = sqlite3.Row
-        _conn.executescript(
+    if _conn is not None:
+        return _conn
+    conn = sqlite3.connect(_DB_PATH, timeout=30, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=FULL")
+        conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS config (
                 key   TEXT PRIMARY KEY,
@@ -133,32 +139,77 @@ def _ensure_db() -> sqlite3.Connection:
                 count    INTEGER DEFAULT 0,
                 PRIMARY KEY (group_id, date)
             );
+            CREATE INDEX IF NOT EXISTS idx_pending_added
+                ON pending_groups (added_at DESC, group_id);
+            CREATE INDEX IF NOT EXISTS idx_whitelist_added
+                ON whitelist_groups (added_at DESC, group_id);
+            CREATE INDEX IF NOT EXISTS idx_disabled_added
+                ON disabled_groups (added_at DESC, group_id);
+            CREATE INDEX IF NOT EXISTS idx_daily_counts_date
+                ON daily_group_counts (date, count);
+            CREATE INDEX IF NOT EXISTS idx_sent_records_status
+                ON sent_records (status);
             """
         )
         # 将旧互斥模式迁为独立开关, 已保存的新开关不被热重载覆盖。
-        legacy = _conn.execute(
+        legacy = conn.execute(
             "SELECT value FROM config WHERE key='all_groups_mode'"
         ).fetchone()
         welcome = legacy is not None and legacy["value"] == "1"
-        _conn.executemany(
+        conn.executemany(
             "INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)",
             [
                 ("recall_enabled", "0" if welcome else "1"),
                 ("welcome_enabled", "1" if welcome else "0"),
             ],
         )
-        _conn.commit()
+        conn.commit()
+    except Exception:
+        conn.close()
+        raise
+    _conn = conn
     return _conn
 
 
+async def _wait_db(call):
+    task = asyncio.create_task(asyncio.to_thread(call))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # SQLite 线程仍会继续运行，等它释放连接后再允许取消或卸载。
+        await asyncio.gather(task, return_exceptions=True)
+        raise
+
+
 async def _run_db(func, *args):
-    """在线程中执行可能较慢的 SQLite 查询。"""
+    """串行写入共享连接，每次调用在一个事务中提交。"""
 
     def call():
-        return func(_ensure_db(), *args)
+        with _db_thread_lock:
+            conn = _ensure_db()
+            with conn:
+                return func(conn, *args)
 
     async with _conn_lock:
-        return await asyncio.to_thread(call)
+        return await _wait_db(call)
+
+
+async def _run_read(func, *args):
+    """使用独立读快照，历史记录查询不再持有发送所需的写锁。"""
+
+    def call():
+        if _conn is None:
+            with _db_thread_lock:
+                _ensure_db()
+        conn = sqlite3.connect(_DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("BEGIN")
+            return func(conn, *args)
+        finally:
+            conn.close()
+
+    return await _wait_db(call)
 
 
 def _fetch_one(conn, query: str, params=()):
@@ -171,7 +222,6 @@ def _fetch_all(conn, query: str, params=()):
 
 def _execute(conn, query: str, params=()) -> int:
     cursor = conn.execute(query, params)
-    conn.commit()
     return cursor.rowcount
 
 
@@ -183,7 +233,7 @@ def _now() -> str:
 
 
 async def _get_cfg(key: str, default: str = "") -> str:
-    row = await _run_db(_fetch_one, "SELECT value FROM config WHERE key=?", (key,))
+    row = await _run_read(_fetch_one, "SELECT value FROM config WHERE key=?", (key,))
     if row is None:
         return _DEFAULT_CONFIG.get(key, default)
     return row["value"]
@@ -198,12 +248,15 @@ async def _set_cfg(key: str, value: str) -> None:
     )
 
 
-async def _all_cfg() -> dict:
+def _config_snapshot(conn) -> dict:
     cfg = dict(_DEFAULT_CONFIG)
-    rows = await _run_db(_fetch_all, "SELECT key, value FROM config")
-    for r in rows:
+    for r in conn.execute("SELECT key, value FROM config"):
         cfg[r["key"]] = r["value"]
     return cfg
+
+
+async def _all_cfg() -> dict:
+    return await _run_read(_config_snapshot)
 
 
 # ---- 待处理群组 ----
@@ -221,7 +274,6 @@ def _upsert_pending(conn, group_id: str, last_active: str) -> bool:
         "ON CONFLICT(group_id) DO UPDATE SET last_active=excluded.last_active",
         (group_id, last_active or "", _now()),
     )
-    conn.commit()
     return is_new
 
 
@@ -238,24 +290,24 @@ async def _remove_pending(group_id: str) -> bool:
 
 
 async def _is_pending(group_id: str) -> bool:
-    row = await _run_db(
+    row = await _run_read(
         _fetch_one, "SELECT 1 FROM pending_groups WHERE group_id=?", (group_id,)
     )
     return row is not None
 
 
 async def _list_pending(limit: int = PAGE_SIZE, offset: int = 0) -> list:
-    rows = await _run_db(
+    rows = await _run_read(
         _fetch_all,
         "SELECT group_id, last_active, added_at FROM pending_groups "
-        "ORDER BY added_at DESC LIMIT ? OFFSET ?",
+        "ORDER BY added_at DESC, group_id LIMIT ? OFFSET ?",
         (limit, offset),
     )
     return [dict(r) for r in rows]
 
 
 async def _count_pending() -> int:
-    row = await _run_db(_fetch_one, "SELECT COUNT(*) AS c FROM pending_groups")
+    row = await _run_read(_fetch_one, "SELECT COUNT(*) AS c FROM pending_groups")
     return row["c"]
 
 
@@ -281,7 +333,27 @@ def _sync_pending_batch_sync(conn, items: dict) -> tuple[int, int]:
 # ---- 已发送记录 ----
 
 
-async def _add_record(group_id: str, status: str, response, source: str) -> None:
+def _store_delivery(conn, group_id, status, response, source, created_at, mode):
+    conn.execute(
+        "INSERT INTO sent_records (group_id, status, response, source, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (group_id, status, response, source, created_at),
+    )
+    if status != "success":
+        return
+    if mode == "recall":
+        conn.execute("DELETE FROM pending_groups WHERE group_id=?", (group_id,))
+    elif mode == "welcome":
+        conn.execute(
+            "INSERT INTO daily_group_counts (group_id, date, count) VALUES (?, ?, 1) "
+            "ON CONFLICT(group_id, date) DO UPDATE SET count=count+1",
+            (group_id, created_at[:10]),
+        )
+
+
+async def _add_record(
+    group_id: str, status: str, response, source: str, *, mode: str = ""
+) -> None:
     try:
         resp_text = (
             response
@@ -291,10 +363,7 @@ async def _add_record(group_id: str, status: str, response, source: str) -> None
     except Exception:
         resp_text = str(response)
     await _run_db(
-        _execute,
-        "INSERT INTO sent_records (group_id, status, response, source, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (group_id, status, resp_text, source, _now()),
+        _store_delivery, group_id, status, resp_text, source, _now(), mode
     )
 
 
@@ -333,24 +402,24 @@ async def _remove_whitelist(group_id: str) -> bool:
 
 
 async def _is_whitelisted(group_id: str) -> bool:
-    row = await _run_db(
+    row = await _run_read(
         _fetch_one, "SELECT 1 FROM whitelist_groups WHERE group_id=?", (group_id,)
     )
     return row is not None
 
 
 async def _list_whitelist(limit: int = PAGE_SIZE, offset: int = 0) -> list:
-    rows = await _run_db(
+    rows = await _run_read(
         _fetch_all,
         "SELECT group_id, added_at FROM whitelist_groups "
-        "ORDER BY added_at DESC LIMIT ? OFFSET ?",
+        "ORDER BY added_at DESC, group_id LIMIT ? OFFSET ?",
         (limit, offset),
     )
     return [dict(r) for r in rows]
 
 
 async def _count_whitelist() -> int:
-    row = await _run_db(_fetch_one, "SELECT COUNT(*) AS c FROM whitelist_groups")
+    row = await _run_read(_fetch_one, "SELECT COUNT(*) AS c FROM whitelist_groups")
     return row["c"]
 
 
@@ -375,38 +444,28 @@ async def _remove_disabled(group_id: str) -> bool:
 
 
 async def _is_disabled(group_id: str) -> bool:
-    row = await _run_db(
+    row = await _run_read(
         _fetch_one, "SELECT 1 FROM disabled_groups WHERE group_id=?", (group_id,)
     )
     return row is not None
 
 
 async def _list_disabled(limit: int = PAGE_SIZE, offset: int = 0) -> list:
-    rows = await _run_db(
+    rows = await _run_read(
         _fetch_all,
         "SELECT group_id, disabled_by, added_at FROM disabled_groups "
-        "ORDER BY added_at DESC LIMIT ? OFFSET ?",
+        "ORDER BY added_at DESC, group_id LIMIT ? OFFSET ?",
         (limit, offset),
     )
     return [dict(r) for r in rows]
 
 
 async def _count_disabled() -> int:
-    row = await _run_db(_fetch_one, "SELECT COUNT(*) AS c FROM disabled_groups")
+    row = await _run_read(_fetch_one, "SELECT COUNT(*) AS c FROM disabled_groups")
     return row["c"]
 
 
 # ---- 每群每日计数 (欢迎模式下按群独立计数) ----
-
-
-async def _increment_daily_group(group_id: str) -> None:
-    today = datetime.now().strftime("%Y-%m-%d")
-    await _run_db(
-        _execute,
-        "INSERT INTO daily_group_counts (group_id, date, count) VALUES (?, ?, 1) "
-        "ON CONFLICT(group_id, date) DO UPDATE SET count=count+1",
-        (group_id, today),
-    )
 
 
 def _status_counts(conn: sqlite3.Connection, today: str) -> dict:
@@ -820,10 +879,34 @@ def _reply_succeeded(data) -> bool:
     return True
 
 
+def _welcome_allowed_sync(conn, group_id: str, cfg: dict) -> bool:
+    whitelist = cfg.get("list_mode", "blacklist") == "whitelist"
+    table = "whitelist_groups" if whitelist else "disabled_groups"
+    exists = conn.execute(
+        f"SELECT 1 FROM {table} WHERE group_id=?", (group_id,)
+    ).fetchone() is not None
+    return exists if whitelist else not exists
+
+
 async def _welcome_allowed(group_id: str, cfg: dict) -> bool:
-    if cfg.get("list_mode", "blacklist") == "whitelist":
-        return await _is_whitelisted(group_id)
-    return not await _is_disabled(group_id)
+    return await _run_read(_welcome_allowed_sync, group_id, cfg)
+
+
+def _member_state(conn, group_id: str):
+    """一次读快照取得模式配置及群资格，减少每个入群事件的数据库往返。"""
+    cfg = _config_snapshot(conn)
+    if cfg.get("monitor_enabled") != "1":
+        return cfg, False, False
+    recall = cfg.get("recall_enabled") == "1" and (
+        group_id == cfg.get("test_group", "").strip()
+        or conn.execute(
+            "SELECT 1 FROM pending_groups WHERE group_id=?", (group_id,)
+        ).fetchone() is not None
+    )
+    welcome = cfg.get("welcome_enabled") == "1" and _welcome_allowed_sync(
+        conn, group_id, cfg
+    )
+    return cfg, recall, welcome
 
 
 async def _deliver_member_reply(event, content, buttons, mode, gid, source):
@@ -832,17 +915,13 @@ async def _deliver_member_reply(event, content, buttons, mode, gid, source):
         resp = await event.reply(content, buttons=buttons, skip_suffix=True)
         if _reply_succeeded(resp):
             status = "success"
-            if mode == "recall":
-                await _remove_pending(gid)
-            else:
-                await _increment_daily_group(gid)
         elif resp is None:
             resp = {"error": "发送返回空 (可能被平台拦截或事件已过期)"}
     except Exception as e:
         status = "failed"
         resp = {"error": str(e)}
         report_error(PLUGIN, "群成员入群欢迎", e, context={"group_id": gid})
-    await _add_record(gid, status, resp, source)
+    await _add_record(gid, status, resp, source, mode=mode)
 
 
 async def _delayed_member_reply(
@@ -861,16 +940,8 @@ async def _delayed_member_reply(
     gid = group_id or event.group_id or ""
     try:
         await asyncio.sleep(delay)
-        cfg = await _all_cfg()
-        if cfg.get("monitor_enabled") != "1" or cfg.get(f"{mode}_enabled") != "1":
-            return
-        if mode == "welcome" and not await _welcome_allowed(gid, cfg):
-            return
-        if (
-            mode == "recall"
-            and gid != cfg.get("test_group")
-            and not await _is_pending(gid)
-        ):
+        _cfg, recall_allowed, welcome_allowed = await _run_read(_member_state, gid)
+        if not (welcome_allowed if mode == "welcome" else recall_allowed):
             return
         # 合并模式: 原子取出 user_ids 并移除队列 (避免取完到移除之间新用户被合并但漏发)
         if merge_mode and qid is not None:
@@ -1052,68 +1123,67 @@ async def cmd_enable_welcome(event, match):
     event_types=["GROUP_MEMBER_ADD"],
 )
 async def on_member_add(event, match):
-    if await _get_cfg("monitor_enabled", "0") != "1":
-        return
     gid = event.group_id or ""
     if not gid:
         return
 
-    cfg = await _all_cfg()
-    test_group = (cfg.get("test_group", "") or "").strip()
-    delay = _clamp_delay(cfg.get("reply_delay", "0"))
-    appid = str(getattr(event, "appid", "") or "")
-    for mode in ("recall", "welcome"):
-        if cfg.get(f"{mode}_enabled") != "1":
-            continue
-        if mode == "recall":
-            in_pending = await _is_pending(gid)
-            if (not in_pending and gid != test_group) or gid in _recall_inflight:
+    # 在读取快照前占用召回资格，避免旧快照在首次召回完成后再次触发。
+    recall_owner = gid not in _recall_inflight
+    if recall_owner:
+        _recall_inflight.add(gid)
+    recall_delayed = False
+    try:
+        cfg, recall_allowed, welcome_allowed = await _run_read(_member_state, gid)
+        if cfg.get("monitor_enabled") != "1":
+            return
+        delay = _clamp_delay(cfg.get("reply_delay", "0"))
+        appid = str(getattr(event, "appid", "") or "")
+        for mode, allowed in (("recall", recall_allowed), ("welcome", welcome_allowed)):
+            if not allowed or (mode == "recall" and not recall_owner):
                 continue
-            _recall_inflight.add(gid)
-        elif not await _welcome_allowed(gid, cfg):
-            continue
 
-        merge = mode == "welcome" and cfg.get("merge_welcome") == "1"
-        merge_template = cfg.get("merge_template", "欢迎 {user_ids} 加入本群！")
-        template = cfg.get(f"{mode}_template", DEFAULT_TEMPLATE)
-        content = (
-            _render_merged(merge_template, gid, [event.user_id])
-            if merge
-            else _render(template, gid, event.user_id)
-        )
-        buttons = _build_button_rows(cfg.get(f"{mode}_buttons", "[]"))
-        if delay > 0:
-            if merge:
-                qid, is_new = await _delay_merge_or_enqueue(
-                    gid, event.user_id or "", delay, appid=appid
-                )
-            else:
-                qid = await _delay_enqueue(
-                    gid, event.user_id or "", delay, appid=appid, mode=mode
-                )
-                is_new = True
-            if is_new:
-                _start_delay_task(
-                    _delayed_member_reply(
-                        event,
-                        content,
-                        delay,
-                        buttons,
-                        qid,
-                        merge_mode=merge,
-                        merge_template=merge_template,
-                        group_id=gid,
-                        mode=mode,
+            merge = mode == "welcome" and cfg.get("merge_welcome") == "1"
+            merge_template = cfg.get("merge_template", "欢迎 {user_ids} 加入本群！")
+            template = cfg.get(f"{mode}_template", DEFAULT_TEMPLATE)
+            content = (
+                _render_merged(merge_template, gid, [event.user_id])
+                if merge
+                else _render(template, gid, event.user_id)
+            )
+            buttons = _build_button_rows(cfg.get(f"{mode}_buttons", "[]"))
+            if delay > 0:
+                if merge:
+                    qid, is_new = await _delay_merge_or_enqueue(
+                        gid, event.user_id or "", delay, appid=appid
                     )
-                )
-        else:
-            try:
+                else:
+                    qid = await _delay_enqueue(
+                        gid, event.user_id or "", delay, appid=appid, mode=mode
+                    )
+                    is_new = True
+                if is_new:
+                    _start_delay_task(
+                        _delayed_member_reply(
+                            event,
+                            content,
+                            delay,
+                            buttons,
+                            qid,
+                            merge_mode=merge,
+                            merge_template=merge_template,
+                            group_id=gid,
+                            mode=mode,
+                        )
+                    )
+                    if mode == "recall":
+                        recall_delayed = True
+            else:
                 await _deliver_member_reply(
                     event, content, buttons, mode, gid, f"{mode}_member_add"
                 )
-            finally:
-                if mode == "recall":
-                    _recall_inflight.discard(gid)
+    finally:
+        if recall_owner and not recall_delayed:
+            _recall_inflight.discard(gid)
 
 
 # ==================== Web 面板接口 ====================
@@ -1137,7 +1207,7 @@ async def _body(request):
 @register_route("GET", f"{_API}/status")
 async def api_status(request):
     cfg = await _all_cfg()
-    counts = await _run_db(_status_counts, datetime.now().strftime("%Y-%m-%d"))
+    counts = await _run_read(_status_counts, datetime.now().strftime("%Y-%m-%d"))
     return _json(
         {
             "success": True,
@@ -1376,7 +1446,7 @@ async def api_pending_delete(request):
 
 @register_route("GET", f"{_API}/records")
 async def api_records(request):
-    data, total = await _run_db(_records_snapshot, PAGE_SIZE)
+    data, total = await _run_read(_records_snapshot, PAGE_SIZE)
     return _json(
         {
             "success": True,
@@ -1524,11 +1594,12 @@ async def _cleanup():
 
     def close_connection():
         global _conn
-        if _conn is not None:
-            with contextlib.suppress(Exception):
-                _conn.close()
-            _conn = None
+        with _db_thread_lock:
+            if _conn is not None:
+                with contextlib.suppress(Exception):
+                    _conn.close()
+                _conn = None
 
     async with _conn_lock:
-        await asyncio.to_thread(close_connection)
+        await _wait_db(close_connection)
     log.info("群成员入群欢迎插件已卸载")

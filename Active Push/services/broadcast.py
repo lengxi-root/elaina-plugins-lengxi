@@ -370,7 +370,7 @@ async def broadcast(
         skipped = 0
         if continue_only:
             sent = await asyncio.to_thread(
-                store.get_sent_target_ids, resolved_appid, mode
+                store.get_sent_target_ids, resolved_appid, mode, targets
             )
             pending = [target_id for target_id in targets if target_id not in sent]
             skipped = len(targets) - len(pending)

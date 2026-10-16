@@ -54,16 +54,15 @@ def _mode_state(mode, cfg):
     except RuntimeError as e:
         targets = []
         error = str(e)
-    records = store.get_sent_records(appid, mode) if appid else []
-    sent_ids = store.get_sent_target_ids(appid, mode) if appid else set()
+    sent_state = (
+        store.get_sent_state(appid, mode, targets)
+        if appid
+        else {"sent_count": 0, "pending_count": len(targets), "records": []}
+    )
     return {
         "error": error,
         "target_count": len(targets),
-        "sent_count": len(sent_ids),
-        "pending_count": len(
-            [target_id for target_id in targets if target_id not in sent_ids]
-        ),
-        "records": records,
+        **sent_state,
     }
 
 

@@ -6,14 +6,18 @@ import os
 import sqlite3
 import threading
 from datetime import datetime
+from itertools import islice
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DATA_DIR = os.path.join(ROOT_DIR, "data")
 _CONFIG_FILE = os.path.join(_DATA_DIR, "config.json")
 _DB_FILE = os.path.join(_DATA_DIR, "push.db")
 _MAX_RECORDS = 200
+_TARGET_QUERY_BATCH = 500
 
 _lock = threading.Lock()
+_db_lock = threading.Lock()
+_db_connection = None
 
 _MODE_DEFAULTS = {
     "test_target": "",
@@ -92,42 +96,70 @@ def save_config(mode, updates):
         return cfg
 
 
-def _connect():
+def _writer_connection():
+    """调用方须持有 _db_lock；复用写连接，表结构只在首次连接时检查。"""
+    global _db_connection
+    if _db_connection is not None:
+        return _db_connection
     os.makedirs(_DATA_DIR, exist_ok=True)
-    conn = sqlite3.connect(_DB_FILE)
+    conn = sqlite3.connect(_DB_FILE, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sent_targets (
-            appid TEXT NOT NULL,
-            target_type TEXT NOT NULL,
-            target_id TEXT NOT NULL,
-            pushed_at TEXT NOT NULL,
-            content TEXT DEFAULT '',
-            source TEXT DEFAULT '',
-            raw TEXT DEFAULT '',
-            PRIMARY KEY (appid, target_type, target_id)
+    try:
+        # WAL 允许面板读取与发送记录写入并行；FULL 保持逐条提交的持久性。
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=FULL")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sent_targets (
+                appid TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                pushed_at TEXT NOT NULL,
+                content TEXT DEFAULT '',
+                source TEXT DEFAULT '',
+                raw TEXT DEFAULT '',
+                PRIMARY KEY (appid, target_type, target_id)
+            )
+            """
         )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sent_targets_type_time ON sent_targets (appid, target_type, pushed_at DESC)"
-    )
-    conn.commit()
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sent_targets_type_time "
+            "ON sent_targets (appid, target_type, pushed_at DESC)"
+        )
+        conn.commit()
+    except Exception:
+        conn.close()
+        raise
+    _db_connection = conn
     return conn
 
 
 def init_db():
-    with _lock:
-        conn = _connect()
-        conn.close()
+    with _db_lock:
+        _writer_connection()
+
+
+def close_db():
+    global _db_connection
+    with _db_lock:
+        if _db_connection is not None:
+            _db_connection.close()
+            _db_connection = None
+
+
+def _connect():
+    """短期读连接不持有写锁，避免面板查询堵塞发送记录写入。"""
+    init_db()
+    conn = sqlite3.connect(_DB_FILE, timeout=30)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def add_sent_target(appid, target_type, target_id, content, source, raw):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with _lock:
-        conn = _connect()
-        try:
+    with _db_lock:
+        conn = _writer_connection()
+        with conn:
             conn.execute(
                 """
                 INSERT INTO sent_targets
@@ -141,56 +173,95 @@ def add_sent_target(appid, target_type, target_id, content, source, raw):
                 """,
                 (appid, target_type, target_id, now, content[:500], source, raw[:1000]),
             )
-            conn.commit()
-        finally:
-            conn.close()
 
 
 async def aadd_sent_target(*args):
-    await asyncio.to_thread(add_sent_target, *args)
+    write = asyncio.create_task(asyncio.to_thread(add_sent_target, *args))
+    try:
+        await asyncio.shield(write)
+    except asyncio.CancelledError:
+        # 线程中的写入不能取消；等它提交后再允许卸载关闭共享连接。
+        await asyncio.gather(write, return_exceptions=True)
+        raise
 
 
-def get_sent_target_ids(appid, target_type):
-    with _lock:
-        conn = _connect()
-        try:
-            rows = conn.execute(
-                "SELECT target_id FROM sent_targets WHERE appid=? AND target_type=?",
-                (appid, target_type),
-            ).fetchall()
-            return {row["target_id"] for row in rows}
-        finally:
-            conn.close()
+def _sent_target_ids(conn, appid, target_type, target_ids):
+    if target_ids is None:
+        rows = conn.execute(
+            "SELECT target_id FROM sent_targets WHERE appid=? AND target_type=?",
+            (appid, target_type),
+        )
+        return {row["target_id"] for row in rows}
+    # 只按联合主键匹配本次目标，不再读取并构建全部历史 ID 集合。
+    matched = set()
+    targets = iter(target_ids)
+    while batch := list(islice(targets, _TARGET_QUERY_BATCH)):
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(
+            "SELECT target_id FROM sent_targets WHERE appid=? AND target_type=? "
+            f"AND target_id IN ({placeholders})",
+            (appid, target_type, *batch),
+        )
+        matched.update(row["target_id"] for row in rows)
+    return matched
+
+
+def get_sent_target_ids(appid, target_type, target_ids=None):
+    conn = _connect()
+    try:
+        conn.execute("BEGIN")
+        return _sent_target_ids(conn, appid, target_type, target_ids)
+    finally:
+        conn.close()
+
+
+def _sent_records(conn, appid, target_type, limit):
+    rows = conn.execute(
+        """
+        SELECT target_id, pushed_at, content, source, raw
+        FROM sent_targets
+        WHERE appid=? AND target_type=?
+        ORDER BY pushed_at DESC
+        LIMIT ?
+        """,
+        (appid, target_type, max(int(limit), 1)),
+    )
+    return [dict(row) for row in rows]
 
 
 def get_sent_records(appid, target_type, limit=_MAX_RECORDS):
-    with _lock:
-        conn = _connect()
-        try:
-            rows = conn.execute(
-                """
-                SELECT target_id, pushed_at, content, source, raw
-                FROM sent_targets
-                WHERE appid=? AND target_type=?
-                ORDER BY pushed_at DESC
-                LIMIT ?
-                """,
-                (appid, target_type, max(int(limit), 1)),
-            ).fetchall()
-            return [dict(row) for row in rows]
-        finally:
-            conn.close()
+    conn = _connect()
+    try:
+        return _sent_records(conn, appid, target_type, limit)
+    finally:
+        conn.close()
+
+
+def get_sent_state(appid, target_type, target_ids, limit=_MAX_RECORDS):
+    """一个读快照内获取统计与近期记录，内存开销只与当前目标和显示条数有关。"""
+    conn = _connect()
+    try:
+        conn.execute("BEGIN")
+        sent_count = conn.execute(
+            "SELECT COUNT(*) FROM sent_targets WHERE appid=? AND target_type=?",
+            (appid, target_type),
+        ).fetchone()[0]
+        matched = _sent_target_ids(conn, appid, target_type, target_ids)
+        return {
+            "sent_count": sent_count,
+            "pending_count": sum(target_id not in matched for target_id in target_ids),
+            "records": _sent_records(conn, appid, target_type, limit),
+        }
+    finally:
+        conn.close()
 
 
 def clear_sent_targets(appid, target_type):
-    with _lock:
-        conn = _connect()
-        try:
+    with _db_lock:
+        conn = _writer_connection()
+        with conn:
             cursor = conn.execute(
                 "DELETE FROM sent_targets WHERE appid=? AND target_type=?",
                 (appid, target_type),
             )
-            conn.commit()
             return cursor.rowcount
-        finally:
-            conn.close()
