@@ -180,20 +180,28 @@ async def _send(bot, mode, target_id, content, buttons):
     )
 
 
-async def _remove_invalid_private_user(bot, mode, target_id, data):
-    if (
-        mode != "private"
-        or not isinstance(data, dict)
-        or str(data.get("code")) not in _INVALID_PRIVATE_USER_CODES
-    ):
+async def _remove_invalid_target(bot, mode, target_id, data):
+    """私聊失效时删除好友记录，群已注销时连同该群成员行一起删除。"""
+    if not isinstance(data, dict):
+        return
+    codes = {str(data.get(key, "")) for key in ("code", "err_code")}
+    if mode == "private" and codes & _INVALID_PRIVATE_USER_CODES:
+        label = "失效私聊用户"
+    elif mode == "group" and "11255" in codes:
+        label = "已注销群"
+    else:
         return
     try:
-        await bot.log_service.db_execute(
-            "DELETE FROM members WHERE user_id=?",
-            (target_id,),
-        )
+        if mode == "private":
+            await bot.log_service.db_execute(
+                "DELETE FROM members WHERE user_id=?",
+                (target_id,),
+            )
+        else:
+            await bot.log_service.group_row_delete(target_id)
+        log.info(f"已移除{label} {target_id}")
     except Exception as e:
-        log.warning(f"移除失效私聊用户 {target_id} 失败: {e}")
+        log.warning(f"移除{label} {target_id} 失败: {e}")
 
 
 async def send_to_test_target(mode, content, source="web"):
@@ -216,7 +224,7 @@ async def send_to_test_target(mode, content, source="web"):
     if ok:
         target_label = "测试群" if mode == "group" else "测试用户"
         return True, f"已发送到{target_label} {target_id}"
-    await _remove_invalid_private_user(bot, mode, target_id, data)
+    await _remove_invalid_target(bot, mode, target_id, data)
     msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
     return False, f"发送失败: {msg}"
 
@@ -499,7 +507,7 @@ async def _broadcast(
                         if isinstance(data, dict)
                         else str(data)
                     )
-                    await _remove_invalid_private_user(bot, mode, target_id, data)
+                    await _remove_invalid_target(bot, mode, target_id, data)
                     code = str(data.get("code")) if isinstance(data, dict) else ""
                     if mode == "private" and code in _PERMANENT_SKIP_PRIVATE_USER_CODES:
                         try:
