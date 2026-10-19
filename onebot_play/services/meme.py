@@ -91,8 +91,6 @@ def reload_data():
 
 def _list_image_b64():
     global _list_img_cache
-    if config.disabled_meme_codes():
-        return None
     if _list_img_cache is not None:
         return _list_img_cache
     if os.path.exists(_LIST_PNG):
