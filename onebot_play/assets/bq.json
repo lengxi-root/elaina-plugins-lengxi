@@ -7215,7 +7215,7 @@
       "min_images": 1,
       "max_images": 1,
       "min_texts": 0,
-      "max_texts": 1,
+      "max_texts": 0,
       "default_texts": [],
       "args_type": null
     },

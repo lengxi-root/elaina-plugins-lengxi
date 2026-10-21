@@ -1,234 +1,203 @@
-"""QQ 开放平台官方文档更新监控插件。"""
+"""QQ 开放平台官方文档监控：生命周期、订阅和主人命令。"""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import hashlib
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 
 from core.plugin.context import ctx
 from core.plugin.decorators import handler, on_load, on_unload
 
-from .monitor import DocsMonitor, load_json, load_state, save_json
+from .config import CONFIG_COMMENTS, Settings, prepare_config
+from .delivery import Target, send_error
+from .images import ChangeImages
+from .monitor import DocsMonitor
+from .rendering import DiffRenderer
+from .storage import SubscriptionStore, load_json, load_state
 
 __plugin_meta__ = {
     "name": "QQ 官方文档更新监控",
     "author": "ElainaBot",
-    "description": "每 5 分钟检测 QQ 开放平台开发文档的新增、修改与删除，并通知主人和订阅群",
-    "version": "1.1.1",
-    "homepage": "https://bot.q.qq.com/wiki/develop/api-v2/",
+    "description": "全量监控 QQ 官方文档，以页面链接与差异图片通知主人及订阅群，优先共享 PIL 渲染",
+    "version": "2.1.1",
+    "homepage": "https://bot.q.qq.com/wiki/",
     "license": "MIT",
 }
 
 log = ctx.log
 _task: asyncio.Task | None = None
 _monitor: DocsMonitor | None = None
-_last_error = ""
+_settings: Settings | None = None
+_images: ChangeImages | None = None
+_subscriptions = SubscriptionStore(ctx.get_data_path("subscriptions.json"))
 _subscription_lock = asyncio.Lock()
-
-_DEFAULT_CONFIG = {
-    "enabled": True,
-    "interval_minutes": 5,
-    "request_timeout_seconds": 30,
-    "concurrency": 8,
-}
-_CONFIG_COMMENTS = {
-    "enabled": "启用监控",
-    "interval_minutes": "检查间隔（分钟，最低 1 分钟）",
-    "request_timeout_seconds": "HTTP 超时（秒）",
-    "concurrency": "抓取并发数",
-}
+_next_check_at = ""
 
 
-def _load_subscriptions() -> dict[str, list[str]]:
-    data = load_json(ctx.get_data_path("subscriptions.json"))
-    apps = data.get("apps", {})
-    if not isinstance(apps, dict):
-        return {}
-    result: dict[str, list[str]] = {}
-    for appid, groups in apps.items():
-        appid = str(appid).strip()
-        if not appid or not isinstance(groups, list):
-            continue
-        clean_groups = sorted(
-            {
-                group.strip()
-                for group in groups
-                if isinstance(group, str) and group.strip()
-            }
-        )
-        if clean_groups:
-            result[appid] = clean_groups
-    return result
-
-
-def _save_subscriptions(apps: dict[str, list[str]]) -> None:
-    save_json(ctx.get_data_path("subscriptions.json"), {"version": 1, "apps": apps})
-
-
-def _set_subscription(appid: str, group_id: str, enabled: bool) -> bool:
-    subscriptions = _load_subscriptions()
-    groups = set(subscriptions.get(appid, []))
-    existed = group_id in groups
-    if enabled:
-        groups.add(group_id)
-    else:
-        groups.discard(group_id)
-    if groups:
-        subscriptions[appid] = sorted(groups)
-    else:
-        subscriptions.pop(appid, None)
-    _save_subscriptions(subscriptions)
-    return existed
-
-
-def _group_key(event) -> tuple[str, str]:
-    return str(event.appid or "").strip(), str(event.group_id or "").strip()
-
-
-def _notification_targets():
+def _bot_manager():
     from core.bot.manager import _bot_manager_ref
 
-    manager = _bot_manager_ref
-    if manager is None:
-        return []
-    subscriptions = _load_subscriptions()
-    targets = []
-    for appid, bot in manager._bots.items():
-        appid = str(appid)
-        for owner_id in sorted(
-            {
-                str(owner).strip()
-                for owner in (bot.owner_ids or [])
-                if str(owner).strip()
-            }
-        ):
-            targets.append(
-                (f"owner:{appid}:{owner_id}", bot.sender.send_to_user, owner_id)
+    return _bot_manager_ref
+
+
+def _get_module(name: str):
+    from core.application import get_app
+
+    app = get_app()
+    manager = app.module_manager if app else None
+    return manager.get(name) if manager else None
+
+
+def _get_bot(appid: str):
+    manager = _bot_manager()
+    return manager._bots.get(appid) if manager is not None else None
+
+
+def _notification_targets() -> list[Target]:
+    targets = {}
+    # 即使机器人暂时未启动，也记录订阅群；等机器人可用时继续发送。
+    for appid, groups in _subscriptions.load().items():
+        for group in groups:
+            target = Target("group", appid, group)
+            targets[target.key] = target
+    manager = _bot_manager()
+    for appid, bot in list(manager._bots.items()) if manager is not None else []:
+        owners = bot.owner_ids or []
+        if isinstance(owners, str):
+            owners = [owners]
+        for owner in owners:
+            if str(owner).strip():
+                target = Target("owner", str(appid), str(owner).strip())
+                targets[target.key] = target
+    return [targets[key] for key in sorted(targets)]
+
+
+async def _send_target(target: Target, message: str):
+    bot = _get_bot(target.appid)
+    if bot is None:
+        raise RuntimeError(f"机器人 {target.appid} 尚未启动")
+    send = (
+        bot.sender.send_to_group if target.kind == "group" else bot.sender.send_to_user
+    )
+    image = re.search(r"\n!\[文档变更 #\d+px #\d+px\]\((https?://[^\r\n]+)\)$", message)
+    if image:
+        from core.base.config import cfg
+
+        if not cfg.get_bot_setting(target.appid, "message.use_markdown", True):
+            from core.message.media import upload_media_via_url
+
+            file_info = await upload_media_via_url(
+                bot.sender,
+                None,
+                image.group(1),
+                1,
+                target_group_id=target.target_id if target.kind == "group" else None,
+                target_user_id=target.target_id if target.kind == "owner" else None,
             )
-        for group_id in subscriptions.get(appid, []):
-            targets.append(
-                (f"group:{appid}:{group_id}", bot.sender.send_to_group, group_id)
+            if not file_info:
+                raise RuntimeError("QQ 原生图片上传失败，已保留图片通知等待重试")
+            return await send(
+                target.target_id,
+                message[: image.start()],
+                media={"file_info": file_info},
+                skip_suffix=True,
             )
-    return targets
-
-
-async def _notify_targets(message: str) -> bool:
-    targets = _notification_targets()
-    if not targets:
-        log.warning(
-            "没有已启动且配置 owner_ids 或订阅群的目标，文档更新将在下次检查时重试"
-        )
-        return False
-    delivery_path = ctx.get_data_path("delivery.json")
-    baseline = await asyncio.to_thread(load_json, ctx.get_data_path("state.json"))
-    payload = f"{baseline.get('checked_at', 'initial')}\0{message}"
-    notification_id = hashlib.sha256(payload.encode()).hexdigest()
-    delivery = await asyncio.to_thread(load_json, delivery_path)
-    if delivery.get("notification_id") != notification_id or not isinstance(
-        delivery.get("progress"), dict
-    ):
-        delivery = {"notification_id": notification_id, "progress": {}}
-    progress = delivery["progress"]
-
-    for target_key, send, target_id in targets:
-        if progress.get(target_key):
-            continue
-        try:
-            result = await send(target_id, message, skip_suffix=True)
-        except Exception as exc:
-            log.warning(f"向通知目标 {target_key} 发送文档更新失败: {exc}")
-            continue
-        if not result[0]:
-            log.warning(f"向通知目标 {target_key} 发送文档更新失败，下次检查重试")
-            continue
-        progress[target_key] = True
-        await asyncio.to_thread(save_json, delivery_path, delivery)
-
-    return all(progress.get(key) is True for key, _, _ in targets)
+    return await send(target.target_id, message, skip_suffix=True)
 
 
 async def _run_check():
-    global _last_error
     if _monitor is None:
-        raise RuntimeError("监控器尚未启动")
+        raise RuntimeError("监控器尚未启动，请检查配置与启动日志")
+    result = await _monitor.check_once()
+    if result.initialized:
+        log.info(
+            f"文档监控基线已建立：{result.page_count} 页，失败 {len(result.failed_urls)} 页"
+        )
+    else:
+        log.info(
+            f"文档核对完成：{result.page_count} 页，变更 {len(result.changes)} 页，待推送 {result.delivery.pending_batches} 批"
+        )
+    for url, detail in list(result.failure_details.items())[:10]:
+        log.warning(f"文档抓取失败 [{url}]：{detail}")
+    for key, detail in result.delivery.errors.items():
+        log.warning(f"文档推送待重试 [{key}]：{detail}")
+    return result
+
+
+async def _monitor_loop(interval: float) -> None:
+    global _next_check_at
+    loop = asyncio.get_running_loop()
+    deadline = loop.time()
     try:
-        result = await _monitor.check_once()
-        _last_error = ""
-        if result.initialized:
-            log.info(f"文档监控基线已建立，共 {result.page_count} 页")
-        elif result.changes:
-            log.info(f"文档更新通知已发送，共 {len(result.changes)} 个页面")
-        if result.failed_urls:
-            log.warning(
-                f"本次有 {len(result.failed_urls)} 个页面抓取失败，将在下次检查时重试"
-            )
-            for url, detail in result.failure_details.items():
-                log.warning(f"页面抓取失败 [{url}] 原始响应：{detail}")
-        return result
-    except Exception as exc:
-        _last_error = str(exc)
-        log.warning(f"检查 QQ 官方文档失败: {exc}")
-        raise
-
-
-async def _monitor_loop(interval: int) -> None:
-    while True:
-        try:
-            await _run_check()
-        except Exception:
-            pass
-        await asyncio.sleep(interval)
+        while True:
+            deadline += interval
+            _next_check_at = (
+                datetime.now().astimezone()
+                + timedelta(seconds=max(0, deadline - loop.time()))
+            ).isoformat(timespec="seconds")
+            try:
+                await _run_check()
+            except Exception as exc:
+                log.warning(f"检查 QQ 官方文档失败：{exc}")
+            # 按检查开始时间计时；超时则跳过错过的时间点，避免连续积压运行。
+            if deadline <= loop.time():
+                deadline += (int((loop.time() - deadline) // interval) + 1) * interval
+            delay = max(0, deadline - loop.time())
+            _next_check_at = (
+                datetime.now().astimezone() + timedelta(seconds=delay)
+            ).isoformat(timespec="seconds")
+            await asyncio.sleep(delay)
+    finally:
+        _next_check_at = ""
 
 
 @on_load
 async def _start_monitor() -> None:
-    global _monitor, _task
-    # 读取旧配置用于迁移，避免 ensure_config 补入默认值后覆盖旧版自定义间隔。
-    raw_config = ctx.read_config("config.yaml")
-    config = ctx.ensure_config(_DEFAULT_CONFIG, comments=_CONFIG_COMMENTS)
-    # 将本插件先前生成的默认 1 分钟配置升级为新的 5 分钟默认值。
-    # 仅针对未显式设置配置版本的旧文件执行，避免覆盖后续用户自定义。
-    if (
-        raw_config.get("interval_minutes") == 1
-        and "config_version" not in raw_config
-        and "interval_seconds" not in raw_config
-    ):
-        config["interval_minutes"] = 5
-        config["config_version"] = 2
-        ctx.save_config(config, "config.yaml", comments=_CONFIG_COMMENTS)
-    if not config.get("enabled", True):
-        log.info("QQ 官方文档更新监控已在配置中关闭")
+    global _monitor, _task, _settings, _images
+    config, _settings = prepare_config(ctx.read_config("config.yaml"))
+    ctx.save_config(config, "config.yaml", comments=CONFIG_COMMENTS)
+    if not _settings.enabled:
+        log.info("QQ 官方文档监控已在配置中关闭")
         return
-    # 新配置使用分钟；兼容旧版本的 interval_seconds 配置。
-    try:
-        if (
-            config.get("config_version") == 2
-            or "interval_minutes" in raw_config
-            and "interval_minutes" in config
-        ):
-            interval_minutes = float(config.get("interval_minutes", 5))
-        elif "interval_seconds" in raw_config:
-            interval_minutes = float(raw_config.get("interval_seconds", 60)) / 60
-        else:
-            interval_minutes = float(config.get("interval_minutes", 5))
-    except (TypeError, ValueError):
-        interval_minutes = 5
-    interval = max(60, int(interval_minutes * 60))
+    # 先验证订阅数据，避免损坏文件被当作空订阅而悄悄停止通知。
+    _subscriptions.load()
+    _images = ChangeImages(
+        DiffRenderer(
+            _get_module,
+            backend=_settings.render_backend,
+            max_height=_settings.image_max_height,
+            context=_settings.diff_context_lines,
+            font_path=_settings.font_path,
+            warning=log.warning,
+        ),
+        _get_module,
+        _get_bot,
+    )
     _monitor = DocsMonitor(
         ctx.get_data_path("state.json"),
-        _notify_targets,
-        timeout=max(5, float(config.get("request_timeout_seconds", 30))),
-        concurrency=max(1, int(config.get("concurrency", 8))),
+        _notification_targets,
+        _send_target,
+        timeout=_settings.request_timeout_seconds,
+        concurrency=_settings.concurrency,
+        retries=_settings.request_retries,
+        max_message_bytes=_settings.max_message_bytes,
+        send_timeout=_settings.send_timeout_seconds,
+        send_interval=_settings.send_interval_seconds,
+        prepare_images=_images.prepare,
     )
-    _task = asyncio.create_task(_monitor_loop(interval), name="qq-docs-monitor")
-    log.info(f"QQ 官方文档更新监控已启动，每 {interval / 60:g} 分钟检查一次")
+    _task = asyncio.create_task(
+        _monitor_loop(_settings.interval_seconds), name="qq-docs-monitor"
+    )
+    log.info(
+        f"QQ 官方文档监控已启动：每 {_settings.interval_seconds / 60:g} 分钟全量核对正文"
+    )
 
 
 @on_unload
 async def _stop_monitor() -> None:
-    global _monitor, _task
+    global _monitor, _task, _images
     if _task is not None:
         _task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -237,13 +206,18 @@ async def _stop_monitor() -> None:
     if _monitor is not None:
         await _monitor.close()
         _monitor = None
-    log.info("QQ 官方文档更新监控已停止")
+    _images = None
+    log.info("QQ 官方文档监控已停止，待推送队列已保留")
+
+
+def _group_key(event) -> tuple[str, str]:
+    return str(event.appid or "").strip(), str(event.group_id or "").strip()
 
 
 @handler(
     r"^设置开放订阅群$",
     name="设置开放订阅群",
-    desc="把当前群绑定到当前机器人接收文档更新",
+    desc="绑定当前机器人接收文档更新",
     owner_only=True,
     group_only=True,
 )
@@ -252,14 +226,15 @@ async def subscribe_group(event, match) -> None:
     if not appid or not group_id:
         await event.reply("设置失败：无法识别当前机器人 appid 或群号")
         return
-    async with _subscription_lock:
-        already = await asyncio.to_thread(_set_subscription, appid, group_id, True)
-    if already:
-        await event.reply(f"这个群已经订阅 QQ 官方文档更新\n绑定机器人 appid：{appid}")
-    else:
-        await event.reply(
-            f"已设置当前群为 QQ 官方文档订阅群\n绑定机器人 appid：{appid}"
-        )
+    try:
+        async with _subscription_lock:
+            already = await asyncio.to_thread(_subscriptions.set, appid, group_id, True)
+    except Exception as exc:
+        await event.reply(f"设置失败：{exc}")
+        return
+    await event.reply(
+        f"{'这个群已经订阅' if already else '已设置当前群订阅'} QQ 官方文档更新\n绑定机器人 appid：{appid}"
+    )
 
 
 @handler(
@@ -274,83 +249,165 @@ async def unsubscribe_group(event, match) -> None:
     if not appid or not group_id:
         await event.reply("取消失败：无法识别当前机器人 appid 或群号")
         return
-    async with _subscription_lock:
-        existed = await asyncio.to_thread(_set_subscription, appid, group_id, False)
+    try:
+        async with _subscription_lock:
+            existed = await asyncio.to_thread(
+                _subscriptions.set, appid, group_id, False
+            )
+            if _monitor is not None:
+                await _monitor.cancel_target(Target("group", appid, group_id))
+    except Exception as exc:
+        await event.reply(f"取消失败：{exc}")
+        return
     await event.reply(
-        "已取消当前群的 QQ 官方文档订阅" if existed else "当前群没有订阅记录"
+        "已取消当前群的 QQ 官方文档订阅及待发通知" if existed else "当前群没有订阅记录"
     )
+
+
+def _error_lines(title: str, errors: dict) -> list[str]:
+    if not errors:
+        return []
+    lines = [title]
+    lines.extend(
+        f"{key}: {str(value)[:220]}" for key, value in list(errors.items())[:5]
+    )
+    if len(errors) > 5:
+        lines.append(f"另有 {len(errors) - 5} 项，请查看日志或 data/status.json")
+    return lines
 
 
 @handler(
     r"^(?:文档监控状态|开放订阅群状态)$",
     name="文档监控状态",
-    desc="查看文档监控和订阅群状态",
+    desc="查看检查、订阅及推送失败原因",
     owner_only=True,
 )
 async def docs_monitor_status(event, match) -> None:
-    state = await asyncio.to_thread(load_state, ctx.get_data_path("state.json"))
-    pages = state.get("pages", {})
-    checked_at = state.get("checked_at", "尚未完成首次检查")
-    pending = sum(1 for page in pages.values() if not page.get("digest"))
-    status = "运行中" if _task is not None and not _task.done() else "未运行"
+    try:
+        state, saved_status, subscriptions = await asyncio.gather(
+            asyncio.to_thread(load_state, ctx.get_data_path("state.json")),
+            asyncio.to_thread(load_json, ctx.get_data_path("status.json")),
+            asyncio.to_thread(_subscriptions.load),
+        )
+    except Exception as exc:
+        await event.reply(f"读取文档监控状态失败：{exc}")
+        return
+    from .delivery import queue_report
+
+    status = (
+        _monitor.status if _monitor is not None and _monitor.status else saved_status
+    )
+    report = queue_report(state)
+    running = _task is not None and not _task.done()
     lines = [
-        f"QQ 官方文档监控：{status}",
-        f"已记录页面：{len(pages)}",
-        f"待重试页面：{pending}",
-        f"上次成功检查：{checked_at}",
+        f"QQ 官方文档监控：{'检查中' if running and status.get('checking') else '运行中' if running else '未运行'}",
+        "监控范围：全部 QQ 开放平台官方文档（每轮核对正文）",
+        f"检查间隔：{_settings.interval_seconds / 60:g} 分钟"
+        if _settings
+        else "检查间隔：配置尚未加载",
+        f"已记录页面：{len(state['pages'])}",
+        f"抓取失败：{status.get('failed_pages', 0)} 页",
+        f"上次成功检查：{state.get('checked_at') or '尚未完成首次检查'}",
+        f"下次检查：{_next_check_at or '未安排'}",
+        f"待推送：{report.pending_batches} 批，{report.pending_parts} 段",
+        f"差异图片：{_settings.render_backend if _settings else '未配置'}"
+        + (
+            f"（最近使用 {_images.renderer.last_backend}）"
+            if _images and _images.renderer.last_backend
+            else ""
+        ),
     ]
-    subscriptions = await asyncio.to_thread(_load_subscriptions)
-    current_appid, current_group = _group_key(event)
-    if current_group:
-        current_bound = current_group in subscriptions.get(current_appid, [])
-        lines.append(f"当前群订阅：{'已开启' if current_bound else '未开启'}")
-    if subscriptions:
+    appid, group = _group_key(event)
+    if group:
         lines.append(
-            "订阅群："
-            + "；".join(
-                f"{appid}: {len(groups)} 个"
-                for appid, groups in sorted(subscriptions.items())
+            f"当前群订阅：{'已开启' if group in subscriptions.get(appid, []) else '未开启'}"
+        )
+    lines.append(
+        "订阅群："
+        + (
+            "；".join(
+                f"{key}: {len(groups)} 个"
+                for key, groups in sorted(subscriptions.items())
             )
+            or "暂无"
         )
-    else:
-        lines.append("订阅群：暂无")
-    if _last_error:
-        lines.append(f"最近错误：{_last_error}")
-    if state.get("failure_details"):
-        lines.append("最近页面失败原始响应：")
-        lines.extend(
-            f"{url}: {detail}" for url, detail in state["failure_details"].items()
-        )
+    )
+    if status.get("last_error"):
+        lines.append(f"最近检查错误：{status['last_error'][:400]}")
+    lines.extend(_error_lines("页面失败原因：", status.get("failure_details", {})))
+    lines.extend(_error_lines("推送待重试原因：", report.errors))
     await event.reply("\n".join(lines))
 
 
 @handler(
     r"^立即检查文档$",
     name="立即检查文档",
-    desc="立即检查一次 QQ 官方文档更新",
+    desc="立即全量检查文档并重试通知",
     owner_only=True,
     cooldown=10,
 )
 async def check_docs_now(event, match) -> None:
-    started_at = datetime.now()
     try:
         result = await _run_check()
     except Exception as exc:
-        await event.reply(f"检查失败：{exc}")
+        await event.reply(f"检查失败：{exc}\n可发送「文档监控状态」查看详情。")
         return
-    elapsed = (datetime.now() - started_at).total_seconds()
-    if result.initialized:
-        text = f"首次基线已建立，共记录 {result.page_count} 页。"
-    elif result.changes:
-        text = (
-            f"检查完成，发现 {len(result.changes)} 个页面变更，已发送给主人和订阅群。"
-        )
-    else:
-        text = f"检查完成，{result.page_count} 个页面均无更新。"
+    text = (
+        f"首次基线已建立，共记录 {result.page_count} 页。"
+        if result.initialized
+        else f"检查完成，核对 {result.page_count} 页，发现 {len(result.changes)} 页变更。"
+    )
+    text += f"\n本轮成功推送 {result.delivery.sent_parts} 段，待推送 {result.delivery.pending_batches} 批。"
     if result.failed_urls:
-        text += f" 另有 {len(result.failed_urls)} 页抓取失败，将自动重试。"
-        if result.failure_details:
-            text += "\n失败原始响应：\n" + "\n".join(
-                f"{url}: {detail}" for url, detail in result.failure_details.items()
+        text += f"\n另有 {len(result.failed_urls)} 页抓取失败，将自动重试。"
+    if result.delivery.errors:
+        text += "\n推送尚未完成，可发送「文档监控状态」查看原因。"
+    await event.reply(text)
+
+
+@handler(
+    r"^重试文档推送$",
+    name="重试文档推送",
+    desc="立即补发队列中未成功的通知",
+    owner_only=True,
+    cooldown=10,
+)
+async def retry_docs_push(event, match) -> None:
+    try:
+        if _monitor is None:
+            raise RuntimeError("监控器尚未启动")
+        report = await _monitor.retry_notifications()
+        await event.reply(
+            f"补发完成：成功 {report.sent_parts} 段，待推送 {report.pending_batches} 批。"
+            + ("\n请发送「文档监控状态」查看失败原因。" if report.errors else "")
+        )
+    except Exception as exc:
+        await event.reply(f"补发失败：{exc}")
+
+
+@handler(
+    r"^测试文档推送$",
+    name="测试文档推送",
+    desc="测试向当前会话发送主动消息",
+    owner_only=True,
+    cooldown=10,
+)
+async def test_docs_push(event, match) -> None:
+    appid, group = _group_key(event)
+    target = Target(
+        "group" if group else "owner", appid, group or str(event.user_id or "").strip()
+    )
+    try:
+        if not target.appid or not target.target_id:
+            raise RuntimeError("无法识别当前机器人或会话")
+        timeout = _settings.send_timeout_seconds if _settings else 30
+        error = send_error(
+            await asyncio.wait_for(
+                _send_target(target, "QQ 官方文档监控主动推送测试成功。"), timeout
             )
-    await event.reply(f"{text}\n耗时：{elapsed:.1f} 秒")
+        )
+        if error:
+            raise RuntimeError(error)
+        await event.reply("主动推送测试成功。")
+    except Exception as exc:
+        await event.reply(f"主动推送测试失败：{exc}")

@@ -449,7 +449,7 @@ async def _generate_meme(event, msg, target):
             return
 
         parts = text1.split("#")
-        text = parts[0]
+        text = parts[0].strip()
         args = parts[1] if len(parts) > 1 else ""
         user_id = str(event.user_id)
         sender = event.sender or {}
@@ -469,6 +469,7 @@ async def _generate_meme(event, msg, target):
 
         texts = []
         if text and pt.get("max_texts", 0) == 0:
+            await send_reply(event, "该表情不支持文字，请只发送表情名并 @人或附带图片")
             return
         default_name = (
             at_users[0]["text"].replace("@", "").strip()
@@ -482,8 +483,6 @@ async def _generate_meme(event, msg, target):
         if len(texts) < pt.get("min_texts", 0):
             await send_reply(event, f"需要{pt.get('min_texts', 0)}个文本，用/隔开")
             return
-        if pt.get("max_texts", 0) > 0 and not texts:
-            texts.append(default_name)
 
         user_infos = await _member_infos(event, at_users)
         if user_infos is None:

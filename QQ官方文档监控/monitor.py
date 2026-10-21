@@ -1,112 +1,27 @@
-"""QQ 开放平台文档变更检测核心。"""
+"""全量正文核对、删除确认与持久化通知调度。"""
 
 from __future__ import annotations
 
 import asyncio
-import difflib
-import hashlib
-import json
-import os
-import re
-import tempfile
-from collections import Counter
+import copy
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from datetime import datetime
-from html.parser import HTMLParser
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from urllib.parse import urldefrag
-from xml.etree import ElementTree
 
 import httpx
 
-SITEMAP_URL = "https://bot.q.qq.com/wiki/sitemap.xml"
-DOC_PREFIX = "https://bot.q.qq.com/wiki/develop/api-v2/"
-STATE_VERSION = 1
-_BLOCK_TAGS = frozenset(
-    [
-        "address",
-        "article",
-        "aside",
-        "blockquote",
-        "br",
-        "dd",
-        "div",
-        "dl",
-        "dt",
-        "figcaption",
-        "figure",
-        "footer",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "header",
-        "hr",
-        "li",
-        "main",
-        "nav",
-        "ol",
-        "p",
-        "pre",
-        "section",
-        "table",
-        "tbody",
-        "td",
-        "tfoot",
-        "th",
-        "thead",
-        "tr",
-        "ul",
-    ]
+from .delivery import DeliveryQueue, DeliveryReport, Target, now_iso, queue_report
+from .documents import (
+    SITEMAP_URL,
+    PageChange,
+    PageSnapshot,
+    build_notifications,
+    compare_page,
+    official_url,
+    parse_page,
+    parse_sitemap,
 )
-_IGNORED_TAGS = frozenset({"script", "style", "noscript", "svg"})
-_VOID_TAGS = frozenset(
-    [
-        "area",
-        "base",
-        "br",
-        "col",
-        "embed",
-        "hr",
-        "img",
-        "input",
-        "link",
-        "meta",
-        "param",
-        "source",
-        "track",
-        "wbr",
-    ]
-)
-
-
-@dataclass(slots=True)
-class PageSnapshot:
-    url: str
-    lastmod: str
-    title: str
-    content: str
-    digest: str
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "lastmod": self.lastmod,
-            "title": self.title,
-            "content": self.content,
-            "digest": self.digest,
-        }
-
-
-@dataclass(slots=True)
-class PageChange:
-    kind: str
-    url: str
-    title: str
-    before: str = ""
-    after: str = ""
+from .storage import load_state, save_json
 
 
 @dataclass(slots=True)
@@ -114,352 +29,348 @@ class CheckResult:
     initialized: bool
     changes: list[PageChange]
     page_count: int
+    fetched_count: int
     failed_urls: list[str]
     failure_details: dict[str, str] = field(default_factory=dict)
+    delivery: DeliveryReport = field(default_factory=DeliveryReport)
 
 
-class _ContentParser(HTMLParser):
-    """提取 VuePress 正文。"""
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self._content_depth = 0
-        self._ignored_depth = 0
-        self._parts: list[str] = []
-        self._title_depth = 0
-        self._title_parts: list[str] = []
-        self._anchor_depth = 0
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attrs_map = dict(attrs)
-        classes = set((attrs_map.get("class") or "").split())
-        if not self._content_depth and "theme-default-content" in classes:
-            self._content_depth = 1
-        elif self._content_depth and tag not in _VOID_TAGS:
-            self._content_depth += 1
-
-        if tag == "title":
-            self._title_depth += 1
-        if not self._content_depth:
-            return
-        if tag in _IGNORED_TAGS:
-            self._ignored_depth += 1
-        if tag == "a":
-            self._anchor_depth += 1
-        if not self._ignored_depth and tag in _BLOCK_TAGS:
-            self._parts.append("\n")
-
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        self.handle_starttag(tag, attrs)
-        if tag not in _VOID_TAGS:
-            self.handle_endtag(tag)
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "title" and self._title_depth:
-            self._title_depth -= 1
-        if not self._content_depth:
-            return
-        if not self._ignored_depth and tag in _BLOCK_TAGS:
-            self._parts.append("\n")
-        if tag == "a" and self._anchor_depth:
-            self._anchor_depth -= 1
-        if tag in _IGNORED_TAGS and self._ignored_depth:
-            self._ignored_depth -= 1
-        self._content_depth -= 1
-
-    def handle_data(self, data: str) -> None:
-        if self._title_depth:
-            self._title_parts.append(data)
-        if not self._content_depth or self._ignored_depth:
-            return
-        if self._anchor_depth and data.strip() == "#":
-            return
-        self._parts.append(data)
-
-    @property
-    def title(self) -> str:
-        title = _normalize_inline(" ".join(self._title_parts))
-        return title.removesuffix(" | QQ 机器人官方文档").strip()
-
-    @property
-    def content(self) -> str:
-        lines: list[str] = []
-        for raw_line in "".join(self._parts).splitlines():
-            line = _normalize_inline(raw_line)
-            if line and (not lines or line != lines[-1]):
-                lines.append(line)
-        return "\n".join(lines)
+class FetchError(RuntimeError):
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
-def _normalize_inline(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def parse_sitemap(xml_text: str) -> dict[str, str]:
-    root = ElementTree.fromstring(xml_text)
-    pages: dict[str, str] = {}
-    for node in root.findall("{http://www.sitemaps.org/schemas/sitemap/0.9}url"):
-        loc = node.findtext(
-            "{http://www.sitemaps.org/schemas/sitemap/0.9}loc", ""
-        ).strip()
-        if not loc.startswith(DOC_PREFIX):
-            continue
-        url = urldefrag(loc)[0]
-        lastmod = node.findtext(
-            "{http://www.sitemaps.org/schemas/sitemap/0.9}lastmod", ""
-        ).strip()
-        pages[url] = lastmod
-    return dict(sorted(pages.items()))
-
-
-def parse_page(url: str, lastmod: str, html: str) -> PageSnapshot:
-    parser = _ContentParser()
-    parser.feed(html)
-    content = parser.content
-    if not content:
-        raise ValueError(f"页面没有可识别的正文: {url}")
-    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    title = parser.title or url.rstrip("/").rsplit("/", 1)[-1]
-    return PageSnapshot(
-        url=url, lastmod=lastmod, title=title, content=content, digest=digest
-    )
-
-
-def build_notification(changes: list[PageChange]) -> str:
-    modified = [change for change in changes if change.kind == "modified"]
-    counts = Counter(change.kind for change in changes)
-    kind_names = {"added": "新增", "modified": "修改", "removed": "删除"}
-    summary_lines = [
-        "QQ 开放平台官方文档检测到更新",
-        "",
-        f"新增 {counts['added']} 页，修改 {counts['modified']} 页，删除 {counts['removed']} 页",
-        "",
-    ]
-    for index, change in enumerate(changes, 1):
-        summary_lines.extend(
-            [
-                f"{index}. [{kind_names[change.kind]}] {change.title}",
-                change.url,
-                "",
-            ]
-        )
-    sections = ["\n".join(summary_lines).rstrip()]
-
-    for change in modified:
-        diff = (
-            "\n".join(
-                difflib.unified_diff(
-                    change.before.splitlines(),
-                    change.after.splitlines(),
-                    fromfile="更新前",
-                    tofile="更新后",
-                    lineterm="",
-                    n=3,
-                )
-            )
-            or "正文规范化后没有文本差异。"
-        )
-        header = f"页面内容对比：{change.title}\n{change.url}\n"
-        sections.append(f"{header}```diff\n{diff}\n```")
-    return "\n\n".join(sections)
-
-
-def load_json(path: str | Path) -> dict:
-    path = Path(path)
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def save_json(path: str | Path, data: dict) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-    fd, temp_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as file:
-            file.write(payload)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(temp_name, path)
-    finally:
-        if os.path.exists(temp_name):
-            os.unlink(temp_name)
-
-
-def load_state(path: str | Path) -> dict:
-    default = {"version": STATE_VERSION, "initialized": False, "pages": {}}
-    data = load_json(path)
-    pages = data.get("pages")
-    valid_pages = isinstance(pages, dict) and all(
-        isinstance(url, str) and isinstance(page, dict) for url, page in pages.items()
-    )
-    return data if data.get("version") == STATE_VERSION and valid_pages else default
+@dataclass(slots=True)
+class _Fetched:
+    snapshot: PageSnapshot | None = None
+    error: str = ""
+    status_code: int | None = None
 
 
 class DocsMonitor:
     def __init__(
         self,
         state_path: str | Path,
-        notify: Callable[[str], Awaitable[bool]],
+        targets: Callable[[], list[Target]],
+        send: Callable[[Target, str], Awaitable],
         *,
         timeout: float = 30,
         concurrency: int = 8,
+        retries: int = 2,
+        max_message_bytes: int = 3500,
+        send_timeout: float = 30,
+        send_interval: float = 1,
         client: httpx.AsyncClient | None = None,
+        prepare_images: Callable[[dict], Awaitable[list[str]]] | None = None,
     ):
         self.state_path = Path(state_path)
-        self.notify = notify
-        self.timeout = max(5.0, float(timeout))
-        self.concurrency = max(1, int(concurrency))
+        self.status_path = self.state_path.with_name("status.json")
+        self.timeout = timeout
+        self.concurrency = concurrency
+        self.retries = retries
+        self.max_message_bytes = max_message_bytes
+        self.delivery = DeliveryQueue(
+            targets,
+            send,
+            timeout=send_timeout,
+            interval=send_interval,
+            prepare_images=prepare_images,
+        )
         self._client = client
         self._owns_client = client is None
         self._lock = asyncio.Lock()
+        self._closed = False
+        self.status: dict = {}
 
     async def close(self) -> None:
-        if self._owns_client and self._client is not None:
-            await self._client.aclose()
-        self._client = None
+        async with self._lock:
+            self._closed = True
+            if self._owns_client and self._client is not None:
+                await self._client.aclose()
+            self._client = None
+
+    async def _persist(self, state: dict) -> None:
+        # 热重载取消后台任务时，必须等正在进行的磁盘提交完成再释放检查锁。
+        writing = asyncio.create_task(
+            asyncio.to_thread(save_json, self.state_path, state)
+        )
+        try:
+            await asyncio.shield(writing)
+        except asyncio.CancelledError:
+            await writing
+            raise
 
     async def check_once(self) -> CheckResult:
         async with self._lock:
-            return await self._check_once_locked()
+            if self._closed:
+                raise RuntimeError("文档监控器已停止")
+            started = asyncio.get_running_loop().time()
+            self.status.update(
+                {
+                    "checking": True,
+                    "started_at": now_iso(),
+                    "last_error": "",
+                    "failure_details": {},
+                }
+            )
+            state = None
+            result = None
+            failure: Exception | None = None
+            report = DeliveryReport()
+            try:
+                state = await asyncio.to_thread(load_state, self.state_path)
+                result = await self._scan(state)
+            except Exception as exc:
+                failure = exc
+            # 即使 sitemap/网络异常，已落盘的通知仍然单独重试。
+            if state is not None:
+                try:
+                    report = await self.delivery.flush(
+                        state, lambda: self._persist(state)
+                    )
+                except Exception as exc:
+                    failure = failure or exc
+                    report = queue_report(state)
+            self.status.update(
+                {
+                    "checking": False,
+                    "finished_at": now_iso(),
+                    "elapsed_seconds": round(
+                        asyncio.get_running_loop().time() - started, 2
+                    ),
+                    "last_error": str(failure)[:1000] if failure else "",
+                    "last_success_at": state.get("checked_at", "") if state else "",
+                    "sent_parts": report.sent_parts,
+                    "pending_batches": report.pending_batches,
+                    "pending_targets": report.pending_targets,
+                    "pending_parts": report.pending_parts,
+                    "delivery_errors": report.errors,
+                }
+            )
+            if result is not None:
+                result.delivery = report
+                self.status.update(
+                    {
+                        "page_count": result.page_count,
+                        "fetched_count": result.fetched_count,
+                        "change_count": len(result.changes),
+                    }
+                )
+            await asyncio.to_thread(save_json, self.status_path, self.status)
+            if failure:
+                raise RuntimeError(str(failure)) from failure
+            assert result is not None
+            return result
 
-    async def _check_once_locked(self) -> CheckResult:
-        state = await asyncio.to_thread(load_state, self.state_path)
-        sitemap_text = await self._get_text(SITEMAP_URL)
-        try:
-            sitemap = parse_sitemap(sitemap_text)
-        except Exception as exc:
-            raise RuntimeError(f"{exc}; 原始响应：{sitemap_text}") from exc
-        if not sitemap:
-            raise RuntimeError("官方 sitemap 中没有开发文档页面")
+    async def retry_notifications(self) -> DeliveryReport:
+        async with self._lock:
+            if self._closed:
+                raise RuntimeError("文档监控器已停止")
+            state = await asyncio.to_thread(load_state, self.state_path)
+            report = await self.delivery.flush(state, lambda: self._persist(state))
+            self.status.update(
+                {
+                    "delivery_attempt_at": now_iso(),
+                    "sent_parts": report.sent_parts,
+                    "pending_batches": report.pending_batches,
+                    "pending_targets": report.pending_targets,
+                    "pending_parts": report.pending_parts,
+                    "delivery_errors": report.errors,
+                }
+            )
+            await asyncio.to_thread(save_json, self.status_path, self.status)
+            return report
 
+    async def cancel_target(self, target: Target) -> None:
+        async with self._lock:
+            state = await asyncio.to_thread(load_state, self.state_path)
+            self.delivery.cancel_target(state, target)
+            await self._persist(state)
+
+    async def _scan(self, state: dict) -> CheckResult:
+        sitemap = await self._load_sitemap()
         old_pages: dict[str, dict] = state["pages"]
         initialized = bool(state.get("initialized"))
-        current_urls = set(sitemap)
-        removed_urls = sorted(set(old_pages) - current_urls)
-        fetch_urls = sorted(
-            url
-            for url, lastmod in sitemap.items()
-            if url not in old_pages
-            or not old_pages[url].get("digest")
-            or old_pages[url].get("lastmod") != lastmod
-        )
-        fetched, failed_urls, failure_details = await self._fetch_pages(
-            fetch_urls, sitemap
-        )
-
-        next_pages = {
-            url: dict(value) for url, value in old_pages.items() if url in current_urls
+        # lastmod 仅作诊断信息，绝不用于跳过正文抓取；缺失于 sitemap 的旧页也需验证。
+        urls = sorted(set(sitemap) | set(old_pages))
+        fetched = await self._fetch_pages(urls, sitemap)
+        failures = {
+            url: item.error
+            for url, item in fetched.items()
+            if item.error and (url in sitemap or item.status_code not in (404, 410))
         }
+        self.status.update({"failed_pages": len(failures), "failure_details": failures})
+        if not any(fetched[url].snapshot is not None for url in sitemap):
+            raise RuntimeError("本轮所有在册文档均抓取失败，已保留上次基线")
+
+        next_pages: dict[str, dict] = {}
         changes: list[PageChange] = []
-        for url in fetch_urls:
-            snapshot = fetched.get(url)
-            if snapshot is None:
-                if url not in next_pages and not initialized:
-                    next_pages[url] = {
-                        "lastmod": sitemap[url],
-                        "title": url.rstrip("/").rsplit("/", 1)[-1],
-                        "content": "",
-                        "digest": "",
-                    }
-                continue
+        legacy_scope = state.get("legacy_scope")
+        for url in urls:
             old = old_pages.get(url)
-            next_pages[url] = snapshot.to_dict()
-            if not initialized or not old or not old.get("digest"):
-                if initialized and old is None:
+            item = fetched[url]
+            if item.snapshot is not None:
+                snapshot = item.snapshot
+                next_pages[url] = snapshot.to_dict()
+                if old and old.get("digest"):
+                    change = compare_page(old, snapshot)
+                    if initialized and change:
+                        changes.append(change)
+                elif old is not None:
+                    if initialized and not old.get("pending_baseline", False):
+                        changes.append(
+                            PageChange(
+                                "added", url, snapshot.title, after=snapshot.content
+                            )
+                        )
+                elif initialized and not (
+                    legacy_scope and not url.startswith(legacy_scope)
+                ):
                     changes.append(
                         PageChange("added", url, snapshot.title, after=snapshot.content)
                     )
                 continue
-            if old.get("digest") != snapshot.digest:
-                changes.append(
-                    PageChange(
-                        "modified",
-                        url,
-                        snapshot.title,
-                        before=str(old.get("content", "")),
-                        after=snapshot.content,
+
+            if old is None:
+                # 首轮失败的历史页恢复后只补基线；后续真正新增但暂时失败的页恢复后通知。
+                next_pages[url] = {
+                    "title": url,
+                    "content": "",
+                    "digest": "",
+                    "lastmod": sitemap.get(url, ""),
+                    "pending_baseline": not initialized
+                    or bool(legacy_scope and not url.startswith(legacy_scope)),
+                    "missing_checks": 0,
+                }
+                continue
+            page = dict(old)
+            confirmed_missing = url not in sitemap and item.status_code in (404, 410)
+            page["missing_checks"] = (
+                int(old.get("missing_checks", 0)) + 1 if confirmed_missing else 0
+            )
+            # 避免目录短暂缺页、风控或网络错误引发删除通知。
+            if confirmed_missing and page["missing_checks"] >= 2:
+                if initialized and old.get("digest"):
+                    changes.append(
+                        PageChange(
+                            "removed",
+                            url,
+                            str(old.get("title") or url),
+                            before=str(old.get("content", "")),
+                        )
                     )
-                )
+            else:
+                next_pages[url] = page
 
-        if initialized:
-            for url in removed_urls:
-                old = old_pages[url]
-                changes.append(
-                    PageChange(
-                        "removed",
-                        url,
-                        str(old.get("title") or url.rstrip("/").rsplit("/", 1)[-1]),
-                        before=str(old.get("content", "")),
-                    )
-                )
-
-        changes.sort(key=lambda item: (item.kind, item.url))
-        next_state = {
-            "version": STATE_VERSION,
-            "initialized": True,
-            "checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "pages": dict(sorted(next_pages.items())),
-            "failure_details": failure_details,
-        }
-
+        changes.sort(key=lambda change: (change.kind, change.url))
+        next_state = copy.deepcopy(state)
+        next_state.pop("legacy_scope", None)
+        next_state.update(
+            {"initialized": True, "checked_at": now_iso(), "pages": next_pages}
+        )
         if changes:
-            message = build_notification(changes)
-            if not await self.notify(message):
-                raise RuntimeError("更新通知没有成功发送给所有通知目标")
-
-        await asyncio.to_thread(save_json, self.state_path, next_state)
+            self.delivery.enqueue(
+                next_state,
+                build_notifications(changes, self.max_message_bytes),
+                image_changes=[asdict(change) for change in changes],
+            )
+        # 快照与通知队列一起提交，成功落盘之后才允许发送。
+        await self._persist(next_state)
+        state.clear()
+        state.update(next_state)
         return CheckResult(
-            initialized=not initialized,
-            changes=changes,
-            page_count=len(sitemap),
-            failed_urls=failed_urls,
-            failure_details=failure_details,
+            not initialized,
+            changes,
+            len(sitemap),
+            len(urls),
+            sorted(failures),
+            failures,
         )
 
-    async def _get_text(self, url: str) -> str:
+    async def _load_sitemap(self) -> dict[str, str]:
+        pending = [SITEMAP_URL]
+        seen: set[str] = set()
+        pages: dict[str, str] = {}
+        while pending:
+            url = pending.pop()
+            if url in seen:
+                continue
+            if len(seen) >= 32:
+                raise RuntimeError("sitemap 索引超过 32 个，未使用不完整目录")
+            seen.add(url)
+            response = await self._request(url)
+            try:
+                document = parse_sitemap(response.text, url)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"无法解析 sitemap [{url}]：{exc}；响应摘要：{response.text[:300]}"
+                ) from exc
+            pages.update(document.pages)
+            pending.extend(document.indexes)
+        if not pages:
+            raise RuntimeError("官方 sitemap 中没有文档页面，已保留上次基线")
+        return dict(sorted(pages.items()))
+
+    async def _request(self, url: str) -> httpx.Response:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 follow_redirects=True,
                 timeout=self.timeout,
-                headers={"User-Agent": "ElainaBot-QQDocsMonitor/1.0"},
+                limits=httpx.Limits(
+                    max_connections=self.concurrency,
+                    max_keepalive_connections=self.concurrency,
+                ),
+                headers={"User-Agent": "ElainaBot-QQDocsMonitor/2.0"},
             )
-        response = await self._client.get(url)
-        if response.is_error:
-            raise RuntimeError(
-                f"HTTP {response.status_code} {response.reason_phrase}; 原始响应：{response.text}"
-            )
-        return response.text
+        for attempt in range(self.retries + 1):
+            try:
+                response = await self._client.get(
+                    url,
+                    headers={
+                        "Cache-Control": "no-cache, max-age=0",
+                        "Pragma": "no-cache",
+                    },
+                    timeout=self.timeout,
+                )
+                if response.status_code != 200:
+                    error = FetchError(
+                        f"HTTP {response.status_code}；响应摘要：{response.text[:300]}",
+                        response.status_code,
+                    )
+                    if (
+                        response.status_code not in (408, 425, 429)
+                        and response.status_code < 500
+                    ):
+                        raise error
+                    if attempt == self.retries:
+                        raise error
+                else:
+                    actual = official_url(str(response.url))
+                    if actual is None or actual.rstrip("/") != url.rstrip("/"):
+                        raise FetchError(f"文档被重定向至其他页面：{response.url}")
+                    return response
+            except httpx.RequestError as exc:
+                if attempt == self.retries:
+                    raise FetchError(f"{type(exc).__name__}: {exc}") from exc
+            await asyncio.sleep(0.5 * (2**attempt))
+        raise AssertionError("请求重试未返回结果")
 
     async def _fetch_pages(
         self, urls: list[str], sitemap: dict[str, str]
-    ) -> tuple[dict[str, PageSnapshot], list[str], dict[str, str]]:
+    ) -> dict[str, _Fetched]:
         semaphore = asyncio.Semaphore(self.concurrency)
 
-        async def fetch(url: str) -> tuple[str, PageSnapshot | Exception]:
+        async def fetch(url: str) -> tuple[str, _Fetched]:
             async with semaphore:
                 try:
-                    html = await self._get_text(url)
-                    try:
-                        return url, parse_page(url, sitemap[url], html)
-                    except Exception as exc:
-                        return url, RuntimeError(f"{exc}; 原始响应：{html}")
+                    response = await self._request(url)
+                    return url, _Fetched(
+                        snapshot=parse_page(url, sitemap.get(url, ""), response.text)
+                    )
+                except FetchError as exc:
+                    return url, _Fetched(error=str(exc), status_code=exc.status_code)
                 except Exception as exc:
-                    return url, exc
+                    return url, _Fetched(error=f"{type(exc).__name__}: {exc}"[:1000])
 
-        results = await asyncio.gather(*(fetch(url) for url in urls))
-        fetched = {
-            url: result for url, result in results if isinstance(result, PageSnapshot)
-        }
-        failed = [url for url, result in results if isinstance(result, Exception)]
-        details = {
-            url: str(result) for url, result in results if isinstance(result, Exception)
-        }
-        return fetched, failed, details
+        return dict(await asyncio.gather(*(fetch(url) for url in urls)))
