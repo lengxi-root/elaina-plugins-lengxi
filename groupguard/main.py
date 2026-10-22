@@ -17,7 +17,7 @@ __plugin_meta__ = {
     "name": "群管中心",
     "author": "冷曦",
     "description": "违禁词过滤、入群验证、禁言、入群审批、消息撤回、入群欢迎和配置审核",
-    "version": "3.0.3",
+    "version": "3.0.4",
     "license": "MIT",
 }
 
