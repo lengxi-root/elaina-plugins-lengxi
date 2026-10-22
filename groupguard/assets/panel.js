@@ -3,7 +3,6 @@ import { createTemplatePreview } from './template-preview.js';
 const BASE = '/api/ext/groupguard';
 const $ = id => document.getElementById(id);
 const PAGE_TITLES = {overview:'工作概览',config:'监管规则',forbidden:'内容词库',welcome:'入群欢迎',reviews:'配置审核',templates:'消息模板',audit:'管理记录'};
-const PAGE_DESCRIPTIONS = {overview:'集中查看群状态，处理日常管理。',config:'为当前群设置内容规则、刷屏防护与入群验证。',forbidden:'维护群内与全局词库，让内容管理更有序。',welcome:'从入群验证到欢迎消息，衔接每一次新加入。',reviews:'检查群管理员提交的欢迎语，审核后生效。',templates:'统一管理群管回复，预览并测试消息。',audit:'追踪管理操作、处罚结果与自动监管记录。'};
 const ACTION_LABELS = {mute:'禁言',unmute:'解禁',kick:'踢人',recall:'撤回消息',speak_recall:'发言撤回',cancel_recall:'取消撤回',approve_join:'通过入群',decline_join:'拒绝入群',blacklist_join:'拒绝并拉黑',verify_pass:'通过验证',verify_failure_mute:'验证失败禁言',verify_failure_kick:'验证失败移出',spam_punish:'刷屏处罚',config_change:'配置变更',forbidden_add:'添加违禁词',forbidden_delete:'删除违禁词',forbidden_clear:'清空违禁词',cache_clear:'清除缓存',template_test:'测试模板',welcome_send:'入群欢迎',welcome_review:'欢迎语审核'};
 const SOURCE_LABELS = {command:'群命令',automatic:'自动监管',verification:'入群验证',web:'Web 面板'};
 const POLICY_FIELDS = [
@@ -132,7 +131,6 @@ function openPage(page){
   $('page-title').textContent=PAGE_TITLES[activePage];
   $('empty-state').hidden=['templates'].includes(activePage)||currentBotGroups().length>0;
   if(activePage==='templates'&&!Object.keys(templates).length)loadTemplates();
-  $('page-description').textContent=PAGE_DESCRIPTIONS[activePage];
   document.querySelectorAll('.nav button').forEach(button=>button.setAttribute('aria-current',button.dataset.page===activePage?'page':'false'));
   if(['welcome','reviews'].includes(activePage)&&currentGroup())loadWelcome();
   if(sidebarMedia.matches)setSidebar(true);
@@ -195,7 +193,7 @@ async function loadDashboard(){
     const data=await api(`/dashboard?appid=${encodeURIComponent(appid)}&group_id=${encodeURIComponent(groupId)}&days=${encodeURIComponent($('days-select').value)}`);
     if(request!==dashboardRequest||groupId!==currentGroup()||appid!==currentBot())return;
     dashboard=data;renderAll();showReady(true);
-    $('connection-state').textContent='群管数据已连接';$('last-updated').textContent='更新于 '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+    $('connection-state').textContent='群管数据已连接';
     await loadWelcome();
     if(request===dashboardRequest)document.querySelectorAll('.page').forEach(node=>node.inert=false);
   }catch(error){if(request===dashboardRequest){$('loading').hidden=true;$('connection-state').textContent='数据读取失败';toast(error.message,true)}}
@@ -427,5 +425,4 @@ $('toggle-welcome-group').addEventListener('click',event=>{if(welcomeData)welcom
 $('extract-welcome-groups').addEventListener('click',event=>{if(welcomeDirty){toast('请先保存监控配置',true);return}welcomeMutation('/welcome/extract',{},event.currentTarget)});
 $('welcome-group-list').addEventListener('click',event=>{const button=event.target.closest('[data-welcome-group]');if(!button)return;const id=button.dataset.welcomeGroup;if(!currentBotGroups().some(g=>g.group_id===id)){toast('该群当前不在可管理群列表中',true);return}$('group-select').value=id;$('group-select').dispatchEvent(new Event('change'))});
 $('welcome-reviews').addEventListener('click',async event=>{const button=event.target.closest('[data-review-id]');if(!button)return;const approve=button.dataset.approve==='true';if(!confirm(approve?'通过后将立即替换当前群欢迎语，确认通过？':'确认驳回此欢迎语申请？'))return;const note=document.querySelector(`[data-review-note="${button.dataset.reviewId}"]`).value;await welcomeMutation('/welcome/review',{review_id:Number(button.dataset.reviewId),approve,note},button)});
-$('refresh-all').addEventListener('click',()=>{if(welcomeDirty){toast('请先保存欢迎配置再刷新',true);return}loadGroups().catch(error=>toast(error.message,true))});
 window.addEventListener('beforeunload',event=>{if(welcomeDirty){event.preventDefault();event.returnValue=''}});

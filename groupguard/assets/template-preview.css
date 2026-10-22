@@ -5,7 +5,8 @@
 .template-editor .template-meta-grid{grid-template-columns:1fr 1fr}
 .template-editor .template-meta-grid .field:last-child{grid-column:1/-1}
 .template-editor .template-switch-row{grid-template-columns:1fr}
-.template-editor-workspace>.template-form{padding:20px;min-width:0}
+.template-editor-workspace>.template-form{padding:20px;min-width:0;align-content:start}
+#tpl-content,#tpl-buttons{height:128px;min-height:96px;align-self:start;field-sizing:fixed;overflow:auto;resize:vertical}
 .template-editor-workspace>.template-empty{grid-column:1/-1}
 .template-preview{position:sticky;top:16px;min-width:0;max-height:calc(100dvh - 32px);overflow:auto;border-left:1px solid var(--line);background:var(--surface-soft)}
 .tpl-preview-heading{display:flex;align-items:center;justify-content:space-between;padding:22px 18px 16px}
@@ -28,7 +29,10 @@
 .tpl-chat-meta>small{margin-left:auto;font-size:9px;white-space:nowrap}
 .tpl-bubble{min-width:0;padding:13px;border:1px solid var(--line);border-radius:0 11px 11px 11px;background:var(--surface);box-shadow:0 2px 8px #00000005}
 .tpl-bubble .message-markdown{font-size:13px;line-height:1.85}
-.tpl-bubble .md-image{max-width:100%}
+/* Inline icons must not introduce a line break before the following message text. */
+.tpl-bubble .message-markdown .md-image{display:inline-block;max-width:100%;margin:0;vertical-align:middle}
+.tpl-bubble .message-markdown .md-image-placeholder{margin:0;vertical-align:middle}
+.tpl-bubble .message-markdown .md-image-error{display:inline}
 .tpl-bubble input[type=checkbox]{appearance:auto;width:auto;height:auto;border-radius:0;pointer-events:none}
 .tpl-bubble input[type=checkbox]:before{display:none}
 .tpl-plain-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.85}
