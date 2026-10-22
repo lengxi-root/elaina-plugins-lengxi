@@ -5,35 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>群管中心</title>
   <link rel="stylesheet" href="/api/ext/groupguard/assets/panel.css">
+  <link rel="stylesheet" href="/api/ext/groupguard/assets/message-markdown.css">
+  <link rel="stylesheet" href="/api/ext/groupguard/assets/template-preview.css">
 </head>
-<style data-elaina-theme-transition>
-:root { color-scheme: light; }
-html, body, body *, body *::before, body *::after {
-  transition-property: background-color, color, border-color, box-shadow, fill, stroke;
-  transition-duration: .28s;
-  transition-timing-function: ease;
-}
-@media (prefers-reduced-motion: reduce) {
-  html, body, body *, body *::before, body *::after { transition-duration: 0s !important; }
-}
-</style>
-<script data-elaina-theme-bridge>
-(function(){try{var t=window.parent!==window&&window.parent.ElainaWebPanelTheme;if(t&&typeof t.bind==='function')t.bind(document.documentElement,{suppressTransitions:false,map:{'--bg':['--bg','--bg2'],'--background':['--bg','--bg2'],'--card':['--bg2','--bg-float'],'--panel':['--bg2','--bg-float'],'--surface':['--bg2','--bg-float'],'--card2':['--bg3','--bg2'],'--text':['--text'],'--fg':['--text'],'--text2':['--text2'],'--muted':['--text3','--text2'],'--mut':['--text3','--text2'],'--border':['--border'],'--bd':['--border'],'--accent':['--accent'],'--primary':['--accent'],'--primary-color':['--accent']}})}catch(_){}})();
-</script>
 <body>
   <div class="app sidebar-collapsed" id="app">
     <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="关闭侧边栏"></button>
     <aside class="sidebar" aria-label="群管导航">
-      <div class="brand"><div class="logo" aria-label="群管"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.6 8.9a1.3 1.3 0 0 1-.8 0C7.5 20.5 4 18 4 13V5.8a1 1 0 0 1 .6-.9l7-2.6a1.2 1.2 0 0 1 .8 0l7 2.6a1 1 0 0 1 .6.9Z"/></svg></div><div><strong>群管中心</strong><small>GroupGuard</small></div></div>
-      <nav class="nav">
-        <button class="active" data-page="audit" type="button" title="管理记录"><i><svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4M7 3h10v3H7zM5 5v16h14V5"/></svg></i><span>管理</span></button>
-        <button data-page="overview" type="button" title="概览"><i><svg viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 4z"/></svg></i><span>概览</span></button>
-        <button data-page="forbidden" type="button" title="违禁词"><i><svg viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></i><span>词库</span></button>
-        <button data-page="templates" type="button" title="消息模板"><i><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg></i><span>模板</span></button>
-        <button data-page="config" type="button" title="功能设置"><i><svg viewBox="0 0 24 24"><path d="M4 6h16M7 3v6M4 18h16M17 15v6M4 12h16M12 9v6"/></svg></i><span>设置</span></button>
-        <button data-page="developer" type="button" title="开发者工具"><i><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6 8.6 7 6.3 4.7a4 4 0 0 0 5 5L4 17l3 3 7.3-7.3a4 4 0 0 0 5-5L17 10l-3.4-3.4Z"/></svg></i><span>开发</span></button>
-      </nav>
-      <div class="service-state"><span class="pulse"></span><span>群管服务运行中</span></div>
+      <div class="brand"><div class="logo" aria-label="群管"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.6 8.9a1.3 1.3 0 0 1-.8 0C7.5 20.5 4 18 4 13V5.8a1 1 0 0 1 .6-.9l7-2.6a1.2 1.2 0 0 1 .8 0l7 2.6a1 1 0 0 1 .6.9Z"/></svg></div><div><strong>群管中心</strong><small>GROUPGUARD / 3.0</small></div></div>
+      <div class="nav-label">管理工作台</div><nav class="nav"><button data-page="overview" type="button"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></i><span>工作概览</span></button><button data-page="config" type="button"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 3v6M4 18h16M17 15v6M4 12h16M12 9v6"/></svg></i><span>监管规则</span></button><button data-page="forbidden" type="button"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h4"/></svg></i><span>内容词库</span></button><button data-page="welcome" type="button"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8M19 8h4M21 6v4"/></svg></i><span>入群欢迎</span></button><button data-page="reviews" type="button"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l2 2 4-4M7 3h10v3H7zM5 5v16h14V5"/></svg></i><span>配置审核</span><em id="review-badge" hidden>0</em></button><button data-page="templates" type="button"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v13H8l-4 4zM8 8h8M8 12h5"/></svg></i><span>消息模板</span></button><button data-page="audit" type="button"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h12v16H4V8M8 3v6H3M8 13h8M8 17h5"/></svg></i><span>管理记录</span></button></nav>
+      <div class="service-state"><span class="pulse"></span><span id="connection-state">正在读取数据</span></div>
     </aside>
 
     <main class="workspace">
@@ -46,7 +27,7 @@ html, body, body *, body *::before, body *::after {
           <svg class="picker-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
         </label>
         <div class="top-actions">
-          <select id="days-select" class="visually-hidden" aria-label="统计周期"><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option><option value="365">365 天</option></select>
+          <select id="days-select" aria-label="统计周期"><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option><option value="365">365 天</option></select>
           <label class="bot-picker" title="切换运行中的机器人">
             <span class="bot-picker-avatar"><img id="bot-avatar-image" alt=""><svg id="bot-avatar-fallback" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.6 8.9a1.3 1.3 0 0 1-.8 0C7.5 20.5 4 18 4 13V5.8l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/></svg></span>
             <span class="bot-picker-copy"><small>当前机器人</small><b id="bot-display-name">暂无机器人</b></span>
@@ -54,10 +35,11 @@ html, body, body *, body *::before, body *::after {
             <svg class="bot-picker-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
           </label>
         </div>
-        <h1 id="page-title" class="visually-hidden">管理记录</h1>
+
       </header>
 
       <div class="content">
+        <div class="page-heading"><div><div class="eyebrow">GROUP MANAGEMENT</div><h1 id="page-title">工作概览</h1><p id="page-description">集中查看群状态，处理日常管理。</p></div><div class="heading-actions"><span id="last-updated" class="muted">等待同步</span><button class="btn" id="refresh-all" type="button">刷新数据</button></div></div>
         <div class="loading" id="loading">正在读取群管数据</div>
         <div class="empty-state" id="empty-state" hidden><strong>暂无可管理群聊</strong><span>机器人收到群消息或群管产生配置后，此处会自动显示。</span></div>
 
@@ -109,6 +91,8 @@ html, body, body *, body *::before, body *::after {
                   <label class="field"><span>审批方式</span><select id="cfg-join-policy"><option value="manual">手动审批</option><option value="auto_approve">自动通过</option><option value="auto_decline">自动拒绝</option><option value="auto_blacklist">自动拒绝并拉黑</option></select></label>
                   <label class="field" id="cfg-join-reason-field"><span>拒绝理由</span><input id="cfg-join-reason" maxlength="200" placeholder="不符合入群要求"></label>
                   <label class="field"><span>验证失败次数</span><input id="cfg-verify-failure-limit" type="number" min="1" max="20"></label>
+                  <label class="field"><span>验证期间禁言（秒）</span><input id="cfg-verify-mute-seconds" type="number" min="0" max="2591940"><small>0 为沿用验证等待时间</small></label>
+                  <label class="field"><span>达到次数后禁言（秒）</span><input id="cfg-verify-failure-seconds" type="number" min="60" max="2591940"></label>
                   <label class="field"><span>达到次数后处理</span><select id="cfg-verify-failure-action"><option value="mute">禁言并允许重试</option><option value="kick">移出群聊</option></select></label>
                 </div>
               </div>
@@ -141,30 +125,6 @@ html, body, body *, body *::before, body *::after {
           </section>
         </section>
 
-        <section class="page" id="page-developer">
-          <section class="panel developer-panel">
-            <div class="panel-head">
-              <div><h2>小程序互联</h2><p>配置顶部当前机器人独立使用的后端应用凭据</p></div>
-              <span class="state-badge" id="developer-status">正在读取</span>
-            </div>
-            <div class="panel-body developer-body">
-              <label class="switch developer-switch"><span><b>为当前机器人启用远端同步</b><small>每个机器人使用独立的应用 ID、密钥和同步任务</small></span><input id="dev-enabled" type="checkbox"></label>
-              <div class="developer-form">
-                <label class="field developer-url"><span>后端地址</span><input id="dev-url" type="url" maxlength="512" spellcheck="false" placeholder="https://i.elaina.vin/etools"></label>
-                <label class="field"><span>应用 ID</span><input id="dev-app-id" inputmode="numeric" maxlength="9" autocomplete="off" placeholder="9 位数字"></label>
-                <label class="field"><span>当前机器人 AppID</span><input id="dev-robot-app-id" type="text" readonly><small>由顶部机器人选择器确定，不支持手工修改</small></label>
-                <label class="field developer-secret"><span>专属密钥</span><input id="dev-secret" type="password" maxlength="103" autocomplete="new-password" placeholder="填写 qg_ 开头的专属密钥"><small id="developer-secret-state">未配置</small></label>
-                <label class="field"><span>同步周期（秒）</span><input id="dev-interval" type="number" min="5" max="300" step="1"></label>
-              </div>
-              <div class="developer-result" id="developer-result" role="status">连接测试将在插件服务端完成，专属密钥不会返回浏览器。</div>
-              <div class="developer-actions">
-                <button class="btn" id="test-developer" type="button">测试连接</button>
-                <button class="btn primary" id="save-developer" type="button">保存并应用</button>
-              </div>
-            </div>
-          </section>
-        </section>
-
         <section class="page" id="page-forbidden">
           <section class="panel">
             <div class="panel-head"><div><h2>违禁词</h2><p id="forbidden-count">共 0 个</p></div></div>
@@ -182,6 +142,32 @@ html, body, body *, body *::before, body *::after {
           </section>
         </section>
 
+
+        <section class="page" id="page-welcome">
+          <form id="welcome-form" class="welcome-layout">
+            <section class="panel"><div class="panel-head"><div><h2>欢迎新成员</h2><p>通过入群验证后发送，避免重复打扰</p></div><button class="btn primary" type="submit">保存欢迎配置</button></div>
+              <div class="panel-body form-stack">
+                <label class="switch"><span><b>本群入群欢迎</b><small>独立控制当前群的欢迎消息</small></span><input id="wel-enabled" type="checkbox"></label>
+                <label class="field"><span>发送模式</span><select id="wel-mode"><option value="welcome">常规入群欢迎</option><option value="recall">不活跃群唤醒 · 列表内发送一次</option></select><small>唤醒模式在新成员通过验证后发送，成功后从群列表移除</small></label>
+                <label class="field"><span>欢迎消息</span><textarea id="wel-template" rows="6" maxlength="4000" required></textarea><small>可用变量：{user_id}、{user_ids}、{username}、{group_id}、{count}</small></label>
+                <label class="field" id="wel-recall-field" hidden><span>群唤醒文案</span><textarea id="wel-recall-template" rows="3" maxlength="4000"></textarea></label>
+                <div class="form-grid"><label class="field"><span>等待时间（秒）</span><input id="wel-delay" type="number" min="0" max="240" required><small>0 为立即发送，最长 240 秒</small></label><label class="field"><span>每日发送上限</span><input id="wel-limit" type="number" min="0" max="10000" required><small>按群计算，0 为不限制</small></label></div>
+                <label class="switch"><span><b>合并欢迎消息</b><small>将等待时间内加入的成员合并为一条消息</small></span><input id="wel-merge" type="checkbox"></label>
+                <details class="advanced-editor"><summary>消息按钮</summary><label class="field"><span>欢迎按钮（JSON）</span><textarea id="wel-buttons" rows="3" spellcheck="false"></textarea><small>使用与消息模板相同的按钮格式，例如 [{"text":"查看群规","data":"/群规"}]</small></label><label class="field"><span>群唤醒按钮（JSON）</span><textarea id="wel-recall-buttons" rows="3" spellcheck="false"></textarea></label></details>
+                <div class="message-preview"><small>消息预览</small><p id="welcome-preview"></p></div>
+                <div class="inline-actions"><button class="btn" id="test-welcome" type="button">发送测试到当前群</button><span class="muted" id="welcome-today">今日已发送 0 条</span></div>
+              </div>
+            </section>
+            <div class="form-stack"><section class="panel"><div class="panel-head"><div><h2>机器人监控范围</h2><p>应用于当前机器人的全部群</p></div></div><div class="panel-body form-stack">
+              <label class="switch"><span><b>欢迎监控总开关</b><small>关闭后停止当前机器人所有欢迎发送</small></span><input id="wel-monitor" type="checkbox"></label>
+              <label class="field"><span>群列表模式</span><select id="wel-list-mode"><option value="all">全部群聊</option><option value="whitelist">仅列表中的群</option><option value="blacklist">排除列表中的群</option></select></label>
+              <label class="field"><span>不活跃天数</span><input id="wel-inactive-days" type="number" min="1" max="365" required></label>
+              <div class="inline-actions"><button class="btn" id="extract-welcome-groups" type="button">提取不活跃群</button><button class="btn" id="toggle-welcome-group" type="button">加入群列表</button></div>
+              <p class="muted" id="welcome-list-summary"></p><div class="tag-list" id="welcome-group-list"></div>
+            </div></section><section class="panel"><div class="panel-head"><div><h2>发送记录</h2><p>保留最近 7 天，展示最新 50 条</p></div></div><div id="welcome-deliveries" class="panel-body delivery-list"></div></section></div>
+          </form>
+        </section>
+        <section class="page" id="page-reviews"><section class="panel"><div class="panel-head"><div><h2>欢迎语配置审核</h2><p>群内“设置欢迎语”提交的配置，通过后才会生效</p></div><span class="state-badge" id="review-count">0 条待审核</span></div><div id="welcome-reviews" class="panel-body review-list"></div></section></section>
         <section class="page" id="page-templates">
           <div class="template-layout">
             <section class="panel template-browser">
@@ -201,6 +187,7 @@ html, body, body *, body *::before, body *::after {
                   <button class="btn primary" id="save-template" type="button" disabled>保存模板</button>
                 </div>
               </div>
+              <div class="template-editor-workspace">
               <div class="panel-body template-form" id="template-form" hidden>
                 <div class="template-meta-grid">
                   <label class="field"><span>显示名称</span><input id="tpl-label" maxlength="120"></label>
@@ -225,11 +212,23 @@ html, body, body *, body *::before, body *::after {
                 </details>
               </div>
               <div class="empty" id="template-empty">从左侧选择一个消息模板进行编辑</div>
+              <aside class="template-preview" id="template-preview" aria-label="消息预览" hidden>
+                <div class="tpl-preview-heading"><h3>消息预览</h3><span><i></i>实时</span></div>
+                <div class="tpl-preview-modes" aria-label="预览消息格式"><button type="button" data-preview-mode="markdown" aria-pressed="true">Markdown</button><button type="button" data-preview-mode="text" aria-pressed="false">纯文本</button></div>
+                <div class="tpl-preview-body">
+                  <div class="tpl-chat-date"><span id="tpl-preview-date">消息预览</span></div>
+                  <article class="tpl-chat-message"><div class="tpl-chat-avatar"><img id="tpl-preview-avatar" alt="机器人头像" referrerpolicy="no-referrer" hidden><span id="tpl-preview-avatar-fallback" aria-hidden="true">✦</span></div><div class="tpl-chat-main"><div class="tpl-chat-meta"><strong id="tpl-preview-name">Elaina</strong><span>机器人</span><small>刚刚</small></div><div class="tpl-bubble"><div id="tpl-preview-content" class="message-markdown"></div><div id="tpl-preview-keyboard" class="tpl-keyboard" aria-label="消息按钮预览" hidden></div></div></div></article>
+                  <p class="tpl-preview-warning" id="tpl-preview-warning" role="status" hidden></p>
+                  <p class="tpl-preview-caption" id="tpl-preview-caption">预览效果以实际 QQ 客户端为准。</p>
+                  <details class="tpl-sample-values"><summary>预览变量<span>仅影响预览</span></summary><div id="tpl-preview-variables"></div><button type="button" class="btn" id="tpl-preview-reset">重置示例变量</button></details>
+                </div>
+              </aside>
+              </div>
             </section>
           </div>
         </section>
 
-        <section class="page active" id="page-audit">
+        <section class="page" id="page-audit">
           <div class="management-workspace">
             <section class="management-pane target-pane" aria-labelledby="target-title">
               <div class="management-pane-head">
@@ -269,7 +268,8 @@ html, body, body *, body *::before, body *::after {
       <div id="template-variable-list" class="template-variable-panel"></div>
     </section>
   </div>
-  <div class="toast" id="toast"></div>
+  <dialog id="tpl-preview-image-dialog" class="tpl-image-overlay" aria-label="图片预览"><button id="tpl-preview-image-close" type="button" aria-label="关闭图片预览">×</button><img id="tpl-preview-image" alt="模板消息图片"></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script type="module" src="/api/ext/groupguard/assets/panel.js"></script>
 </body>
 </html>

@@ -122,6 +122,11 @@ async def api_save_config(request):
         updates["buttons"] = btns
     if "content" in data:
         updates["content"] = str(data["content"] or "")
+    if "templates" in data:
+        try:
+            updates["templates"] = store.normalize_templates(data["templates"])
+        except ValueError as error:
+            return _fail(str(error), status=400)
     await asyncio.to_thread(store.save_config, mode, updates)
     return _ok(message="已保存")
 

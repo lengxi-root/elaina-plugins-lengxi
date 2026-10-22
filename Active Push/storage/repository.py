@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import threading
+from copy import deepcopy
 from datetime import datetime
 from itertools import islice
 
@@ -26,6 +27,7 @@ _MODE_DEFAULTS = {
     "concurrency": 20,
     "buttons": [],
     "content": "",
+    "templates": [],
 }
 _CONFIG_DEFAULTS = {
     "group": dict(_MODE_DEFAULTS),
@@ -49,9 +51,37 @@ def _write_json(path, data):
     os.replace(tmp, path)
 
 
+def normalize_templates(value):
+    """Validate reusable messages independently of the current send settings."""
+    if not isinstance(value, list) or len(value) > 100:
+        raise ValueError("消息模板需为数组，且每种模式最多 100 个")
+    templates, ids, names = [], set(), set()
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("消息模板格式错误")
+        template_id = str(item.get("id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        content = item.get("content")
+        buttons = item.get("buttons", [])
+        if not template_id.startswith("custom-") or len(template_id) > 80:
+            raise ValueError("消息模板 ID 格式错误")
+        if not name or len(name) > 80:
+            raise ValueError("模板名称需为 1–80 个字符")
+        if not isinstance(content, str) or not content.strip() or len(content) > 50000:
+            raise ValueError("模板正文需为 1–50000 个字符")
+        if not isinstance(buttons, list):
+            raise ValueError("模板按钮需为 JSON 数组")
+        if template_id in ids or name in names:
+            raise ValueError("模板 ID 或名称重复")
+        ids.add(template_id)
+        names.add(name)
+        templates.append({"id": template_id, "name": name, "content": content, "buttons": deepcopy(buttons)})
+    return templates
+
+
 def _normalize_config(raw):
     raw = raw if isinstance(raw, dict) else {}
-    cfg = {mode: dict(defaults) for mode, defaults in _CONFIG_DEFAULTS.items()}
+    cfg = deepcopy(_CONFIG_DEFAULTS)
     for mode in cfg:
         value = raw.get(mode)
         if isinstance(value, dict):
@@ -69,6 +99,11 @@ def _normalize_config(raw):
         for old_key, new_key in legacy_map.items():
             if old_key in raw:
                 cfg["group"][new_key] = raw[old_key]
+    for mode in cfg:
+        try:
+            cfg[mode]["templates"] = normalize_templates(cfg[mode]["templates"])
+        except ValueError:
+            cfg[mode]["templates"] = []
     return cfg
 
 
@@ -91,7 +126,10 @@ def save_config(mode, updates):
         if isinstance(updates, dict):
             for key in _MODE_DEFAULTS:
                 if key in updates:
-                    cfg[mode][key] = updates[key]
+                    cfg[mode][key] = (
+                        normalize_templates(updates[key])
+                        if key == "templates" else updates[key]
+                    )
         _write_json(_CONFIG_FILE, cfg)
         return cfg
 

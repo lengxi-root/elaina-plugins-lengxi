@@ -51,7 +51,7 @@ from .punishments import (
 )
 from .recall import cmd_recall_recent
 from .recall import recall_batch as _recall_batch
-from .remote import cmd_bind_groupguard
+from .welcome import (cmd_welcome_toggle, cmd_welcome_submit, cmd_welcome_monitor, cmd_welcome_test, cmd_welcome_extract)
 from .spam import cmd_spam_limit, cmd_spam_off, cmd_spam_on, cmd_spam_punish
 from .spam import punish_text as _punish_text
 from .statistics import cmd_management_log, cmd_management_stats

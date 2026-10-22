@@ -35,6 +35,8 @@ _MANAGEMENT_ACTIONS = {
     "forbidden_clear",
     "cache_clear",
     "template_test",
+    "welcome_send",
+    "welcome_review",
 }
 _MANAGEMENT_ACTIONS_SORTED = tuple(sorted(_MANAGEMENT_ACTIONS))
 _MANAGEMENT_PLACEHOLDERS = ",".join("?" for _ in _MANAGEMENT_ACTIONS_SORTED)

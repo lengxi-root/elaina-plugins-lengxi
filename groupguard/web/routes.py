@@ -8,7 +8,7 @@ from aiohttp import web
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.web_pages import register_route, unregister_route
 
-from ..services import remote, state
+from ..services import state
 from ..services import rendering as fw_render
 from ..services import verification as verify
 from ..services.responses import api_error, render_template_preview
@@ -22,6 +22,10 @@ _WEB_DIR = Path(__file__).resolve().parent.parent / "assets"
 _ASSETS = {
     "panel.css": "text/css; charset=utf-8",
     "panel.js": "text/javascript; charset=utf-8",
+    "template-preview.js": "text/javascript; charset=utf-8",
+    "template-preview.css": "text/css; charset=utf-8",
+    "message-markdown.js": "text/javascript; charset=utf-8",
+    "message-markdown.css": "text/css; charset=utf-8",
 }
 _CATALOG_TTL = 5
 _catalog_cache = {"bots": (), "groups": ()}
@@ -42,9 +46,6 @@ def unregister_routes():
 def _routes():
     routes = [
         ("GET", "groups", _get_groups, True),
-        ("GET", "developer", _get_developer, True),
-        ("PUT", "developer", _save_developer, True),
-        ("POST", "developer/test", _test_developer, True),
         ("GET", "dashboard", _get_dashboard, True),
         ("PUT", "config", _save_config, True),
         ("PUT", "global-settings", _save_global_settings, True),
@@ -57,6 +58,8 @@ def _routes():
         ("DELETE", "global-forbidden", _delete_global_forbidden, True),
         ("DELETE", "target", _delete_target, True),
     ]
+    from .welcome import routes as welcome_routes
+    routes.extend(welcome_routes())
     routes.extend(("GET", f"assets/{name}", _asset, False) for name in _ASSETS)
     return [
         (method, f"{PREFIX}/{path}", handler, auth)
@@ -305,6 +308,8 @@ def _require_join_policy(value):
         "reject_reason": reject_reason or "不符合入群要求",
         "verify_failure_limit": failure_limit,
         "verify_failure_action": failure_action,
+        "verify_mute_seconds": _clamp_int(value.get("verify_mute_seconds", 0), 0, 2591940, "验证期间禁言秒数"),
+        "verify_failure_mute_seconds": _clamp_int(value.get("verify_failure_mute_seconds", 600), 60, 2591940, "验证失败禁言秒数"),
     }
 
 
@@ -350,43 +355,6 @@ async def _asset(request):
 async def _get_groups(_request):
     catalog = _catalog_data()
     return _success(catalog)
-
-
-def _developer_robot_appid(value):
-    robot_appid = str(value or "").strip()
-    running = {str(item.get("appid") or "") for item in _catalog_data()["bots"]}
-    if not robot_appid or robot_appid not in running:
-        raise ValueError("请选择正在运行的机器人")
-    return robot_appid
-
-
-async def _get_developer(request):
-    try:
-        robot_appid = _developer_robot_appid(request.query.get("appid"))
-        settings = remote.public_settings(robot_appid)
-    except ValueError as error:
-        return _failure(error)
-    return _success(settings)
-
-
-async def _save_developer(request):
-    body = await _json(request)
-    try:
-        body["robot_appid"] = _developer_robot_appid(body.get("robot_appid"))
-        settings = await remote.update_settings(body)
-        return _success(settings)
-    except (ValueError, OSError) as error:
-        return _failure(error, code="DEVELOPER_CONFIG_INVALID")
-
-
-async def _test_developer(request):
-    body = await _json(request)
-    try:
-        body["robot_appid"] = _developer_robot_appid(body.get("robot_appid"))
-        result = await remote.test_settings(body)
-        return _success(result)
-    except ValueError as error:
-        return _failure(error, code="BACKEND_CONNECTION_FAILED")
 
 
 def _dashboard_data(group_id, days, appid=""):

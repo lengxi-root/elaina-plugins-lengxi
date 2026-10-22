@@ -2,7 +2,7 @@
 
 from core.plugin.decorators import handler
 
-from ..services import state
+from ..services import state, welcome
 from ..services import verification as verify
 from ..services.permissions import get_event_member_role, is_group_admin
 from ..services.responses import _build, api_error
@@ -169,7 +169,9 @@ async def on_member_add(event, match):
         return
     gc = db.get_group_cfg(gid)
     if not gc["enabled"] or not gc["features"]["join_verify"]:
+        await welcome.enqueue(event)
         return
+    welcome.hold_member(event)
     member_id = event.user_id
     if not member_id:
         return
@@ -187,6 +189,7 @@ async def on_member_add(event, match):
 async def on_member_remove(event, match):
     member_id = event.user_id
     if event.group_id and member_id:
+        welcome.remove_member(event)
         state.clear_member(event.group_id, member_id)
 
 
@@ -281,6 +284,7 @@ async def on_verify_skip(event, match):
         return
     unmuted = await verify.release_verification_mute(event, gid, target_id)
     event.set_callback_code(0)
+    await welcome.verified(event, target_id)
     record_result(
         event,
         "verify_pass",

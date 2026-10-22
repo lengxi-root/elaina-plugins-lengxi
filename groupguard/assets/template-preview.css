@@ -1,0 +1,58 @@
+/* The framework chat preview, adapted to the standalone plugin's layout. */
+.template-layout{grid-template-columns:190px minmax(0,1fr)}
+.template-editor{overflow:clip}
+.template-editor-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+.template-editor .template-meta-grid{grid-template-columns:1fr 1fr}
+.template-editor .template-meta-grid .field:last-child{grid-column:1/-1}
+.template-editor .template-switch-row{grid-template-columns:1fr}
+.template-editor-workspace>.template-form{padding:20px;min-width:0}
+.template-editor-workspace>.template-empty{grid-column:1/-1}
+.template-preview{position:sticky;top:16px;min-width:0;max-height:calc(100dvh - 32px);overflow:auto;border-left:1px solid var(--line);background:var(--surface-soft)}
+.tpl-preview-heading{display:flex;align-items:center;justify-content:space-between;padding:22px 18px 16px}
+.tpl-preview-heading h3{margin:0;font-size:12px;font-weight:600}
+.tpl-preview-heading>span{display:flex;align-items:center;gap:5px;color:var(--text3);font-size:10px}
+.tpl-preview-heading i{width:5px;height:5px;border-radius:50%;background:var(--success)}
+.tpl-preview-modes{display:flex;gap:3px;padding:3px;margin:0 18px 16px;border:1px solid var(--line);border-radius:8px;background:var(--page-bg)}
+.tpl-preview-modes button{flex:1;border:0;padding:6px;border-radius:5px;background:transparent;color:var(--text2);font-size:11px}
+.tpl-preview-modes button[aria-pressed=true]{background:var(--surface);color:var(--accent);box-shadow:0 1px 4px #00000008;font-weight:600}
+.tpl-preview-body{padding:0 18px 20px}
+.tpl-chat-date{display:flex;align-items:center;justify-content:center;gap:10px;margin:12px 0 24px;color:var(--text3);font-size:10px;overflow-wrap:anywhere}
+.tpl-chat-date:before,.tpl-chat-date:after{content:"";height:1px;width:25px;background:var(--line);flex:none}
+.tpl-chat-message{display:flex;align-items:flex-start;gap:9px}
+.tpl-chat-avatar{display:grid;place-items:center;width:31px;height:31px;flex:none;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--accent)}
+.tpl-chat-avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+.tpl-chat-main{flex:1;min-width:0}
+.tpl-chat-meta{display:flex;align-items:center;gap:6px;min-height:20px;margin-bottom:8px;font-size:10px}
+.tpl-chat-meta strong{overflow:hidden;color:var(--text2);font-size:11px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+.tpl-chat-meta>span{padding:1px 4px;border-radius:3px;background:var(--accent-soft);color:var(--accent);font-size:8px;white-space:nowrap}
+.tpl-chat-meta>small{margin-left:auto;font-size:9px;white-space:nowrap}
+.tpl-bubble{min-width:0;padding:13px;border:1px solid var(--line);border-radius:0 11px 11px 11px;background:var(--surface);box-shadow:0 2px 8px #00000005}
+.tpl-bubble .message-markdown{font-size:13px;line-height:1.85}
+.tpl-bubble .md-image{max-width:100%}
+.tpl-bubble input[type=checkbox]{appearance:auto;width:auto;height:auto;border-radius:0;pointer-events:none}
+.tpl-bubble input[type=checkbox]:before{display:none}
+.tpl-plain-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.85}
+.tpl-empty-content{margin:0;color:var(--text3);font-size:12px}
+.tpl-keyboard{display:flex;flex-direction:column;gap:7px;padding-top:12px;margin-top:13px;border-top:1px solid var(--line)}
+.tpl-keyboard-row{display:flex;gap:7px;flex-wrap:wrap}
+.tpl-keyboard-row>button{display:inline-flex;align-items:center;justify-content:center;flex:1 1 0;min-width:0;padding:6px 8px;border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));border-radius:6px;background:var(--surface);color:var(--accent);font-size:12px;line-height:1.5;cursor:default;overflow-wrap:anywhere}
+.tpl-keyboard-row>button.primary{color:var(--surface);border-color:var(--accent);background:var(--accent)}
+.tpl-keyboard.small-buttons button{font-size:10px;padding:4px 6px}
+.tpl-preview-caption{margin:17px 0 0 40px;color:var(--text3);font-size:10px;line-height:1.8}
+.tpl-preview-warning{margin:12px 0 0 40px;color:var(--danger);font-size:11px;line-height:1.8}
+.tpl-sample-values{margin-top:24px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.tpl-sample-values summary{display:flex;align-items:center;justify-content:space-between;gap:7px;padding:12px;color:var(--text2);font-size:11px;cursor:pointer}
+.tpl-sample-values summary>span{color:var(--text3);font-size:10px}
+.tpl-sample-values>div{padding:0 12px 12px}
+.tpl-sample-values label{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1fr);align-items:center;gap:7px;padding-top:8px}
+.tpl-sample-values code{font-size:10px;overflow-wrap:anywhere}
+.tpl-sample-values input{width:100%;min-width:0;padding:5px 7px;font-size:11px}
+.tpl-sample-values>.btn{margin:0 12px 12px;padding:5px 8px;font-size:10px}
+.tpl-image-overlay{width:100vw;height:100dvh;max-width:none;max-height:none;padding:50px 28px 28px;border:0;background:transparent;overflow:auto}
+.tpl-image-overlay[open]{display:grid;place-items:center}
+.tpl-image-overlay::backdrop{background:#101825dd;backdrop-filter:blur(4px)}
+.tpl-image-overlay>button{position:fixed;right:24px;top:16px;width:36px;height:36px;border:0;border-radius:50%;background:#fff2;color:white;font-size:25px}
+.tpl-image-overlay>img{display:block;max-width:100%;max-height:calc(100dvh - 90px);object-fit:contain;border-radius:8px}
+@media(max-width:1200px){.template-editor .panel-head{flex-direction:column;align-items:flex-start}.template-editor .template-head-actions{width:100%}}
+@media(max-width:1000px){.template-layout{grid-template-columns:180px minmax(0,1fr)}.template-editor-workspace{grid-template-columns:1fr}.template-preview{position:static;max-height:none;border-left:0;border-top:1px solid var(--line)}}
+@media(max-width:650px){.template-layout{grid-template-columns:1fr}.template-editor-workspace>.template-form{padding:16px}.template-preview{padding-bottom:5px}.tpl-preview-body{padding:0 14px 18px}.tpl-preview-heading{padding:17px 16px}.tpl-preview-modes{margin-left:16px;margin-right:16px}.tpl-bubble{padding:11px}.tpl-bubble .message-markdown,.tpl-plain-text{font-size:14px}.tpl-sample-values input{font-size:12px}.template-editor .template-head-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.template-head-actions .test-group-field{max-width:none;grid-column:1/-1}.template-head-actions .btn{width:100%;padding:7px}.tpl-chat-meta{flex-wrap:wrap}.tpl-chat-meta>small{margin-left:0}}

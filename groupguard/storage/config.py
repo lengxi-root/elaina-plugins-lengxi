@@ -12,6 +12,13 @@ from .core import (
 )
 
 
+def _duration(policy, key, default, minimum):
+    try:
+        return max(minimum, min(2591940, int(policy.get(key, default))))
+    except (TypeError, ValueError):
+        return default
+
+
 def _default_policy():
     return {"action": "recall", "mute_minutes": 10}
 
@@ -51,6 +58,8 @@ def default_group_config(group_id):
             "reject_reason": "不符合入群要求",
             "verify_failure_limit": 3,
             "verify_failure_action": "mute",
+            "verify_mute_seconds": 0,
+            "verify_failure_mute_seconds": 600,
         },
     }
 
@@ -74,6 +83,8 @@ def _get_group_cfg(group_id):
             "不符合入群要求",
             3,
             "mute",
+            0,
+            600,
         )
     stored_features = _json_object(row["features"])
     stored_policies = _json_object(row["policies"])
@@ -118,6 +129,8 @@ def _get_group_cfg(group_id):
         join_reason,
         verify_failure_limit,
         verify_failure_action,
+        _duration(stored_join_policy, "verify_mute_seconds", 0, 0),
+        _duration(stored_join_policy, "verify_failure_mute_seconds", 600, 60),
     )
 
 
@@ -132,6 +145,8 @@ def get_group_cfg(group_id):
         join_reason,
         verify_failure_limit,
         verify_failure_action,
+        verify_mute_seconds,
+        verify_failure_mute_seconds,
     ) = _get_group_cfg(group_id)
     return {
         "group_id": group_id,
@@ -150,6 +165,8 @@ def get_group_cfg(group_id):
             "reject_reason": join_reason,
             "verify_failure_limit": verify_failure_limit,
             "verify_failure_action": verify_failure_action,
+            "verify_mute_seconds": verify_mute_seconds,
+            "verify_failure_mute_seconds": verify_failure_mute_seconds,
         },
     }
 

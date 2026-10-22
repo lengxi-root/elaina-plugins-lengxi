@@ -6,6 +6,7 @@ from collections import OrderedDict
 
 from core.plugin.decorators import handler, on_unload
 
+from ...services import welcome
 from ...services import verification as verify
 from ...services.permissions import (
     ensure_admin_env,
@@ -234,3 +235,4 @@ async def cmd_verify_pass(event, match):
         details={"unmuted": unmuted},
     )
     await reply_at(event, "verify_passed_by_admin", target_id=target_id)
+    await welcome.verified(event, target_id)

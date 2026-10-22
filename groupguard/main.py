@@ -9,15 +9,15 @@ from core.plugin.web_pages import register_page, unregister_page
 from .handlers import commands as _commands  # noqa: F401
 from .handlers import events as _events  # noqa: F401
 from .handlers import monitor as _monitor  # noqa: F401
-from .services import remote, state
+from .services import state, welcome
 from .services.templates import initialize_reply_templates
 from .web import routes as webpanel
 
 __plugin_meta__ = {
-    "name": "群管",
+    "name": "群管中心",
     "author": "冷曦",
-    "description": "违禁词过滤、入群验证、禁言、入群审批、消息撤回等群管理功能",
-    "version": "2.0.9",
+    "description": "违禁词过滤、入群验证、禁言、入群审批、消息撤回、入群欢迎和配置审核",
+    "version": "3.0.2",
     "license": "MIT",
 }
 
@@ -37,24 +37,24 @@ _ICON = (
 @on_load
 async def _init():
     initialize_reply_templates()
+    welcome.start()
     state.start_cleanup()
     register_page(
         key=_PAGE_KEY,
-        label="群管",
+        label="群管中心",
         source="plugin",
         source_name="groupguard",
         icon=_ICON,
         html_file=_PANEL_HTML,
     )
     webpanel.register_routes()
-    await remote.start()
     log.info("群管插件已加载")
 
 
 @on_unload
 async def _cleanup():
     await state.stop_cleanup()
-    await remote.stop()
+    await welcome.stop()
     webpanel.unregister_routes()
     unregister_page(_PAGE_KEY)
     log.info("群管插件已卸载")

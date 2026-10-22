@@ -56,12 +56,6 @@ from .messages import (
     get_username_from_log,
     store_message,
 )
-from .remote_access import (
-    remote_user_groups,
-    remote_users,
-    replace_remote_user_groups,
-    replace_remote_users,
-)
 from .spam import (
     get_spam_config,
     record_and_check_spam,
