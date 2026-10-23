@@ -1,6 +1,7 @@
 """Agent 工具集：仓库文件操作、插件管理、配置读写和消息发送。"""
 
 import ast
+import difflib
 import asyncio
 import fnmatch
 import hashlib
@@ -10,6 +11,8 @@ import platform
 import re
 import subprocess
 import time
+import tempfile
+import threading
 from typing import Any
 
 from core.base.config import cfg
@@ -26,6 +29,8 @@ def _locate_root() -> str:
 
 
 ROOT = _locate_root()
+
+_FILE_WRITE_LOCK = threading.RLock()
 
 _MAX_READ_BYTES = 200_000
 _MAX_WRITE_BYTES = 1_000_000
@@ -135,22 +140,81 @@ def _file_sha256(path: str) -> str:
     return digest.hexdigest()
 
 
+def _change_preview(path: str, before: str, after: str, action: str) -> dict:
+    """记录这次工具操作的差异，不混入工作区之前已有的改动。"""
+    result = {"path": _rel(path), "action": action}
+    if _is_sensitive_path(path):
+        return {**result, "unavailable": "敏感文件不展示代码差异"}
+    old, new = before.splitlines(), after.splitlines()
+    # 控制 diff 计算和事件大小，完整文件仍保留在工作区。
+    if len(before) + len(after) > 400_000 or len(old) + len(new) > 12000:
+        return {**result, "unavailable": "文件过大，不生成代码预览"}
+    lines = list(difflib.unified_diff(old, new, fromfile="a/" + result["path"],
+                                    tofile="b/" + result["path"], lineterm="", n=3))
+    added = sum(line.startswith("+") for line in lines[2:])
+    removed = sum(line.startswith("-") for line in lines[2:])
+    preview = "\n".join(lines)
+    return {**result, "added": added, "removed": removed,
+            "diff": preview[:40000], "truncated": len(preview) > 40000}
+
+
+def _write_with_preview(path: str, content: str):
+    with _FILE_WRITE_LOCK:
+        existed = os.path.isfile(path)
+        before = _read_text(path)[1] if existed and not _is_sensitive_path(path) else ""
+        _write_text(path, content)
+        return existed, _change_preview(path, before, content, "modified" if existed else "created")
+
+
+def _delete_with_preview(path: str):
+    with _FILE_WRITE_LOCK:
+        before = _read_text(path)[1] if not _is_sensitive_path(path) else ""
+        preview = _change_preview(path, before, "", "deleted")
+        os.remove(path)
+        return preview
+
+
+def _validate_source(path: str, content: str) -> None:
+    """写入前检查 Python，错误不落盘，原文件仍可运行。"""
+    if path.casefold().endswith((".py", ".pyi")):
+        try:
+            ast.parse(content, filename=path)
+        except SyntaxError as error:
+            raise ValueError(
+                f"Python 语法错误，未写入：第 {error.lineno} 行，第 {error.offset} 列：{error.msg}"
+            ) from error
+
+
 def _write_text(path: str, content: str) -> bool:
-    """在线程中写入文本，返回写入前文件是否存在。"""
-    os.makedirs(os.path.dirname(path) or ROOT, exist_ok=True)
-    existed = os.path.isfile(path)
-    with open(path, "w", encoding="utf-8") as file:
-        file.write(content)
-    return existed
+    """同目录临时文件原子替换，避免写入中断留下半份源码。"""
+    _validate_source(path, content)
+    with _FILE_WRITE_LOCK:
+        os.makedirs(os.path.dirname(path) or ROOT, exist_ok=True)
+        existed = os.path.isfile(path)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="",
+                                             dir=os.path.dirname(path), delete=False) as file:
+                temporary = file.name
+                file.write(content)
+                file.flush()
+                os.fsync(file.fileno())
+            if existed:
+                os.chmod(temporary, os.stat(path).st_mode)
+            os.replace(temporary, path)
+        finally:
+            if temporary and os.path.exists(temporary):
+                os.remove(temporary)
+        return existed
 
 
-def _replace_text(
+def _replace_text_unlocked(
     path: str,
     old: str,
     new: str,
     replace_all: bool,
     expected_sha256: str = "",
-) -> tuple[int, str, str]:
+) -> tuple[int, str, str, dict]:
     """在线程中完成读取、精确替换和写回。"""
     before_sha256 = _file_sha256(path)
     if expected_sha256 and expected_sha256 != before_sha256:
@@ -172,7 +236,12 @@ def _replace_text(
     if len(updated.encode("utf-8")) > _MAX_WRITE_BYTES:
         raise ValueError("内容过大")
     _write_text(path, updated)
-    return count, updated, before_sha256
+    return count, updated, before_sha256, _change_preview(path, content, updated, "modified")
+
+
+def _replace_text(path, old, new, replace_all, expected_sha256=""):
+    with _FILE_WRITE_LOCK:
+        return _replace_text_unlocked(path, old, new, replace_all, expected_sha256)
 
 
 def _directory_entries(base: str) -> list[dict]:
@@ -578,11 +647,12 @@ async def _t_write_file(path: str, content: str) -> dict:
     data = content if isinstance(content, str) else str(content)
     if len(data.encode("utf-8")) > _MAX_WRITE_BYTES:
         raise ValueError("内容过大")
-    existed = await asyncio.to_thread(_write_text, target, data)
+    existed, change = await asyncio.to_thread(_write_with_preview, target, data)
     return {
         "path": _rel(target),
         "bytes": len(data.encode("utf-8")),
         "created": not existed,
+        "change": change,
     }
 
 
@@ -608,7 +678,7 @@ async def _t_edit_file(
     if old == new:
         raise ValueError("old_string 与 new_string 相同, 无需修改")
     expected = str(expected_sha256 or "").strip().casefold()
-    count, updated, before_sha256 = await asyncio.to_thread(
+    count, updated, before_sha256, change = await asyncio.to_thread(
         _replace_text, target, old, new, replace_all, expected
     )
     return {
@@ -616,6 +686,7 @@ async def _t_edit_file(
         "replaced": count if replace_all else 1,
         "bytes": len(updated.encode("utf-8")),
         "before_sha256": before_sha256,
+        "change": change,
         "sha256": await asyncio.to_thread(_file_sha256, target),
     }
 
@@ -625,8 +696,8 @@ async def _t_delete_file(path: str) -> dict:
     if os.path.normcase(target) == os.path.normcase(os.path.realpath(ROOT)):
         raise ValueError("禁止删除框架根目录")
     if os.path.isfile(target):
-        await asyncio.to_thread(os.remove, target)
-        return {"path": _rel(target), "deleted": True, "type": "file"}
+        change = await asyncio.to_thread(_delete_with_preview, target)
+        return {"path": _rel(target), "deleted": True, "type": "file", "change": change}
     if os.path.isdir(target):
         raise ValueError("禁止递归删除目录；请逐个删除明确文件后由管理员处理空目录")
     raise ValueError(f"路径不存在: {path}")
@@ -1062,7 +1133,20 @@ async def _t_verify_change(
             raise ValueError(f"文件不存在: {path}")
         normalized_paths.append(_rel(target))
 
+    if command_text and not plugin:
+        raise ValueError("提供 command_text 时必须同时提供 plugin")
     steps = []
+
+    async def report():
+        diffs = []
+        for path in normalized_paths:
+            result = await _t_git_diff(path)
+            diffs.append({"path": path, "diff": result.get("diff", "")})
+        failed = [step["step"] for step in steps if not step["ok"]]
+        return {"success": bool(steps) and not failed, "paths": normalized_paths,
+                "steps": steps, "failed_steps": failed, "diffs": diffs,
+                "next_action": "修复失败步骤后重新验证，未执行后续步骤" if failed else "验证通过"}
+
     for path in normalized_paths:
         if path.casefold().endswith((".py", ".pyi")):
             result = await _t_check_python(path)
@@ -1075,11 +1159,17 @@ async def _t_verify_change(
                 }
             )
 
+    if any(not step["ok"] for step in steps):
+        return await report()
+
     if test_suite_command:
         result = await _t_run_tests(test_suite_command, test_path, timeout)
         steps.append(
             {"step": "run_tests", "ok": result.get("success") is True, "result": result}
         )
+
+    if any(not step["ok"] for step in steps):
+        return await report()
 
     if plugin:
         result = await _t_reload_plugin(plugin)
@@ -1092,9 +1182,10 @@ async def _t_verify_change(
             }
         )
 
+    if any(not step["ok"] for step in steps):
+        return await report()
+
     if command_text:
-        if not plugin:
-            raise ValueError("提供 command_text 时必须同时提供 plugin")
         result = await _t_test_command(command_text)
         steps.append(
             {
@@ -1110,17 +1201,7 @@ async def _t_verify_change(
 
     if not steps:
         raise ValueError("没有可执行的验证步骤")
-    diffs = []
-    for path in normalized_paths:
-        result = await _t_git_diff(path)
-        diffs.append({"path": path, "diff": result.get("diff", "")})
-    return {
-        "success": all(step["ok"] for step in steps),
-        "paths": normalized_paths,
-        "steps": steps,
-        "failed_steps": [step["step"] for step in steps if not step["ok"]],
-        "diffs": diffs,
-    }
+    return await report()
 
 
 async def _t_send_qq_message(
@@ -1182,6 +1263,30 @@ _DISPATCH: dict[str, Any] = {
     "verify_change": _t_verify_change,
     "send_qq_message": _t_send_qq_message,
 }
+
+
+async def _t_batch_read(calls: list) -> dict:
+    """并发执行有限数量的只读查询；不允许嵌套或执行写入工具。"""
+    if not isinstance(calls, list) or not 1 <= len(calls) <= 8:
+        raise ValueError("calls 必须包含 1 到 8 个查询")
+    allowed = _ANALYSIS_TOOL_NAMES - {"batch_read", "update_plan"}
+    for call in calls:
+        if not isinstance(call, dict) or call.get("name") not in allowed:
+            raise ValueError("batch_read 只接受只读工具")
+        if not isinstance(call.get("arguments", {}), dict):
+            raise ValueError("arguments 必须是对象")
+
+    async def query(call):
+        try:
+            result = await run_tool(call["name"], call.get("arguments", {}))
+            return {"name": call["name"], "result": result}
+        except Exception as error:
+            return {"name": call["name"], "error": str(error)}
+
+    return {"results": await asyncio.gather(*(query(call) for call in calls))}
+
+
+_DISPATCH["batch_read"] = _t_batch_read
 
 
 async def run_tool(name: str, args: dict) -> dict:
@@ -1579,6 +1684,32 @@ TOOLS_SCHEMA = [
 ]
 
 
+TOOLS_SCHEMA.extend([
+    {"type": "function", "function": {
+        "name": "update_plan",
+        "description": "创建或更新当前任务计划；复杂开发在读取后列出步骤，实施和验证时更新状态。",
+        "parameters": {"type": "object", "properties": {
+            "explanation": {"type": "string"},
+            "steps": {"type": "array", "minItems": 1, "maxItems": 12,
+                "items": {"type": "object", "properties": {
+                    "step": {"type": "string"},
+                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
+                }, "required": ["step", "status"]}}
+        }, "required": ["steps"]}
+    }},
+    {"type": "function", "function": {
+        "name": "batch_read",
+        "description": "并发执行 1 到 8 个独立只读查询。禁止写入、重载、测试和嵌套调用。",
+        "parameters": {"type": "object", "properties": {
+            "calls": {"type": "array", "minItems": 1, "maxItems": 8,
+                "items": {"type": "object", "properties": {
+                    "name": {"type": "string"}, "arguments": {"type": "object"}
+                }, "required": ["name"]}}
+        }, "required": ["calls"]}
+    }}
+])
+
+
 _CORE_READ_TOOL_NAMES = {
     "search_code",
     "check_python",
@@ -1616,6 +1747,8 @@ _REVIEW_TOOL_NAMES = {
 }
 
 _ANALYSIS_TOOL_NAMES = _CORE_READ_TOOL_NAMES | {
+    "batch_read",
+    "update_plan",
     "list_handlers",
     "get_config",
     "system_info",

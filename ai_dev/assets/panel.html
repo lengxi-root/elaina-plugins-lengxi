@@ -2,28 +2,28 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI 开发助手 · ElainaBot</title>
 <style>
 :root{
   /* 默认回退值; 嵌入后台时由框架公共主题 API 覆盖 */
-  --bg:#f4f6fb; --bg2:#f0f1f3; --bg3:#eef1f9; --card:#ffffff; --ink:#1f2733; --ink2:#5b6675;
-  --muted:#97a1b0; --line:#eef1f6; --line2:#eef1f6;
-  --brand:#3b7bf7; --brand2:#2f6ae0; --brand-soft:color-mix(in srgb,var(--brand) 12%,transparent);
+  --bg:#f5f6f8; --bg2:#f7f8fa; --bg3:#edf0f5; --card:#ffffff; --ink:#202936; --ink2:#586577;
+  --muted:#738094; --line:#e4e8ef; --line2:#edf0f4; --border:var(--line);
+  --brand:#5263d6; --brand2:#4353bf; --brand-soft:color-mix(in srgb,var(--brand) 12%,transparent);
   --green:#22c55e; --green-soft:color-mix(in srgb,var(--green) 13%,transparent);
   --red:#ef4444; --red-soft:color-mix(in srgb,var(--red) 12%,transparent);
   --amber:#f59e0b; --amber-soft:color-mix(in srgb,var(--amber) 14%,transparent);
   --blue:#3b82f6; --blue-soft:color-mix(in srgb,var(--blue) 12%,transparent);
   --radius:14px; --radius-sm:9px;
-  /* 全局界面缩放: 默认 90% (相当于未缩放时按 90% 显示, 比 100% 更紧凑) */
-  --ui-scale:.9;
+  /* 使用原生字号和视口尺寸，支持浏览器缩放。 */
+  --ui-scale:1;
   --shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.05); --shadow-lg:0 12px 36px rgba(15,23,42,.12);
   --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
-/* 默认按 90% 缩放整体界面; 在 iframe 内 vh 相对 iframe 视口, 缩放后仍铺满 */
+/* 兼容原有视口计算。 */
 html{zoom:var(--ui-scale)}
 body{font-family:var(--font);color:var(--ink);background:
   radial-gradient(1100px 560px at 100% -10%,color-mix(in srgb,var(--brand) 9%,transparent) 0%,transparent 55%),
@@ -428,6 +428,72 @@ input,textarea,select{font-family:inherit}
 body.module-missing .module-missing-overlay{display:grid}
 .module-missing-card{width:min(430px,100%);padding:24px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:var(--shadow-lg);text-align:center}
 .module-missing-card h2{margin:0 0 8px;font-size:18px}.module-missing-card p{margin:0;color:var(--ink2);font-size:13px;line-height:1.7}
+.change-list{margin:12px 0;border:1px solid var(--border);border-radius:10px;overflow:hidden}.change-list>summary{padding:10px;cursor:pointer;font-weight:600}.change-file{border-top:1px solid var(--border)}.change-file>summary{padding:9px;cursor:pointer;overflow-wrap:anywhere}.diff-code{overflow:auto;max-height:420px;margin:0;font:12px/1.6 monospace}.diff-line{display:block;white-space:pre;padding:0 8px}.diff-add{background:rgba(46,160,67,.14);color:#22863a}.diff-del{background:rgba(248,81,73,.14);color:#d73a49}.diff-hunk{color:var(--blue);background:var(--blue-soft)}.diff-note{padding:8px;font-size:12px}.diff-num{display:inline-block;width:45px;text-align:right;margin-right:10px;opacity:.6;user-select:none}
+
+/* ===== 开发工作台：布局、阅读层级与交互状态 ===== */
+body{background:var(--bg)}
+#app{height:100vh;height:100dvh}
+.topbar{height:68px;flex-basis:68px;padding:0 24px;background:var(--card);backdrop-filter:none;gap:12px}
+.brand{font-size:15px;letter-spacing:-.3px}.brand small{font-size:11px;letter-spacing:.5px;margin-top:3px}
+.brand .mark{box-shadow:none;border-radius:10px;background:var(--brand)}
+.status{border:0;background:var(--bg2);font-size:11px}.dot{width:6px;height:6px}
+.icon-btn,.model-pick{border-radius:8px;box-shadow:none}
+.main{gap:16px;padding:20px;max-width:1920px;width:100%;margin:0 auto}
+.sidebar{width:220px;flex-basis:220px;gap:18px;padding:0 2px}
+.sidebar>.panel{background:transparent;border:0;box-shadow:none;border-radius:0}
+.new-chat{height:44px;border-radius:9px;background:var(--brand);box-shadow:none;font-size:13px}
+.sess-title{padding:0 10px 12px;font-size:11px;letter-spacing:1px}
+.sessions{padding:0;overscroll-behavior:contain}
+.sess{padding:12px 10px;border-radius:9px;margin-bottom:4px;border:1px solid transparent}
+.sess.active{border-color:color-mix(in srgb,var(--brand) 14%,transparent)}
+.sess .si{background:transparent;width:26px;flex-basis:26px;color:var(--muted)}
+.sess .meta b{font-weight:500}.sess .meta span{display:block;margin-top:5px}
+.sidebar-footer{padding:12px 10px;border-top:1px solid var(--line);font-size:11px;line-height:1.8;color:var(--muted)}
+.sidebar-footer b{display:block;font-size:12px;font-weight:500;color:var(--ink2)}
+.panel{border-radius:14px;box-shadow:0 2px 8px color-mix(in srgb,var(--ink) 2%,transparent)}
+.chat-head{min-height:60px;padding:14px 24px}.chat-head h3{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.chat-head .tag{font:10px var(--mono);border-radius:5px;max-width:35%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+.messages{padding:28px clamp(16px,3vw,48px);gap:28px;scrollbar-gutter:stable;overscroll-behavior:contain}
+.welcome{max-width:600px;padding:24px 0}.welcome .wbadge{width:54px;height:54px;border-radius:16px;background:var(--brand-soft);color:var(--brand);box-shadow:none;margin-bottom:24px}
+.welcome h2{font-size:26px;letter-spacing:-.8px;font-weight:600;margin-bottom:12px}.welcome p{font-size:13px;line-height:1.9;color:var(--muted)}
+.welcome-eyebrow{font:10px var(--mono);letter-spacing:2px;color:var(--brand);margin-bottom:12px}
+.chips{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:28px;text-align:left}
+.chip{border-radius:10px;padding:16px;background:var(--bg2);font-size:12px;text-align:left;line-height:1.5;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.chip::after{content:'↗';color:var(--muted);font-size:15px}.chip:hover{transform:translateY(-2px)}
+.msg{max-width:900px;margin-inline:auto;gap:10px}.msg .av{width:28px;height:28px;flex-basis:28px;font-size:10px;border-radius:8px;margin-top:3px}
+.msg.ai .av{background:var(--brand-soft);color:var(--brand)}.msg.user .av{background:var(--bg3);color:var(--ink2)}
+.bubble{max-width:calc(100% - 40px);font-size:14px;line-height:1.85}
+.msg.ai .bubble{padding:0 4px;background:transparent;border:0;box-shadow:none}
+.msg.user .bubble{background:var(--bg2);color:var(--ink);border:1px solid var(--line);border-radius:12px 4px 12px 12px;padding:10px 16px}
+.msg.user .bubble code,.msg.user .bubble blockquote{background:var(--bg3);color:var(--ink)}.msg.user .bubble a{color:var(--brand)}
+.msg.user .bubble th,.msg.user .bubble td{border-color:var(--line)}
+.msg.user .bubble thead th,.msg.user .bubble tbody tr:nth-child(even){background:var(--bg3)}
+.composer{border-top:0;padding:12px 24px 18px}.composer .box{max-width:960px;margin:auto;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:0 3px 16px color-mix(in srgb,var(--ink) 5%,transparent)}
+.composer .box:focus-within{box-shadow:0 0 0 3px var(--brand-soft)}
+.composer textarea{min-height:68px;padding:12px 12px 8px}.composer textarea::placeholder{color:var(--muted)}
+.composer-bar{gap:6px}.composer-tools{flex-wrap:wrap;flex:1}.composer .chat-mode,.composer .composer-model{background-color:var(--bg2);border-color:transparent;height:32px;font-size:11px}
+.composer .composer-model{flex:0 1 180px}.composer .composer-model select{font-size:11px}.composer-state{flex:0 1 auto;font-size:10px}
+.send{width:36px;height:36px;flex-basis:36px;background:var(--brand);box-shadow:none;border-radius:9px}
+.composer .hint{max-width:960px;margin:10px auto 0;text-align:center;font-size:10px;line-height:1.6}
+.activity{width:300px;flex-basis:300px;background:color-mix(in srgb,var(--card) 65%,var(--bg));box-shadow:none}
+.act-head{min-height:60px;padding:12px;gap:6px}.act-head h3{font-size:12px;font-weight:600}.tabs{border-radius:7px}.tab{font-size:10px;padding:5px 7px;border-radius:5px}.act-clear{font-size:10px}
+.act-list{padding:12px 8px}.act-empty{font-size:12px;line-height:1.9;max-width:240px}.activity .act-empty::before{content:'···';display:block;font:32px var(--mono);color:var(--brand);margin-bottom:12px}
+.ev-top{padding:10px 8px}.ev-name b{font:11px var(--mono)}
+.tsteps,.think{border-radius:8px}.change-list{background:var(--bg2)}
+.modal{padding:16px}.modal-card{border-radius:16px;padding:28px;max-height:calc(100dvh - 32px)}
+#capabilityModal .modal-card{width:700px;max-width:100%}.settings-section{border:0;border-top:1px solid var(--line);padding:20px 0 0;margin:18px 0 0;min-width:0}.settings-section legend{float:none;width:auto;padding-right:12px;font-size:12px;font-weight:600;margin-bottom:14px;color:var(--ink)}
+.settings-grid{clear:both;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.settings-grid .set-row{margin:0}.settings-section .switch-row{clear:both}
+.set-input{height:40px;border-width:1px;border-radius:8px;font-size:13px}textarea.set-input{height:auto;min-height:88px;padding:12px;resize:vertical;line-height:1.6}
+.modal-actions{position:sticky;bottom:-28px;background:var(--card);padding:16px 0 4px;border-top:1px solid var(--line);z-index:1}.modal-actions .btn-primary{flex:0 0 auto;width:auto;padding:0 24px;height:40px;box-shadow:none;border-radius:8px;background:var(--brand)}.modal-actions .btn-ghost{height:40px;border-radius:8px}
+:where(button,select,input,textarea,summary,[tabindex]):focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+button:disabled{cursor:not-allowed;opacity:.5}
+@media(min-width:1600px){.sidebar{width:240px;flex-basis:240px}.activity{width:330px;flex-basis:330px}}
+@media(max-width:1180px){.main{padding:12px;gap:12px}.sidebar{width:190px;flex-basis:190px}.activity{width:270px;flex-basis:270px}.messages{padding-inline:20px}.composer{padding-inline:16px}.composer-state{display:none}}
+@media(max-width:1020px){.activity{width:320px;background:var(--card)}.act-head{padding-right:40px}.chat-head{padding-inline:20px}}
+@media(max-width:760px){.topbar{height:56px;flex-basis:56px;padding:0 12px;gap:8px}.main{padding:8px;gap:0}.sidebar{width:270px;padding:20px 12px;background:var(--bg)}.sidebar-footer{margin-top:auto}.messages{padding:20px 14px;gap:22px}.chat-head{min-height:52px;padding:12px 16px}.chat-head .mini{display:none}.welcome{padding:20px 6px}.welcome h2{font-size:23px}.composer{padding:10px 12px calc(10px + env(safe-area-inset-bottom))}.composer textarea{font-size:16px}.bubble{max-width:calc(100% - 38px)}.sess .del{opacity:1}.settings-grid{grid-template-columns:1fr}.modal-card{padding:20px}.modal-actions{bottom:-20px}.chip{padding:13px 10px;font-size:11px}}
+@media(max-width:480px){.brand{font-size:13px}.brand .mark{width:28px;height:28px}.topbar .site-pick{max-width:108px;padding:6px}.site-pick select{min-width:0;width:100%}.composer .composer-model{flex:1 1 100px;min-width:80px}.composer-tools{gap:2px}.attach{width:30px;flex-basis:30px}.composer .chat-mode{max-width:100px;padding-left:6px}.welcome h2{font-size:21px}.chips{gap:8px}.chat-head .tag{max-width:40%}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important;transition:none!important}}
+
 </style>
 </head>
 <style data-elaina-theme-transition>
@@ -448,7 +514,7 @@ html, body, body *, body *::before, body *::after {
     <button class="icon-btn menu-btn menu-side" id="menuSidebar" title="对话列表"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     <div class="brand">
       <div class="mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5 10.1 7.6z"/><path d="M19 14l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/></svg></div>
-      <div>ElainaBot<small>AI 开发助手面板</small></div>
+      <div>ElainaBot<small>AI 开发工作台</small></div>
     </div>
     <div class="spacer"></div>
     <div class="model-pick site-pick" title="选择中央 AI 接口">
@@ -465,9 +531,10 @@ html, body, body *, body *::before, body *::after {
     <div class="sidebar">
       <button class="new-chat" id="newChat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> 新建对话</button>
       <div class="panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
-        <div class="sess-title">对话</div>
+        <div class="sess-title">工作区 / 对话记录</div>
         <div class="sessions" id="sessions"></div>
       </div>
+      <div class="sidebar-footer"><b>从想法，到可运行的插件</b>选择目标 · 描述需求 · 检查改动</div>
     </div>
 
     <!-- 对话区 -->
@@ -483,7 +550,7 @@ html, body, body *, body *::before, body *::after {
         <div class="thumbs" id="thumbs"></div>
         <div class="plugin-files" id="pluginFiles"></div>
         <div class="box">
-          <textarea id="input" rows="1" placeholder="对 AI 说点什么… 例如：写一个 ID 命令插件，返回我的 QQ 号"></textarea>
+          <textarea id="input" rows="1" aria-label="任务需求" placeholder="描述你想实现的功能，或选择插件开始修改…"></textarea>
           <div class="composer-bar">
             <div class="composer-tools">
               <button class="attach" id="attachBtn" title="添加图片（也可直接粘贴/拖拽）"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
@@ -503,7 +570,7 @@ html, body, body *, body *::before, body *::after {
             <button class="send" id="sendBtn" title="发送"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
           </div>
         </div>
-        <div class="hint">Enter 发送 · Shift+Enter 换行 · 图片可粘贴/拖拽 · 选择工作区插件目标后由读取 Agent 识别 · 可切换「开发执行 / 只读分析」</div>
+        <div class="hint">Enter 发送 · Shift+Enter 换行 · 支持粘贴图片与选择插件目标</div>
       </div>
     </div>
 
@@ -520,7 +587,7 @@ html, body, body *, body *::before, body *::after {
         <button class="act-clear" id="actClear" title="清空显示">清空</button>
       </div>
       <div class="act-list" id="actList">
-        <div class="act-empty">暂无活动，发送消息后这里会实时显示 AI 的每一次工具调用与结果。</div>
+        <div class="act-empty">执行过程，清晰可见<br>发送任务后，在这里查看工具调用与运行结果。</div>
       </div>
     </div>
   </div>
@@ -528,15 +595,26 @@ html, body, body *, body *::before, body *::after {
 </div>
 
 <div class="modal" id="capabilityModal">
-  <div class="modal-card" style="width:520px">
+  <div class="modal-card">
     <h2>AI 开发与中央能力</h2>
-    <div class="sub">AI 开发使用自己的完整工具集；这里仅控制插件运行状态和中央扩展能力。</div>
-    <div class="set-row">
-      <label class="switch-row"><input type="checkbox" id="capabilityEnabled"><span class="sw"></span><span class="sw-text"><b>启用 AI 开发助手</b><small>关闭后拒绝 QQ、Web 对话和中央能力调用。</small></span></label>
-      <label class="switch-row"><input type="checkbox" id="centralSkills"><span class="sw"></span><span class="sw-text"><b>Skills</b><small>允许读取中央 Skill 与 AI 开发注入的开发规范。</small></span></label>
-      <label class="switch-row"><input type="checkbox" id="centralMcp"><span class="sw"></span><span class="sw-text"><b>MCP</b><small>允许调用中央 MCP 与已授权的插件 MCP 服务。</small></span></label>
-      <label class="switch-row"><input type="checkbox" id="centralAgent"><span class="sw"></span><span class="sw-text"><b>Agent</b><small>允许委派中央子代理与已授权的插件 Agent。</small></span></label>
-    </div>
+    <div class="sub">AI 开发使用自己的完整工具集；这里可配置开发流程、上下文和中央扩展能力。</div>
+    <fieldset class="settings-section"><legend>助手与扩展能力</legend>
+<label class="switch-row"><input type="checkbox" id="capabilityEnabled"><span class="sw"></span><span class="sw-text"><b>启用 AI 开发助手</b><small>关闭后拒绝 QQ、Web 对话和中央能力调用。</small></span></label>
+<label class="switch-row"><input type="checkbox" id="centralSkills"><span class="sw"></span><span class="sw-text"><b>Skills</b><small>允许读取中央 Skill 与 AI 开发注入的开发规范。</small></span></label>
+<label class="switch-row"><input type="checkbox" id="centralMcp"><span class="sw"></span><span class="sw-text"><b>MCP</b><small>允许调用中央 MCP 与已授权的插件 MCP 服务。</small></span></label>
+<label class="switch-row"><input type="checkbox" id="centralAgent"><span class="sw"></span><span class="sw-text"><b>Agent</b><small>允许委派中央子代理与已授权的插件 Agent。</small></span></label>
+</fieldset>
+    <fieldset class="settings-section"><legend>执行与上下文</legend>
+<label class="switch-row"><input type="checkbox" id="dev_workflow_enabled"><span class="sw"></span><span class="sw-text"><b>计划 → 开发 → 验证流程</b></span></label>
+<div class="settings-grid"><div class="set-row"><label class="set-label" for="dev_temperature">采样温度（0–2）</label><input class="set-input" id="dev_temperature" type="number" min="0" max="2" step="0.1" required></div>
+<div class="set-row"><label class="set-label" for="dev_max_iterations">工具轮数（1–100）</label><input class="set-input" id="dev_max_iterations" type="number" min="1" max="100" step="1" required></div>
+<div class="set-row"><label class="set-label" for="dev_history_limit">历史轮数（1–500）</label><input class="set-input" id="dev_history_limit" type="number" min="1" max="500" step="1" required></div>
+<div class="set-row"><label class="set-label" for="dev_tool_timeout">单工具超时秒数（5–600）</label><input class="set-input" id="dev_tool_timeout" type="number" min="5" max="600" step="1" required></div>
+<div class="set-row"><label class="set-label" for="dev_repeat_failure_limit">相同调用失败上限（1–10）</label><input class="set-input" id="dev_repeat_failure_limit" type="number" min="1" max="10" step="1" required></div></div></fieldset>
+    <fieldset class="settings-section"><legend>自定义要求</legend>
+<div class="set-row"><label class="set-label" for="dev_system_prompt">开发附加要求</label><textarea class="set-input" id="dev_system_prompt" rows="2" maxlength="6000"></textarea></div>
+<div class="set-row"><label class="set-label" for="dev_chat_system_prompt">只读分析附加要求</label><textarea class="set-input" id="dev_chat_system_prompt" rows="2" maxlength="6000"></textarea></div>
+</fieldset>
     <div class="set-err" id="capabilityErr"></div>
     <div class="modal-actions"><button class="btn-primary" id="capabilitySave" type="button">保存</button><button class="btn-ghost" id="capabilityCancel" type="button">取消</button></div>
   </div>
@@ -985,6 +1063,8 @@ $('#settingsBtn').addEventListener('click',()=>{
   $('#centralSkills').checked=CFG.central_skills_enabled!==false;
   $('#centralMcp').checked=CFG.central_mcp_enabled!==false;
   $('#centralAgent').checked=CFG.central_agent_enabled!==false;
+  for(const key of ['temperature','max_iterations','history_limit','tool_timeout','repeat_failure_limit','system_prompt','chat_system_prompt'])$('#dev_'+key).value=CFG[key]??'';
+  $('#dev_workflow_enabled').checked=CFG.workflow_enabled!==false;
   $('#capabilityErr').textContent='';
   $('#capabilityModal').classList.add('show');
 });
@@ -993,7 +1073,12 @@ $('#capabilityModal').addEventListener('click',e=>{if(e.target.id==='capabilityM
 $('#capabilitySave').addEventListener('click',async()=>{
   const button=$('#capabilitySave');button.disabled=true;$('#capabilityErr').textContent='';
   try{
-    const response=await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify({enabled:$('#capabilityEnabled').checked,central_skills_enabled:$('#centralSkills').checked,central_mcp_enabled:$('#centralMcp').checked,central_agent_enabled:$('#centralAgent').checked})});
+    const payload={enabled:$('#capabilityEnabled').checked,central_skills_enabled:$('#centralSkills').checked,central_mcp_enabled:$('#centralMcp').checked,central_agent_enabled:$('#centralAgent').checked,workflow_enabled:$('#dev_workflow_enabled').checked};
+    for(const key of ['temperature','max_iterations','history_limit','tool_timeout','repeat_failure_limit']){
+      const input=$('#dev_'+key);if(!input.checkValidity())throw new Error(input.previousElementSibling.textContent+'：请输入有效数值');payload[key]=Number(input.value);
+    }
+    for(const key of ['system_prompt','chat_system_prompt'])payload[key]=$('#dev_'+key).value;
+    const response=await api('/api/ext/aidev/config',{method:'POST',body:JSON.stringify(payload)});
     const data=await response.json();if(!data.success)throw new Error(data.error||'保存失败');
     CFG=data.config||CFG;$('#capabilityModal').classList.remove('show');toast('中央能力设置已保存');
   }catch(error){$('#capabilityErr').textContent=error.message;}finally{button.disabled=false;}
@@ -1237,6 +1322,26 @@ function renderHistory(msgs,events){
   scrollChat();
 }
 /* 静态渲染一个已完成的 AI 回合 (含可折叠的工具调用时间线 + 思考过程) */
+function changeHtml(rows){
+  const changes=rows.filter(r=>r.status==='ok'&&r.result&&r.result.change).map(r=>r.result.change);
+  if(!changes.length)return '';
+  const files=new Set(changes.map(c=>c.path));
+  return `<details class="change-list" open><summary>文件改动 · ${files.size} 个文件 · ${changes.length} 次操作</summary>${changes.map(c=>{
+    let old=0,next=0;
+    const lines=String(c.diff||'').split('\n').map((line,index)=>{
+      let cls='',left='',right='';const h=line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if(h){old=Number(h[1]);next=Number(h[2]);cls='diff-hunk';}
+      else if(index<2&&(line.startsWith('---')||line.startsWith('+++'))){cls='diff-hunk';}
+      else if(line.startsWith('+')){cls='diff-add';right=next++;}
+      else if(line.startsWith('-')){cls='diff-del';left=old++;}
+      else if(line.startsWith(' ')){left=old++;right=next++;}
+      return `<span class="diff-line ${cls}"><span class="diff-num">${left}</span><span class="diff-num">${right}</span>${esc(line)}</span>`;
+    }).join('');
+    const label={created:'新增',modified:'修改',deleted:'删除'}[c.action]||'修改';
+    return `<details class="change-file"><summary>${label} · ${esc(c.path)} <span class="diff-add">+${c.added??'?'}</span> <span class="diff-del">−${c.removed??'?'}</span></summary>${c.unavailable?`<div class="diff-note">${esc(c.unavailable)}</div>`:`<pre class="diff-code">${lines}</pre>${!c.diff?'<div class="diff-note">无文本行差异</div>':''}${c.truncated?'<div class="diff-note">预览已截断</div>':''}`}</details>`;
+  }).join('')}</details>`;
+}
+
 function addAiTurnFromHistory(content,toolEvents,reasonText,ok){
   const box=RENDER_TARGET||$('#messages');if(box.querySelector&&box.querySelector('.welcome'))box.innerHTML='';
   const rows=buildRows(toolEvents||[]).filter(r=>r.kind==='tool');
@@ -1249,7 +1354,7 @@ function addAiTurnFromHistory(content,toolEvents,reasonText,ok){
     stepsHtml=`<div class="tsteps collapsed"><div class="tsteps-head">${ic('tool',14)} 工具调用 · <b class="cnt">${rows.length}</b> 步<span class="chev">${ic('chev',11)}</span></div><div class="tsteps-body"></div></div>`;
   let ansHtml='';
   if(content&&content.trim())ansHtml=ok!==false?render(content):'<span class="answer-err">'+ic('alert',15)+' '+esc(content)+'</span>';
-  el.innerHTML=`<div class="av">AI</div><div class="bubble">${thinkHtml}${stepsHtml}<div class="answer">${ansHtml}</div></div>`;
+  el.innerHTML=`<div class="av">AI</div><div class="bubble">${thinkHtml}${stepsHtml}<div class="changes">${changeHtml(rows)}</div><div class="answer">${ansHtml}</div></div>`;
   box.appendChild(el);
   if(rows.length){
     const body=el.querySelector('.tsteps-body');
@@ -1259,15 +1364,15 @@ function addAiTurnFromHistory(content,toolEvents,reasonText,ok){
 }
 function renderWelcome(){
   $('#chatTitle').textContent='新对话';
-  $('#messages').innerHTML=`<div class="welcome">
+  $('#messages').innerHTML=`<div class="welcome"><div class="welcome-eyebrow">ELAINA / DEVELOPMENT WORKSPACE</div>
     <div class="wbadge">${ic('spark',30)}</div>
     <h2>你好，我是 AI 开发助手</h2>
     <p>我能直接为这个框架编写、修改、热重载插件，运行测试，检查系统与管理配置。把需求告诉我吧。</p>
     <div class="chips">
-      <div class="chip">写一个「天气」命令插件</div>
-      <div class="chip">列出当前所有插件</div>
-      <div class="chip">检查系统与框架状态</div>
-      <div class="chip">把框架名称改成 MyBot</div>
+      <button type="button" class="chip">写一个「天气」命令插件</button>
+      <button type="button" class="chip">列出当前所有插件</button>
+      <button type="button" class="chip">检查系统与框架状态</button>
+      <button type="button" class="chip">分析一个插件的代码结构</button>
     </div></div>`;
   $$('.chip').forEach(c=>c.addEventListener('click',()=>{$('#input').value=c.textContent;$('#input').focus();autoGrow();}));
 }
@@ -1298,7 +1403,7 @@ function startAiTurn(){
   el.innerHTML=`<div class="av">AI</div><div class="bubble">`+
     `<div class="think collapsed" style="display:none"><div class="think-head">${ic('brain',14)} 思考过程<span class="chev">${ic('chev',11)}</span></div><div class="think-body"></div></div>`+
     `<div class="tsteps" style="display:none"><div class="tsteps-head">${ic('tool',14)} 工具调用 · <b class="cnt">0</b> 步<span class="chev">${ic('chev',11)}</span></div><div class="tsteps-body"></div></div>`+
-    `<div class="typing"><i></i><i></i><i></i></div><div class="answer"></div></div>`;
+    `<div class="changes"></div><div class="typing"><i></i><i></i><i></i></div><div class="answer"></div></div>`;
   box.appendChild(el);scrollChat();
   const stepsWrap=el.querySelector('.tsteps');
   const thinkWrap=el.querySelector('.think');
@@ -1330,6 +1435,11 @@ function renderLiveSteps(){
   if(!liveTurn)return;
   const rows=buildRows(evbuf.slice(liveTurn.startIdx).filter(e=>e.session_id===liveTurn.sid)).filter(r=>r.kind==='tool');
   if(!rows.length){liveTurn.stepsWrap.style.display='none';return;}
+  const changes=liveTurn.turn.el.querySelector('.changes');
+  if(changes){
+    const html=changeHtml(rows);
+    if(changes.dataset.html!==html){changes.innerHTML=html;changes.dataset.html=html;}
+  }
   liveTurn.stepsWrap.style.display='';liveTurn.cnt.textContent=rows.length;
   const body=liveTurn.stepsBody;body.innerHTML='';
   rows.forEach(r=>body.appendChild(rowEl(r)));
@@ -1552,6 +1662,7 @@ function rowEl(row){
     const st=row.status;dot=`<span class="ev-dot ${st}"></span>`;icn=ic('tool',16);name=row.name;
     time=(row.dur!=null?row.dur+'ms · ':'')+fmtTime(row.time);
     badge=`<span class="ev-badge ${st==='ok'?'b-ok':st==='err'?'b-err':'b-run'}">${st==='ok'?ic('check',13):st==='err'?ic('x',13):'运行中'}</span>`;
+    if(row.result&&row.result.change)body+=changeHtml([row]);
     if(row.args!=null)body+=`<div class="lbl">参数</div><pre>${esc(typeof row.args==='string'?row.args:JSON.stringify(row.args,null,2))}</pre>`;
     if(row.result!=null)body+=`<div class="lbl">结果</div><pre>${esc(typeof row.result==='string'?row.result:JSON.stringify(row.result,null,2))}</pre>`;
     if(!body)body='<div class="lbl">运行中…</div>';
@@ -1568,7 +1679,7 @@ function rowEl(row){
 }
 function renderEvents(){
   const list=$('#actList');const rows=buildRows(evbuf).filter(r=>rowMatch(r.kind));
-  if(!rows.length){list.innerHTML='<div class="act-empty">暂无活动，发送消息后这里会实时显示 AI 的每一次工具调用与结果。</div>';return;}
+  if(!rows.length){list.innerHTML='<div class="act-empty">执行过程，清晰可见<br>发送任务后，在这里查看工具调用与运行结果。</div>';return;}
   const atBottom=list.scrollHeight-list.scrollTop-list.clientHeight<70;
   list.innerHTML='';rows.slice(-250).forEach(r=>list.appendChild(rowEl(r)));
   if(atBottom)list.scrollTop=list.scrollHeight;

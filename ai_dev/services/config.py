@@ -16,6 +16,9 @@ DEFAULTS: dict[str, Any] = {
     "system_prompt": "",
     "reasoning_effort": "",
     "history_limit": 50,
+    "tool_timeout": 120,
+    "repeat_failure_limit": 3,
+    "workflow_enabled": True,
     "chat_system_prompt": "",
     "central_skills_enabled": True,
     "central_mcp_enabled": True,
@@ -77,6 +80,7 @@ def _normalize_runtime_value(key: str, value):
         return None
     boolean_keys = {
         "enabled",
+        "workflow_enabled",
         "central_skills_enabled",
         "central_mcp_enabled",
         "central_agent_enabled",
@@ -95,6 +99,12 @@ def _normalize_runtime_value(key: str, value):
             return min(100, max(1, int(value)))
         except (TypeError, ValueError) as error:
             raise ValueError("max_iterations 必须是 1 到 100 的整数") from error
+    if key in {"tool_timeout", "repeat_failure_limit"}:
+        lower, upper = (5, 600) if key == "tool_timeout" else (1, 10)
+        try:
+            return min(upper, max(lower, int(value)))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{key} 必须是整数") from error
     if key == "history_limit":
         try:
             return min(500, max(1, int(value)))
@@ -221,6 +231,18 @@ def runtime_capabilities() -> list[str]:
     return result
 
 
+def tool_timeout() -> int:
+    return int(_normalize_runtime_value("tool_timeout", _setting("tool_timeout")))
+
+
+def repeat_failure_limit() -> int:
+    return int(_normalize_runtime_value("repeat_failure_limit", _setting("repeat_failure_limit")))
+
+
+def workflow_enabled() -> bool:
+    return _as_bool(_setting("workflow_enabled"))
+
+
 def public_config() -> dict:
     return {
         "enabled": enabled(),
@@ -229,6 +251,9 @@ def public_config() -> dict:
         "temperature": temperature(),
         "max_iterations": max_iterations(),
         "history_limit": history_limit(),
+        "tool_timeout": tool_timeout(),
+        "repeat_failure_limit": repeat_failure_limit(),
+        "workflow_enabled": workflow_enabled(),
         "system_prompt": system_prompt(),
         "reasoning_effort": reasoning_effort(),
         "chat_system_prompt": str(_setting("chat_system_prompt") or ""),
