@@ -14,15 +14,15 @@ from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .services import central, config, safety
+from .services import affinity, central, config, learning, proactive, safety
 from .storage import repository as store
 from .web import routes as webpanel
 
 __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
-    "description": "支持多人格、人物集、中央 LLM、全入口用户独立上下文与 Web 面板",
-    "version": "2.1.10",
+    "description": "支持多人格、人物集、中央 LLM、情境化语音、风格学习、好感度与主动消息的 Web 面板",
+    "version": "2.3.0",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -165,6 +165,29 @@ async def _memory_text(event, current: dict) -> str:
     return "\n".join(f"- {item['content']}" for item in items)
 
 
+async def _humanize_block(event, current: dict, personality: dict | None) -> str:
+    """一次线程调度读取最新状态，审核/撤回后下一轮立即生效。"""
+    personality_id = str((personality or {}).get("_id") or "")
+    group_scope_value = (
+        learning.group_data_scope(event) if getattr(event, "is_group", False) else ""
+    )
+    memory_scope = user_memory_scope(event)
+
+    def snapshot():
+        parts = []
+        if current.get("affinity_enabled"):
+            text = affinity.injection_text(store.get_user_state(memory_scope), store.get_portrait(memory_scope))
+            if text:
+                parts.append(text)
+        if personality is not None:
+            parts.extend(block for block in learning.injection_blocks(
+                current, personality_id, group_scope_value, memory_scope
+            ) if block)
+        return "\n\n".join(parts)
+
+    return await asyncio.to_thread(snapshot)
+
+
 async def _context_for_reply(
     scope: str, text: str, current: dict
 ) -> tuple[list[dict], str]:
@@ -253,9 +276,14 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
     scope = user_context_scope(event)
     lock = _locks.setdefault(scope, asyncio.Lock())
     async with lock:
+        if not getattr(event, "is_group", False):
+            await asyncio.to_thread(store.record_private_contact, scope)
+        memory_revision = await asyncio.to_thread(store.learning_revision, user_memory_scope(event))
         message_id = await asyncio.to_thread(store.append, scope, "user", text)
         try:
             history, context_summary = await _context_for_reply(scope, text, current)
+            humanize_block = await _humanize_block(event, current, personality)
+            memory_text = await _memory_text(event, current)
             media_context = {
                 "user_id": str(event.user_id),
                 "appid": str(getattr(event, "appid", "") or ""),
@@ -268,9 +296,10 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
                     current,
                     personality,
                     history,
-                    await _memory_text(event, current),
+                    memory_text,
                     media_context=media_context,
                     context_summary=context_summary,
+                    humanize_block=humanize_block,
                 )
             except Exception as error:
                 if not central.is_context_overflow_error(error) or not history:
@@ -283,9 +312,10 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
                     current,
                     personality,
                     history,
-                    await _memory_text(event, current),
+                    memory_text,
                     media_context=media_context,
                     context_summary=context_summary,
+                    humanize_block=humanize_block,
                 )
             reply, blocked = safety.safe_output(
                 reply,
@@ -309,6 +339,16 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
             raise
         # 历史消息持续保留；达到 token 预算时由下一轮自动压缩。
         await asyncio.to_thread(store.append, scope, "assistant", reply)
+        learning.enqueue_exchange(
+            scope,
+            user_memory_scope(event),
+            learning.group_data_scope(event) if getattr(event, "is_group", False) else "",
+            str((personality or {}).get("_id") or ""),
+            text,
+            reply,
+            current,
+            memory_revision=memory_revision,
+        )
         return reply
 
 
@@ -369,6 +409,8 @@ async def initialize() -> None:
         log.info("已向中央 AI LLM 注入 %s 个 AI 陪伴能力", len(injected))
     if _capability_task is None or _capability_task.done():
         _capability_task = asyncio.create_task(_watch_ai_service())
+    await learning.start()
+    await proactive.start()
     log.info("AI 聊天陪伴插件已加载")
 
 
@@ -380,6 +422,8 @@ async def cleanup() -> None:
         with contextlib.suppress(asyncio.CancelledError):
             await _capability_task
         _capability_task = None
+    await proactive.stop()
+    await learning.stop()
     central.unregister_capabilities()
     central.clear_runtime_state()
     unregister_page(PAGE_KEY)
@@ -424,6 +468,16 @@ async def help_command(event, _match) -> None:
     personalities = "、".join(
         f"{key}({value['name']})" for key, value in current["personalities"].items()
     )
+    status_lines = []
+    if current.get("affinity_enabled") and current.get("reflection_enabled"):
+        state = await asyncio.to_thread(store.get_user_state, user_memory_scope(event))
+        status_text = affinity.status_text(state)
+        if status_text:
+            status_lines.append(status_text)
+    learning_text = learning.learning_summary(current)
+    if learning_text:
+        status_lines.append(learning_text)
+    status_block = "".join(f"\n{line}" for line in status_lines)
     await _reply_to_user(
         event,
         "【AI 聊天陪伴】\n"
@@ -434,11 +488,16 @@ async def help_command(event, _match) -> None:
         "人物集由 Web 面板配置，可填写人物经历和人物关系\n"
         "/ai remember <内容> - 保存个人长期记忆\n"
         "/ai memories - 查看个人长期记忆\n"
-        "/ai forget - 清空个人长期记忆\n"
+        "/ai forget [ID] - 删除一条或清空长期记忆\n"
+        "/ai correct <ID> <内容> - 纠正一条记忆\n"
+        "/ai styles - 查看对你生效的风格\n"
+        "/ai feedback <风格ID> <原因> - 停止对你使用该风格\n"
+        "/ai voice [on|off] - 语音偏好：问候闲聊时更自然地发语音\n"
         "当前接口：由中央 AI 模块管理\n"
         f"当前人格：{personality['name'] if personality else '未配置'}\n"
         f"当前人格人物集：{character_set_name}\n"
-        f"可用人格：{personalities}",
+        f"可用人格：{personalities}"
+        + status_block,
     )
 
 
@@ -523,7 +582,9 @@ async def remember_command(event, match) -> None:
 async def memories_command(event, _match) -> None:
     items = await asyncio.to_thread(store.memories, [user_memory_scope(event)], 30)
     text = "\n".join(
-        f"{index}. {item['content']}" for index, item in enumerate(items, 1)
+        f"ID {item['id']} [{('自动' if item['source'] == 'auto' else '手动')}] {item['content']}"
+        + (f"（依据：{item['evidence']}）" if item.get("evidence") and item["source"] == "auto" else "")
+        for item in items
     )
     await _reply_to_user(
         event, "已保存的长期记忆：\n" + text if text else "当前没有长期记忆。"
@@ -531,7 +592,7 @@ async def memories_command(event, _match) -> None:
 
 
 @handler(
-    r"^/(?:ai|陪伴)\s+(?:forget|忘记)$",
+    r"^/(?:ai|陪伴)\s+(?:forget|忘记)(?:\s+(\d+))?\s*$",
     name="清空 AI 长期记忆",
     desc="清空当前用户保存的长期记忆",
     priority=40,
@@ -540,8 +601,87 @@ async def memories_command(event, _match) -> None:
     block=True,
 )
 async def forget_command(event, _match) -> None:
-    deleted = await asyncio.to_thread(store.clear_memories, user_memory_scope(event))
+    scope = user_memory_scope(event)
+    if _match.group(1):
+        deleted = await asyncio.to_thread(store.forget_memory, scope, int(_match.group(1)))
+    else:
+        deleted = await asyncio.to_thread(store.clear_memories, scope)
     await _reply_to_user(event, f"已清空 {deleted} 条长期记忆。")
+
+
+@handler(
+    r"(?s)^/(?:ai|陪伴)\s+(?:correct|纠正)\s+(\d+)\s+(.+)$",
+    name="纠正 AI 记忆", desc="纠正个人记忆", priority=40,
+    event_types=MESSAGE_EVENTS, ignore_at_check=True, block=True,
+)
+async def correct_command(event, match) -> None:
+    current = config.load()
+    text = str(match.group(2)).strip()
+    if (current.get("moderation_enabled") and safety.find_blocked(text, current["blocked_words"])) or await _input_rejected(current, text):
+        await _reply_to_user(event, await _gentle_blocked_response(event, current))
+        return
+    changed = await asyncio.to_thread(store.correct_memory, user_memory_scope(event), int(match.group(1)), text)
+    await _reply_to_user(event, "已纠正，这条记忆不会再被自动覆盖。" if changed else "未找到这条个人记忆，请先用 /ai memories 查看 ID。")
+
+
+@handler(
+    r"^/(?:ai|陪伴)\s+(?:styles|风格)\s*$", name="查看 AI 风格", desc="查看对你生效的风格",
+    priority=40, event_types=MESSAGE_EVENTS, ignore_at_check=True, block=True,
+)
+async def styles_command(event, _match) -> None:
+    personality = await _personality_for(event, config.load())
+    rows = await asyncio.to_thread(store.styles_for_user, str((personality or {}).get("_id") or ""), user_memory_scope(event), 8)
+    text = "\n".join(f"ID {row['id']}: {row['rule']}" for row in rows)
+    await _reply_to_user(event, text + "\n用 /ai feedback <ID> <原因> 停止对你使用某条风格。" if text else "目前没有对你生效的已学风格。")
+
+
+@handler(
+    r"(?s)^/(?:ai|陪伴)\s+(?:feedback|反馈)\s+(\d+)\s+(.+)$",
+    name="反馈 AI 风格", desc="停止对自己使用某条风格", priority=40,
+    event_types=MESSAGE_EVENTS, ignore_at_check=True, block=True,
+)
+async def feedback_command(event, match) -> None:
+    personality = await _personality_for(event, config.load())
+    changed = await asyncio.to_thread(store.reject_style, user_memory_scope(event),
+                                     str((personality or {}).get("_id") or ""), int(match.group(1)), match.group(2))
+    await _reply_to_user(event, "记下了，之后不会再对你使用这条风格。" if changed else "当前人格没有这条风格，请用 /ai styles 查看。")
+
+
+@handler(
+    r"^/(?:ai|陪伴)\s+(?:voice|语音)(?:\s+(on|off|开启|关闭))?\s*$",
+    name="AI 语音偏好",
+    desc="查看或设置个人语音偏好",
+    priority=40,
+    event_types=MESSAGE_EVENTS,
+    ignore_at_check=True,
+    block=True,
+)
+async def voice_command(event, match) -> None:
+    current = config.load()
+    if not (current.get("tts_enabled") and current.get("tts_roles")):
+        await _reply_to_user(event, "语音功能当前未启用，请先在面板配置 TTS。")
+        return
+    scope = user_memory_scope(event)
+    action = str(match.group(1) or "").strip().casefold()
+    if action in ("on", "开启"):
+        await asyncio.to_thread(store.set_voice_pref, scope, True)
+        await _reply_to_user(
+            event,
+            "已开启语音偏好。之后问候、闲聊和情感回应时我会更容易用语音回复"
+            "（仍受冷却限制，查资料等信息型回答会用文字）。",
+        )
+        return
+    if action in ("off", "关闭"):
+        await asyncio.to_thread(store.set_voice_pref, scope, False)
+        await _reply_to_user(event, "已关闭语音偏好。")
+        return
+    state = await asyncio.to_thread(store.get_user_state, scope)
+    if state.get("voice_pref"):
+        await _reply_to_user(event, "语音偏好：已开启。发送 /ai voice off 关闭。")
+    else:
+        await _reply_to_user(
+            event, "语音偏好：未开启。发送 /ai voice on 开启，之后我会更自然地用语音和你说话。"
+        )
 
 
 @handler(
@@ -567,12 +707,19 @@ async def chat_message(event, _match) -> None:
     if now - _last_prune >= 300:
         _last_prune = now
         await asyncio.to_thread(store.prune_expired, current["context_expire_seconds"])
+        await asyncio.to_thread(
+            store.prune_auto_memories, current.get("auto_memory_retention_days", 90)
+        )
+    is_full_group_event = getattr(event, "event_type", "") == "GROUP_MESSAGE_CREATE"
+    if event.is_group and is_full_group_event:
+        # 黑话采样要在回复门控之前，覆盖所有全量群消息。
+        with contextlib.suppress(Exception):
+            learning.observe_group_message(event, text, current)
     if event.is_group:
         if not current["group_enabled"]:
             return
         # 平台已将 GROUP_AT_MESSAGE_CREATE 过滤为发给本机器人的消息；
         # 只有完整群消息事件才包含可用的提及元数据。
-        is_full_group_event = getattr(event, "event_type", "") == "GROUP_MESSAGE_CREATE"
         if is_full_group_event and not getattr(event, "is_at_self", False):
             if not current["group_auto_reply"]:
                 return

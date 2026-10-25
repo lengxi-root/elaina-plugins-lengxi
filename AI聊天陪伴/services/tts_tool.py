@@ -36,7 +36,11 @@ def tool(roles: list[dict]) -> dict:
         "type": "function",
         "function": {
             "name": "send_tts_voice",
-            "description": "按语境发送一句短语音。需要角色时先调用 list_tts_roles，再选择合适角色；不需要语音时不要调用。",
+            "description": (
+                "以当前人格的口吻发送一句短语音。适合问候、道早安晚安、安慰、庆祝、"
+                "亲近的人之间闲聊，或对方明确想听你说话的时刻；信息查询和长解释不要发语音。"
+                "需要角色时先调用 list_tts_roles，再选择合适角色。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": properties,

@@ -29,7 +29,7 @@ __plugin_meta__ = {
     "name": "娱乐插件 (play)",
     "author": "冷曦",
     "description": "表情包(meme)/点歌/AI绘画一体的娱乐插件, 附哈基米语音与自闭禁言, 支持 Web 面板配置",
-    "version": "1.1.2",
+    "version": "1.1.3",
 }
 
 log = get_logger(PLUGIN, "play")
@@ -69,7 +69,9 @@ async def cleanup():
     unregister_page(_PAGE_KEY)
 
 
-@interceptor(priority=-40)
+# 图片生成、源文件下载和官机分片上传可能串行执行，不能使用普通事件的 30 秒预算。
+# 保留总时限；各服务仍使用各自的 HTTP 超时，避免无限等待。
+@interceptor(priority=-40, timeout=900)
 async def handle_message(event):
     """处理娱乐指令后继续分发，使同一消息仍可触发其他插件。"""
     if getattr(event, "post_type", "") != "message":

@@ -10,7 +10,7 @@ import os
 from aiohttp import web
 from core.plugin.web_pages import register_route
 
-from ..services import central, config, tts_tool
+from ..services import affinity, central, config, learning, tts_tool
 from ..storage import repository as store
 
 PREFIX = "/api/ext/ai-companion"
@@ -45,6 +45,18 @@ def register_routes() -> None:
     register_route("DELETE", f"{PREFIX}/resources/media")(_delete_resource_media)
     register_route("GET", f"{PREFIX}/tts/voices")(_tts_voices)
     register_route("DELETE", f"{PREFIX}/context")(_clear_context)
+    register_route("GET", f"{PREFIX}/learning/styles")(_learning_styles)
+    register_route("PUT", f"{PREFIX}/learning/candidate")(_set_candidate_status)
+    register_route("PUT", f"{PREFIX}/learning/learned")(_set_learned_status)
+    register_route("DELETE", f"{PREFIX}/learning/learned")(_delete_learned)
+    register_route("POST", f"{PREFIX}/learning/merge")(_merge_styles)
+    register_route("GET", f"{PREFIX}/learning/slang")(_slang_list)
+    register_route("PUT", f"{PREFIX}/learning/slang")(_set_slang_status)
+    register_route("DELETE", f"{PREFIX}/learning/slang")(_delete_slang)
+    register_route("GET", f"{PREFIX}/affinity/users")(_affinity_users)
+    register_route("PUT", f"{PREFIX}/affinity/user")(_set_affinity)
+    register_route("DELETE", f"{PREFIX}/affinity/user")(_reset_affinity)
+    register_route("GET", f"{PREFIX}/proactive/log")(_proactive_log)
     _registered = True
 
 
@@ -396,3 +408,133 @@ async def _clear_context(request: web.Request) -> web.Response:
     scope = str(body.get("scope") or "").strip()
     deleted = await asyncio.to_thread(store.clear, scope)
     return web.json_response({"success": True, "data": {"deleted": deleted}})
+
+
+# ---- 拟人智能：风格学习 / 群黑话 / 好感度 / 主动消息 ----
+
+
+async def _learning_styles(_request: web.Request) -> web.Response:
+    current = config.load()
+    candidates = await asyncio.to_thread(store.style_candidates, "pending", None, 100)
+    learned = await asyncio.to_thread(store.learned_styles, "", "", 100)
+    pending_count = await asyncio.to_thread(store.count_style_candidates, None, "pending")
+    personalities = {
+        key: value.get("name", key)
+        for key, value in (current.get("personalities") or {}).items()
+    }
+    return web.json_response(
+        {
+            "success": True,
+            "data": {
+                "candidates": candidates,
+                "learned": learned,
+                "pending_count": pending_count,
+                "merge_threshold": current.get("learning_merge_threshold", 8),
+                "personalities": personalities,
+            },
+        }
+    )
+
+
+async def _set_candidate_status(request: web.Request) -> web.Response:
+    body = await _body(request)
+    try:
+        candidate_id = int(body.get("id") or 0)
+        status = str(body.get("status") or "")
+        updated = await asyncio.to_thread(store.set_style_candidate_status, candidate_id, status)
+        return web.json_response({"success": True, "data": {"updated": updated}})
+    except (TypeError, ValueError) as error:
+        return web.json_response({"success": False, "error": str(error)}, status=400)
+
+
+async def _set_learned_status(request: web.Request) -> web.Response:
+    body = await _body(request)
+    try:
+        style_id = int(body.get("id") or 0)
+        status = str(body.get("status") or "")
+        updated = await asyncio.to_thread(store.set_learned_style_status, style_id, status)
+        return web.json_response({"success": True, "data": {"updated": updated}})
+    except (TypeError, ValueError) as error:
+        return web.json_response({"success": False, "error": str(error)}, status=400)
+
+
+async def _delete_learned(request: web.Request) -> web.Response:
+    body = await _body(request)
+    try:
+        style_id = int(body.get("id") or 0)
+        deleted = await asyncio.to_thread(store.delete_learned_style, style_id)
+        return web.json_response({"success": True, "data": {"deleted": deleted}})
+    except (TypeError, ValueError) as error:
+        return web.json_response({"success": False, "error": str(error)}, status=400)
+
+
+async def _merge_styles(request: web.Request) -> web.Response:
+    body = await _body(request)
+    personality_id = str(body.get("personality_id") or "").strip()
+    current = config.load()
+    try:
+        created = await learning.force_merge(current, personality_id)
+    except Exception as error:  # noqa: BLE001 - 归并失败返回面板
+        return web.json_response({"success": False, "error": str(error)[:300]}, status=502)
+    return web.json_response({"success": True, "data": {"created": created}})
+
+
+async def _slang_list(_request: web.Request) -> web.Response:
+    rows = await asyncio.to_thread(store.slang_terms, "", 200)
+    return web.json_response({"success": True, "data": rows})
+
+
+async def _set_slang_status(request: web.Request) -> web.Response:
+    body = await _body(request)
+    try:
+        term_id = int(body.get("id") or 0)
+        status = str(body.get("status") or "")
+        updated = await asyncio.to_thread(store.set_slang_term_status, term_id, status)
+        return web.json_response({"success": True, "data": {"updated": updated}})
+    except (TypeError, ValueError) as error:
+        return web.json_response({"success": False, "error": str(error)}, status=400)
+
+
+async def _delete_slang(request: web.Request) -> web.Response:
+    body = await _body(request)
+    try:
+        term_id = int(body.get("id") or 0)
+        deleted = await asyncio.to_thread(store.delete_slang_term, term_id)
+        return web.json_response({"success": True, "data": {"deleted": deleted}})
+    except (TypeError, ValueError) as error:
+        return web.json_response({"success": False, "error": str(error)}, status=400)
+
+
+async def _affinity_users(_request: web.Request) -> web.Response:
+    rows = await asyncio.to_thread(store.list_user_states, 100)
+    for row in rows:
+        row["portrait"] = await asyncio.to_thread(store.get_portrait, row["scope"])
+        row["stage"] = affinity.stage_for(float(row.get("affinity") or 0))
+    return web.json_response({"success": True, "data": rows})
+
+
+async def _set_affinity(request: web.Request) -> web.Response:
+    body = await _body(request)
+    scope = str(body.get("scope") or "").strip()
+    if not scope:
+        return web.json_response({"success": False, "error": "缺少用户 scope"}, status=400)
+    try:
+        value = float(body.get("affinity"))
+    except (TypeError, ValueError):
+        return web.json_response({"success": False, "error": "好感度必须是数字"}, status=400)
+    state = await asyncio.to_thread(store.set_user_affinity, scope, value)
+    return web.json_response({"success": True, "data": state})
+
+
+async def _reset_affinity(request: web.Request) -> web.Response:
+    body = await _body(request)
+    scope = str(body.get("scope") or "").strip()
+    if not scope:
+        return web.json_response({"success": False, "error": "缺少用户 scope"}, status=400)
+    deleted = await asyncio.to_thread(store.reset_user_state, scope)
+    return web.json_response({"success": True, "data": {"deleted": deleted}})
+
+
+async def _proactive_log(_request: web.Request) -> web.Response:
+    rows = await asyncio.to_thread(store.proactive_recent, 50)
+    return web.json_response({"success": True, "data": rows})

@@ -116,6 +116,30 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "safety_review_prompt": DEFAULT_SAFETY_REVIEW_PROMPT,
     "blocked_words": [],
     "blocked_response": "这个我不方便聊，我们换个话题吧。",
+    "reflection_enabled": True,
+    "reflection_provider_id": "",
+    "reflection_model": "",
+    "reflection_every_n": 3,
+    "reflection_min_interval_seconds": 300,
+    "learning_enabled": True,
+    "learning_review_required": True,
+    "learning_merge_threshold": 8,
+    "slang_enabled": True,
+    "slang_min_frequency": 5,
+    "slang_max_terms": 20,
+    "affinity_enabled": True,
+    "auto_memory_enabled": True,
+    "auto_memory_retention_days": 90,
+    "proactive_enabled": False,
+    "proactive_idle_chat": True,
+    "proactive_greeting": False,
+    "proactive_idle_minutes": 120,
+    "proactive_daily_limit": 3,
+    "proactive_min_interval_hours": 6,
+    "proactive_quiet_start": "23:00",
+    "proactive_quiet_end": "08:00",
+    "proactive_affinity_min": 30,
+    "proactive_groups": [],
     "personalities": copy.deepcopy(BUILTIN_PERSONALITIES),
     "character_sets": {},
 }
@@ -608,6 +632,61 @@ def validate(value: dict) -> dict:
     value["blocked_response"] = str(
         value.get("blocked_response") or DEFAULT_CONFIG["blocked_response"]
     ).strip()[:500]
+    value["reflection_provider_id"] = str(
+        value.get("reflection_provider_id") or ""
+    ).strip()[:128]
+    value["reflection_model"] = str(value.get("reflection_model") or "").strip()[:256]
+    value["reflection_every_n"] = min(
+        50, max(1, int(value.get("reflection_every_n", 3)))
+    )
+    value["reflection_min_interval_seconds"] = min(
+        86400, max(0, int(value.get("reflection_min_interval_seconds", 300)))
+    )
+    value["learning_merge_threshold"] = min(
+        100, max(2, int(value.get("learning_merge_threshold", 8)))
+    )
+    value["slang_min_frequency"] = min(
+        100, max(2, int(value.get("slang_min_frequency", 5)))
+    )
+    value["slang_max_terms"] = min(50, max(1, int(value.get("slang_max_terms", 20))))
+    value["auto_memory_retention_days"] = min(
+        3650, max(0, int(value.get("auto_memory_retention_days", 90)))
+    )
+    value["proactive_idle_minutes"] = min(
+        10080, max(30, int(value.get("proactive_idle_minutes", 120)))
+    )
+    value["proactive_daily_limit"] = min(
+        50, max(1, int(value.get("proactive_daily_limit", 3)))
+    )
+    value["proactive_min_interval_hours"] = min(
+        168, max(1, int(value.get("proactive_min_interval_hours", 6)))
+    )
+    for quiet_key in ("proactive_quiet_start", "proactive_quiet_end"):
+        raw_quiet = str(value.get(quiet_key) or "").strip()
+        match = re.fullmatch(r"^([01]?\d|2[0-3]):([0-5]\d)$", raw_quiet)
+        value[quiet_key] = (
+            f"{int(match.group(1)):02d}:{match.group(2)}" if match else (
+                "23:00" if quiet_key == "proactive_quiet_start" else "08:00"
+            )
+        )
+    value["proactive_affinity_min"] = min(
+        100, max(0, int(value.get("proactive_affinity_min", 30)))
+    )
+    raw_groups = value.get("proactive_groups", [])
+    if isinstance(raw_groups, str):
+        raw_groups = (
+            raw_groups.replace("，", ",")
+            .replace("\r", "\n")
+            .replace("\n", ",")
+            .split(",")
+        )
+    if not isinstance(raw_groups, list):
+        raise ValueError("主动消息群白名单必须是列表或逗号/换行分隔文本")
+    value["proactive_groups"] = list(
+        dict.fromkeys(
+            str(item).strip().strip("＃#") for item in raw_groups if str(item).strip()
+        )
+    )[:100]
     for setting_name in (
         "enabled",
         "fallback_reply",
@@ -622,6 +701,15 @@ def validate(value: dict) -> dict:
         "tts_auto_translate",
         "image_generation_enabled",
         "moderation_enabled",
+        "reflection_enabled",
+        "learning_enabled",
+        "learning_review_required",
+        "slang_enabled",
+        "affinity_enabled",
+        "auto_memory_enabled",
+        "proactive_enabled",
+        "proactive_idle_chat",
+        "proactive_greeting",
     ):
         value[setting_name] = bool(
             value.get(setting_name, DEFAULT_CONFIG[setting_name])

@@ -24,7 +24,7 @@ __plugin_meta__ = {
     "name": "官机代发拦截",
     "author": "冷曦",
     "description": "拦截插件出站消息，支持官方机器人收发与按钮建链",
-    "version": "1.3.4",
+    "version": "1.3.5",
     "license": "MIT",
 }
 
@@ -40,7 +40,8 @@ _ICON = (
 )
 
 
-@api_interceptor(priority=1000)
+# 覆盖源媒体下载、分片上传和消息提交；单次 HTTP 请求仍由 qqbot 的超时控制。
+@api_interceptor(priority=1000, timeout=600)
 async def intercept_outbound_api(request, call_next):
     """在消息到达 OneBot 适配器前应用规则或切换到官机代发。"""
     return await relay.intercept_api(request, call_next)
