@@ -39,7 +39,7 @@ __plugin_meta__ = {
     "name": "猫娘 AI (aicat)",
     "author": "冷曦",
     "description": "接入 OpenAI 兼容接口的 AI 对话助手, 支持人设/上下文/工具调用与 Web 面板配置",
-    "version": "1.3.4",
+    "version": "1.3.5",
 }
 
 log = get_logger(PLUGIN, "aicat")
@@ -400,6 +400,9 @@ async def handle_packet(event, match=None):
     desc="猫娘 AI 对话: /<内容> 或 @机器人 <内容>",
     priority=-50,
     event_types=["message"],
+    # 一轮对话可能包含 120 秒模型请求、工具执行和模型切换。
+    # 保留有限总预算，避免框架默认 30 秒提前取消正常请求。
+    timeout=900,
 )
 async def handle_message(event, match=None):
     if not aiconfig.enabled():

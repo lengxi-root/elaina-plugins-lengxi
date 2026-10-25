@@ -105,8 +105,12 @@ async def run_agent(history: list, user_text: str, meta: dict, model: str = "") 
             try:
                 resp = await _chat_completion(session, messages, cur_model, use_tools)
             except (TimeoutError, OpenAIError, aiohttp.ClientError) as e:
+                error_message = (
+                    f"模型请求超时（{aiconfig.request_timeout()} 秒），请稍后重试或切换模型"
+                    if isinstance(e, TimeoutError) else str(e)
+                )
                 if not explicit and auto:
-                    modelmgr.record_result(cur_model, False, 0, str(e))
+                    modelmgr.record_result(cur_model, False, 0, error_message)
                     cur_idx += 1
                     if cur_idx < len(candidates):
                         cur_model = candidates[cur_idx]
@@ -114,7 +118,7 @@ async def run_agent(history: list, user_text: str, meta: dict, model: str = "") 
                 return {
                     "ok": False,
                     "message": "",
-                    "error": str(e),
+                    "error": error_message,
                     "iterations": iteration,
                 }
 
