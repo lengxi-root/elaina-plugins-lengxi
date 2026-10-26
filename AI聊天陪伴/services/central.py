@@ -532,11 +532,14 @@ def _tools(
         result.extend(network_tools.TOOLS)
     service = get_service()
     if service is not None and hasattr(service, "model_tool_definitions"):
+        tool_provider, tool_model = resolve_selection(
+            str(config.get("provider_id") or ""), str(config.get("model_preference") or "")
+        )
         result.extend(
             service.model_tool_definitions(
                 config.get("enabled_model_tools", []),
                 consumer_plugin="ai_companion",
-                context=media_context,
+                context={**(media_context or {}), "provider_id": tool_provider, "model": tool_model},
             )
         )
     resource_tool = resources.tool(config.get("resources", []))
@@ -870,7 +873,7 @@ async def complete(
                 name,
                 arguments,
                 consumer_plugin="ai_companion",
-                context=media_context,
+                context={**(media_context or {}), "provider_id": provider_id, "model": model},
             )
         if name == "read_companion_resource":
             return await resources.run(
