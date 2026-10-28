@@ -31,15 +31,6 @@ from core.base.logger import PLUGIN, get_logger, report_error
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, register_route, unregister_page
 
-__plugin_meta__ = {
-    "name": "群成员入群欢迎",
-    "author": "ElainaBot",
-    "description": "群成员入群自动推送, 召回与欢迎可同时开启, 支持黑白名单与合并欢迎, 含 Web 面板",
-    "version": "2.1.2",
-    "github": "https://github.com/ElainaCore/Elaina-plugins",
-    "license": "MIT",
-}
-
 log = get_logger(PLUGIN, "群成员入群欢迎")
 
 # ==================== 路径 / 常量 ====================
@@ -1060,36 +1051,11 @@ async def cmd_test_merge_send(event, match):
     await _add_record(event.chat_id or gid, status, data, "test_merge")
 
 
-# ==================== 群管理/群主 关闭/开启欢迎 ====================
+# ==================== 群管理/群主 切换欢迎 ====================
 
 
-@handler(r"^关闭欢迎$", name="关闭欢迎", desc="群管理/群主关闭本群入群欢迎")
-async def cmd_disable_welcome(event, match):
-    role = getattr(event, "member_role", "") or ""
-    if role not in ("admin", "owner"):
-        return await event.reply("⚠️ 仅群管理员或群主可使用此指令")
-    gid = event.group_id or ""
-    if not gid:
-        return
-    if await _get_cfg("welcome_enabled", "0") != "1":
-        return await event.reply("⚠️ 当前未开启欢迎模式 (全群模式), 无需关闭")
-    list_mode = await _get_cfg("list_mode", "blacklist")
-    if list_mode == "blacklist":
-        ok = await _add_disabled(gid, event.user_id or "")
-        if ok:
-            await event.reply("✅ 已将本群加入黑名单, 不再推送入群欢迎")
-        else:
-            await event.reply("ℹ️ 本群已在黑名单中")
-    else:
-        ok = await _remove_whitelist(gid)
-        if ok:
-            await event.reply("✅ 已将本群从白名单移除, 不再推送入群欢迎")
-        else:
-            await event.reply("ℹ️ 本群不在白名单中")
-
-
-@handler(r"^开启欢迎$", name="开启欢迎", desc="群管理/群主重新开启本群入群欢迎")
-async def cmd_enable_welcome(event, match):
+@handler(r"^切换欢迎$", name="切换欢迎", desc="群管理/群主切换本群入群欢迎状态")
+async def cmd_toggle_welcome(event, match):
     role = getattr(event, "member_role", "") or ""
     if role not in ("admin", "owner"):
         return await event.reply("⚠️ 仅群管理员或群主可使用此指令")
@@ -1100,17 +1066,19 @@ async def cmd_enable_welcome(event, match):
         return await event.reply("⚠️ 当前未开启欢迎模式 (全群模式), 无需操作")
     list_mode = await _get_cfg("list_mode", "blacklist")
     if list_mode == "blacklist":
-        ok = await _remove_disabled(gid)
-        if ok:
+        if await _is_disabled(gid):
+            await _remove_disabled(gid)
             await event.reply("✅ 已将本群从黑名单移除, 恢复入群欢迎")
         else:
-            await event.reply("ℹ️ 本群未在黑名单中")
+            await _add_disabled(gid, event.user_id or "")
+            await event.reply("✅ 已将本群加入黑名单, 不再推送入群欢迎")
     else:
-        ok = await _add_whitelist(gid)
-        if ok:
-            await event.reply("✅ 已将本群加入白名单, 恢复入群欢迎")
+        if await _is_whitelisted(gid):
+            await _remove_whitelist(gid)
+            await event.reply("✅ 已将本群从白名单移除, 不再推送入群欢迎")
         else:
-            await event.reply("ℹ️ 本群已在白名单中")
+            await _add_whitelist(gid)
+            await event.reply("✅ 已将本群加入白名单, 恢复入群欢迎")
 
 
 # ==================== 群成员入群事件 ==

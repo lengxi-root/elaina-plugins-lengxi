@@ -9,12 +9,13 @@ import random
 import time
 import weakref
 from collections import deque
+from html import unescape
 
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.decorators import handler, on_load, on_unload
 from core.plugin.web_pages import register_page, unregister_page
 
-from .services import affinity, central, config, learning, proactive, safety
+from .services import affinity, central, config, learning, proactive, safety, vision
 from .storage import repository as store
 from .web import routes as webpanel
 
@@ -22,7 +23,7 @@ __plugin_meta__ = {
     "name": "AI 聊天陪伴",
     "author": "ElainaBot",
     "description": "支持多人格、人物集、中央 LLM、情境化语音、风格学习、好感度与主动消息的 Web 面板",
-    "version": "2.3.0",
+    "version": "2.3.1",
     "github": "https://github.com/lengxi-plugins/elaina",
     "license": "MIT",
 }
@@ -50,6 +51,85 @@ _ICON = (
     '<path d="M8 9h.01M12 9h.01M16 9h.01"/></svg>'
 )
 _CONTEXT_COMPRESSION_RESERVE = 16384
+
+
+def _event_image_urls(event) -> list[str]:
+    """提取当前消息中的图片地址，供支持视觉输入的模型使用。"""
+    urls: list[str] = []
+    primary = str(getattr(event, "image_url", "") or "").strip()
+    if primary:
+        urls.append(primary)
+    def collect(message, depth=0):
+        if not isinstance(message, dict) or depth > 6:
+            return
+        attachments = message.get("attachments")
+        for attachment in attachments if isinstance(attachments, list) else []:
+            if not isinstance(attachment, dict):
+                continue
+            content_type = str(attachment.get("content_type") or "").casefold()
+            url = str(attachment.get("url") or "").strip()
+            if content_type.startswith("image/") and url:
+                urls.append(url)
+        for key in ("msg_elements", "msg_nodes"):
+            items = message.get(key)
+            for item in items if isinstance(items, list) else []:
+                collect(item, depth + 1)
+        collect(message.get("parallel_message"), depth + 1)
+
+    collect({
+        "attachments": getattr(event, "attachments", []),
+        "msg_elements": getattr(event, "msg_elements", []),
+        "parallel_message": getattr(event, "parallel_message", {}),
+    })
+    return list(dict.fromkeys(unescape(url) for url in urls))[:8]
+
+
+def _event_text(event) -> str:
+    """返回不带平台图片标记的可读文本；纯图片消息使用明确的占位语句。"""
+    text = str(getattr(event, "content", "") or "").strip()
+    image_urls = _event_image_urls(event)
+    for url in image_urls:
+        text = text.replace(f"<{url}>", "")
+        text = text.replace(f"<{url.replace('&', '&amp;')}>", "")
+    text = text.strip()
+    return text or ("请看看这张图片。" if image_urls else "")
+
+
+def _messages_with_images(
+    history: list[dict], text: str, event, image_inputs: list[str] | None = None
+) -> list[dict]:
+    """仅为本轮请求附加图片，避免把临时 URL 持久化到聊天历史。"""
+    image_urls = _event_image_urls(event)
+    if not image_urls:
+        return history
+    messages = [dict(item) for item in history]
+    latest_user = next(
+        (item for item in reversed(messages) if item.get("role") == "user"), None
+    )
+    if latest_user is None:
+        latest_user = {"role": "user", "content": text}
+        messages.append(latest_user)
+    raw_content = latest_user.get("content")
+    if isinstance(raw_content, list):
+        content = " ".join(
+            str(part.get("text") or "").strip()
+            for part in raw_content
+            if isinstance(part, dict) and part.get("type") == "text"
+        ).strip()
+    else:
+        content = str(raw_content or "").strip()
+    for url in image_urls:
+        content = content.replace(f"<{url}>", "")
+    content = content.strip()
+    content = content or text or "请看看这张图片。"
+    latest_user["content"] = [
+        {"type": "text", "text": content},
+        *(
+            {"type": "image_url", "image_url": {"url": url}}
+            for url in (image_inputs if image_inputs is not None else image_urls)
+        ),
+    ]
+    return messages
 
 
 def _estimate_tokens(text: str) -> int:
@@ -282,6 +362,8 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
         message_id = await asyncio.to_thread(store.append, scope, "user", text)
         try:
             history, context_summary = await _context_for_reply(scope, text, current)
+            image_inputs = await vision.download_images(_event_image_urls(event))
+            request_messages = _messages_with_images(history, text, event, image_inputs)
             humanize_block = await _humanize_block(event, current, personality)
             memory_text = await _memory_text(event, current)
             media_context = {
@@ -295,7 +377,7 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
                 reply = await central.complete(
                     current,
                     personality,
-                    history,
+                    request_messages,
                     memory_text,
                     media_context=media_context,
                     context_summary=context_summary,
@@ -308,10 +390,11 @@ async def reply_for_event(event, text: str, current: dict | None = None) -> str:
                 history, context_summary = await _compress_and_retry(
                     scope, text, current, history, context_summary
                 )
+                request_messages = _messages_with_images(history, text, event, image_inputs)
                 reply = await central.complete(
                     current,
                     personality,
-                    history,
+                    request_messages,
                     memory_text,
                     media_context=media_context,
                     context_summary=context_summary,
@@ -685,7 +768,7 @@ async def voice_command(event, match) -> None:
 
 
 @handler(
-    r"(?s)^(.+)$",
+    r"(?s)^(.*)$",
     name="AI 自然对话",
     desc="使用当前人格和接口回复群聊/私聊",
     priority=-50,
@@ -700,7 +783,7 @@ async def chat_message(event, _match) -> None:
         return
     if getattr(event, "is_bot", False):
         return
-    text = str(event.content or "").strip()
+    text = _event_text(event)
     if not text or text.startswith("/"):
         return
     now = time.monotonic()

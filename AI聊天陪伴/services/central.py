@@ -36,6 +36,19 @@ _CONTEXT_ERROR_MARKERS = (
 )
 
 
+def _message_text(content) -> str:
+    """从纯文本或 OpenAI 多模态 content 中提取可用于提示词的文本。"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(
+            str(part.get("text") or "").strip()
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text" and part.get("text")
+        ).strip()
+    return str(content or "")
+
+
 def is_context_overflow_error(error: BaseException) -> bool:
     """识别不同 OpenAI 兼容服务对真实上下文窗口溢出的报错。"""
     text = str(error or "").casefold()
@@ -892,7 +905,7 @@ async def complete(
 
     latest_text = next(
         (
-            str(item.get("content") or "")
+            _message_text(item.get("content"))
             for item in reversed(messages)
             if item.get("role") == "user"
         ),
