@@ -4,7 +4,7 @@ __plugin_meta__ = {
     "name": "音乐点歌",
     "author": "lengxi",
     "description": "QQ音乐搜索与播放",
-    "version": "1.0.3",
+    "version": "1.0.4",
 }
 
 
@@ -46,7 +46,14 @@ async def _api(params: str):
     c = await _http()
     resp = await c.get(f"{_API}?{params}")
     body = resp.json()
-    return (body or {}).get("data")
+    data = (body or {}).get("data")
+    if isinstance(data, dict):
+        for key in ("songs", "list", "results", "data"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+        return [data] if "song" in data else []
+    return data if isinstance(data, list) else []
 
 
 def _cache_key(event):
