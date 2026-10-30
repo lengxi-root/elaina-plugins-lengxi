@@ -46,14 +46,18 @@ async def _api(params: str):
     c = await _http()
     resp = await c.get(f"{_API}?{params}")
     body = resp.json()
-    data = (body or {}).get("data")
+    return body.get("data") if isinstance(body, dict) else None
+
+
+def _search_songs(data):
+    """将搜索响应统一为歌曲字典列表，不改变播放响应。"""
     if isinstance(data, dict):
         for key in ("songs", "list", "results", "data"):
             value = data.get(key)
             if isinstance(value, list):
-                return value
+                return [song for song in value if isinstance(song, dict)]
         return [data] if "song" in data else []
-    return data if isinstance(data, list) else []
+    return [song for song in data if isinstance(song, dict)] if isinstance(data, list) else []
 
 
 def _cache_key(event):
@@ -91,7 +95,7 @@ async def search_music(event, match):
         return await event.reply(f"<@{uid}> 点歌 请输入要搜索的歌曲名")
 
     try:
-        songs = await _api(f"msg={urllib.parse.quote(keyword)}")
+        songs = _search_songs(await _api(f"msg={urllib.parse.quote(keyword)}"))
     except Exception:
         return await event.reply(f"<@{uid}> 网络请求超时，请稍后重试", buttons=_BTN)
 
@@ -133,7 +137,9 @@ async def play_music(event, match):
     except Exception:
         return await event.reply(f"<@{uid}> 网络请求超时，请稍后重试", buttons=_BTN)
 
-    music_url = (data or {}).get("music")
+    if isinstance(data, list):
+        data = next((song for song in data if isinstance(song, dict) and song.get("music")), None)
+    music_url = data.get("music") if isinstance(data, dict) else None
     if not music_url:
         return await event.reply(
             f"<@{uid}> 未获取到歌曲链接，请换一首歌尝试吧！", buttons=_BTN
