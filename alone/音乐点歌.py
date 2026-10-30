@@ -164,7 +164,7 @@ async def search_music(event, match):
     for start in range(0, len(lines), 10):
         await event.reply(
             f"<@{uid}>点歌结果（共{len(songs)}首）\n\n"
-            + "\n".join(lines[start:start + 10]) + "\n发送 听序号 播放，结果10分钟内有效",
+            + "\n".join(lines[start:start + 10]),
             buttons=_BTN,
         )
     _cache_put(key, {"keyword": keyword, "songs": songs})
