@@ -282,15 +282,23 @@ def parse_page(url: str, lastmod: str, html: str) -> PageSnapshot:
 def compare_page(old: dict, snapshot: PageSnapshot) -> PageChange | None:
     current = snapshot.to_dict()
     text_changed = old.get("digest") != current["digest"]
+    # 图片 src 常随站点发布更换 CDN 版本号或文件哈希，不参与通知比较和差异展示。
+    # 快照仍保存原始资源；普通链接和图片说明（img-alt）继续参与比较。
+    before_resources = [
+        resource for resource in old.get("resources", []) if not resource.startswith("img:")
+    ]
+    after_resources = [
+        resource for resource in snapshot.resources if not resource.startswith("img:")
+    ]
     # 旧快照没有资源列表；第一次补齐，不将提取器升级误判为链接更新。
-    resources_changed = "resources" in old and old["resources"] != current["resources"]
+    resources_changed = "resources" in old and before_resources != after_resources
     if not text_changed and not resources_changed:
         return None
     before = f"{old.get('title', '')}\n{old.get('content', '')}"
     after = f"{snapshot.title}\n{snapshot.content}"
     if resources_changed:
-        before += "\n链接与图片：\n" + "\n".join(old["resources"])
-        after += "\n链接与图片：\n" + "\n".join(snapshot.resources)
+        before += "\n链接与图片说明：\n" + "\n".join(before_resources)
+        after += "\n链接与图片说明：\n" + "\n".join(after_resources)
     return PageChange("modified", snapshot.url, snapshot.title, before, after)
 
 

@@ -24,7 +24,7 @@ __plugin_meta__ = {
     "name": "群管 (groupguard)",
     "author": "冷曦",
     "description": "全功能群管理: 入群验证/违禁词/防撤回/刷屏检测/问答/黑白名单/名片锁定/活跃统计, 支持 Web 面板配置",
-    "version": "1.0.3",
+    "version": "1.0.4",
 }
 
 log = get_logger(PLUGIN, "groupguard")
@@ -247,6 +247,26 @@ async def on_group_request(event, match):
         await call_api(
             "set_group_add_request", {"flag": flag, "sub_type": "add", "approve": True}
         )
+
+    # 部分渠道 (机器人被拉进群) 同意后不补发 group_increase 通知, 验证会被跳过。
+    # 登记兜底任务: 若稍后收到通知会主动接管并取消它, 否则按申请信息发起验证。
+    await _arm_verify_after_approve(
+        str(event.self_id or ""), group_id, user_id, comment, settings
+    )
+
+
+async def _arm_verify_after_approve(self_id, group_id, user_id, comment, settings):
+    if not settings.get("enableVerify"):
+        return
+    if settings.get("skipBotVerify") and verify.is_bot_qq(user_id):
+        return
+    tpl = settings.get("welcomeMessage")
+    if tpl is None or tpl == "":
+        tpl = store.config().get("welcomeMessage") or ""
+    welcome_text = (
+        tpl.replace("{user}", user_id).replace("{group}", group_id) if tpl else ""
+    )
+    verify.arm_verify_on_approve(self_id, group_id, user_id, comment, welcome_text)
 
 
 @handler(

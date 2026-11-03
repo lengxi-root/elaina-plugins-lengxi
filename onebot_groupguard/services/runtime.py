@@ -7,6 +7,9 @@ class RuntimeState:
     def __init__(self):
         self.sessions: dict = {}
         self.pending_comments: dict = {}
+        # 入群申请同意后登记的验证兜底任务: key -> Task。
+        # 若随后正常收到入群通知会取消它, 只在通知缺失时才真正发起验证。
+        self.pending_verifies: dict = {}
         self.msg_cache: dict = {}
         self.spam_cache: dict = {}
         self.last_cache_cleanup = 0

@@ -21,7 +21,7 @@ __plugin_meta__ = {
     "name": "QQ 官方文档更新监控",
     "author": "ElainaBot",
     "description": "全量监控 QQ 官方文档，以页面链接与差异图片通知主人及订阅群，优先共享 PIL 渲染",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "homepage": "https://bot.q.qq.com/wiki/",
     "license": "MIT",
 }

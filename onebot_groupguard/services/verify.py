@@ -92,6 +92,10 @@ def create_verify_session(
 ) -> None:
     rt = get_runtime()
     key = _session_key(self_id, group_id, user_id)
+    # 已由入群通知正常发起验证, 撤销申请阶段的兜底任务, 避免重复发题。
+    pending = rt.pending_verifies.pop(key, None)
+    if pending and not pending.done():
+        pending.cancel()
     existing = rt.sessions.get(key)
     if existing and existing.get("task"):
         existing["task"].cancel()
@@ -145,6 +149,62 @@ def create_verify_session(
             self_id=self_id,
         )
     )
+
+
+# 部分渠道 (尤其是机器人被同意入群) 只发入群申请、不补发 group_increase 通知,
+# 导致验证只能靠通知触发时永远不开始。这里在同意申请后延迟兜底: 若期内没有
+# 收到入群通知 (即没有主动创建会话), 就按申请信息直接发起验证。
+_VERIFY_FALLBACK_DELAY = 10.0
+
+
+async def _verify_fallback(
+    self_id, group_id, user_id, comment: str, welcome_text: str, delay: float
+):
+    try:
+        await asyncio.sleep(delay)
+    except asyncio.CancelledError:
+        return
+    rt = get_runtime()
+    key = _session_key(self_id, group_id, user_id)
+    if rt.pending_verifies.get(key) is not asyncio.current_task():
+        return
+    rt.pending_verifies.pop(key, None)
+    if key in rt.sessions:
+        return
+    # 能拿到成员信息且明确显示目标已在群时照常验证; 查询失败 (None/异常) 不阻断,
+    # 因为宿主对刚入群的机器人常常也查不到成员, 正是本兜底要覆盖的情况。
+    info = await call_api(
+        "get_group_member_info",
+        {"group_id": int(group_id), "user_id": int(user_id), "no_cache": True},
+        self_id=self_id,
+    )
+    if isinstance(info, dict) and info.get("user_id") not in (None, "", 0, "0"):
+        if str(info.get("user_id")) != str(user_id):
+            log.info(
+                f"用户 {user_id}@{group_id} 同意申请后不在群, 跳过兜底入群验证"
+            )
+            return
+    log.info(
+        f"用户 {user_id}@{group_id} 同意入群后未收到进群通知, 兜底发起验证"
+    )
+    create_verify_session(self_id, group_id, user_id, comment, welcome_text)
+
+
+def arm_verify_on_approve(
+    self_id, group_id, user_id, comment: str = "", welcome_text: str = ""
+) -> None:
+    """同意入群申请后登记兜底验证任务, 等入群通知优先接管。"""
+    rt = get_runtime()
+    key = _session_key(self_id, group_id, user_id)
+    existing = rt.pending_verifies.pop(key, None)
+    if existing and not existing.done():
+        existing.cancel()
+    task = asyncio.create_task(
+        _verify_fallback(
+            self_id, group_id, user_id, comment, welcome_text, _VERIFY_FALLBACK_DELAY
+        )
+    )
+    rt.pending_verifies[key] = task
 
 
 async def handle_verify_answer(
@@ -228,7 +288,11 @@ async def handle_verify_answer(
 def cancel_session(self_id, group_id, user_id) -> None:
     """静默取消验证会话 (成员退群/被踢时调用, 避免超时任务误发提示)."""
     rt = get_runtime()
-    session = rt.sessions.pop(_session_key(self_id, group_id, user_id), None)
+    key = _session_key(self_id, group_id, user_id)
+    pending = rt.pending_verifies.pop(key, None)
+    if pending and not pending.done():
+        pending.cancel()
+    session = rt.sessions.pop(key, None)
     if session and session.get("task"):
         session["task"].cancel()
 
@@ -237,6 +301,9 @@ def skip_verify_session(self_id, group_id, user_id) -> bool:
     """管理员主动跳过某用户的入群验证, 返回该用户是否处于验证中。"""
     rt = get_runtime()
     key = _session_key(self_id, group_id, user_id)
+    pending = rt.pending_verifies.pop(key, None)
+    if pending and not pending.done():
+        pending.cancel()
     session = rt.sessions.get(key)
     if not session:
         return False
@@ -250,6 +317,11 @@ def skip_verify_session(self_id, group_id, user_id) -> bool:
 async def clear_all_sessions() -> None:
     rt = get_runtime()
     pending = []
+    for task in rt.pending_verifies.values():
+        if task and not task.done():
+            task.cancel()
+            pending.append(task)
+    rt.pending_verifies.clear()
     for session in rt.sessions.values():
         task = session.get("task")
         if task and not task.done():
