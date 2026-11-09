@@ -4,11 +4,13 @@ __plugin_meta__ = {
     "name": "音乐点歌",
     "author": "lengxi",
     "description": "QQ音乐搜索与播放",
-    "version": "1.1.0",
+    "version": "1.1.1",
 }
 
 
+import asyncio
 import logging
+import math
 import time
 import urllib.parse
 from collections import OrderedDict
@@ -17,6 +19,11 @@ from core.network.http_compat import AsyncHttpClient
 from core.plugin.decorators import handler, on_unload
 
 _API = "https://a.aa.cab/qq.music"
+_API_INTERVAL = 0.25  # 接口要求相邻请求至少间隔 200ms，额外预留 50ms。
+_API_ATTEMPTS = 3
+_API_MAX_WAIT = 5.0
+_api_lock = asyncio.Lock()
+_api_next_request_at = 0.0
 _BTN = [[{"text": "再点一首", "data": "点歌", "enter": False, "style": 1}]]
 _STRIP_TBL = str.maketrans("", "", "\"'<>&*_~`[](){}\\/:")
 
@@ -48,23 +55,78 @@ class MusicAPIError(ValueError):
     """接口拒绝请求或返回了无法解析的响应。"""
 
 
+class MusicAPIRateLimitError(MusicAPIError):
+    """接口限流，等待重试后仍未恢复。"""
+
+
+def _retry_delay(body, resp, attempt):
+    delay = 0.5 * 2 ** attempt
+    data = body.get("data")
+    if not isinstance(data, dict):
+        data = {}
+    for value, scale in (
+        (data.get("retry_after_ms"), 0.001),
+        (data.get("min_interval_ms"), 0.001),
+        (resp.headers.get("Retry-After"), 1.0),
+    ):
+        try:
+            seconds = float(value) * scale
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if math.isfinite(seconds) and seconds >= 0:
+            delay = max(delay, seconds + 0.05)
+    return delay
+
+
 async def _api(**params):
     """保留接口原始 data 结构，由搜索和播放分别解析。"""
+    global _api_next_request_at
     c = await _http()
-    resp = await c.get(f"{_API}?{urllib.parse.urlencode(params)}")
-    if not 200 <= resp.status_code < 300:
-        raise MusicAPIError(f"HTTP {resp.status_code}")
-    try:
-        body = resp.json()
-    except (ValueError, UnicodeError) as exc:
-        raise MusicAPIError("接口返回的不是有效 JSON") from exc
-    if not isinstance(body, dict):
-        raise MusicAPIError("接口响应应为对象")
-    if body.get("code") not in (0, "0", 200, "200"):
-        raise MusicAPIError("接口返回失败状态")
-    if "data" not in body:
-        raise MusicAPIError("接口缺少 data 字段")
-    return body["data"]
+    url = f"{_API}?{urllib.parse.urlencode(params)}"
+    # 所有用户的搜索、播放和回退共用限流，避免并发请求互相触发限制。
+    async with _api_lock:
+        for attempt in range(_API_ATTEMPTS):
+            delay = _api_next_request_at - time.monotonic()
+            if delay > _API_MAX_WAIT:
+                raise MusicAPIRateLimitError("接口仍处于限流等待期，请稍后重试")
+            if delay > 0:
+                await asyncio.sleep(delay)
+            try:
+                resp = await c.get(url)
+            finally:
+                _api_next_request_at = time.monotonic() + _API_INTERVAL
+            if resp.status_code != 429 and not 200 <= resp.status_code < 300:
+                raise MusicAPIError(f"HTTP {resp.status_code}")
+            try:
+                body = resp.json()
+            except (ValueError, UnicodeError) as exc:
+                if resp.status_code != 429:
+                    raise MusicAPIError("接口返回的不是有效 JSON") from exc
+                body = {}
+            if not isinstance(body, dict):
+                if resp.status_code != 429:
+                    raise MusicAPIError("接口响应应为对象")
+                body = {}
+            code = body.get("code")
+            message = str(body.get("msg") or body.get("message") or "")[:200]
+            data = body.get("data")
+            success = code in (0, "0", 200, "200")
+            retry_data = isinstance(data, dict) and "retry_after_ms" in data
+            limited = resp.status_code == 429 or (
+                not success and (retry_data or "请求过于频繁" in message)
+            )
+            detail = f"HTTP {resp.status_code}, code={code!r}, msg={message!r}"
+            if limited:
+                delay = _retry_delay(body, resp, attempt)
+                _api_next_request_at = time.monotonic() + delay
+                if attempt == _API_ATTEMPTS - 1 or delay > _API_MAX_WAIT:
+                    raise MusicAPIRateLimitError(f"接口限流: {detail}")
+                continue
+            if not success:
+                raise MusicAPIError(f"接口返回失败状态: {detail}")
+            if "data" not in body:
+                raise MusicAPIError("接口缺少 data 字段")
+            return body["data"]
 
 
 def _song_records(data):
@@ -146,8 +208,11 @@ async def search_music(event, match):
         if not isinstance(data, (dict, list)):
             raise MusicAPIError("搜索数据格式错误")
         songs = [song for song in _song_records(data) if isinstance(song.get("song"), str) and song["song"].strip()]
-    except MusicAPIError:
-        _log.warning("点歌接口响应异常", exc_info=True)
+    except MusicAPIRateLimitError as exc:
+        _log.warning("点歌接口限流: %s", exc)
+        return await event.reply(f"<@{uid}> 音乐接口请求过于频繁，请稍后重试", buttons=_BTN)
+    except MusicAPIError as exc:
+        _log.warning("点歌接口响应异常: %s", exc)
         return await event.reply(f"<@{uid}> 音乐接口暂时不可用，请稍后重试", buttons=_BTN)
     except Exception:
         _log.warning("点歌请求失败", exc_info=True)
@@ -189,6 +254,8 @@ async def play_music(event, match):
     try:
         try:
             data = await _api(**params)
+        except MusicAPIRateLimitError:
+            raise
         except MusicAPIError:
             if "mid" not in params:
                 raise
@@ -197,8 +264,11 @@ async def play_music(event, match):
         if not music_url and "mid" in params:
             data = await _api(msg=info["keyword"], n=selected.get("num", idx))
             music_url = _music_url(data, selected)
-    except MusicAPIError:
-        _log.warning("听歌接口响应异常", exc_info=True)
+    except MusicAPIRateLimitError as exc:
+        _log.warning("听歌接口限流: %s", exc)
+        return await event.reply(f"<@{uid}> 音乐接口请求过于频繁，请稍后重试", buttons=_BTN)
+    except MusicAPIError as exc:
+        _log.warning("听歌接口响应异常: %s", exc)
         return await event.reply(f"<@{uid}> 音乐接口暂时不可用，请稍后重试", buttons=_BTN)
     except Exception:
         _log.warning("听歌请求失败", exc_info=True)
