@@ -14,6 +14,7 @@ class RuntimeState:
         self.spam_cache: dict = {}
         self.last_cache_cleanup = 0
         self.save_task = None
+        self.invite_job: dict | None = None
         self.background_tasks: set[asyncio.Task] = set()
 
 

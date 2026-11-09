@@ -219,6 +219,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <span class="nav-label">活跃统计</span>
       </div>
+      <div class="nav-item" data-page="invites" onclick="go('invites')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M20 8v6M17 11h6"/></svg>
+        <span class="nav-label">批量邀请</span>
+      </div>
       <div class="nav-item" data-page="sessions" onclick="go('sessions')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         <span class="nav-label">验证状态</span>
@@ -462,6 +466,42 @@
         </div>
       </div>
 
+      <!-- ========== 批量邀请 ========== -->
+      <div class="page" id="page-invites">
+        <div class="card">
+          <div class="card-title">跨群批量邀请 <span class="card-sub">将列表中的来源群成员邀请到目标群</span></div>
+          <div class="field">
+            <label for="inviteBot">执行邀请的机器人</label>
+            <div class="bar">
+              <select id="inviteBot" style="flex:1;min-width:160px" onchange="loadInviteGroups()"><option value="">加载账号中...</option></select>
+              <button class="btn btn-sm" id="inviteRefresh" onclick="loadInvitePanel()">刷新账号和群列表</button>
+            </div>
+            <div class="hint">机器人需同时在两个群中，且目标群允许其邀请成员。</div>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label for="inviteSource">来源群</label><select id="inviteSource"><option value="">请选择来源群</option></select></div>
+            <div class="field"><label for="inviteTarget">目标群</label><select id="inviteTarget"><option value="">请选择目标群</option></select></div>
+          </div>
+          <div class="field">
+            <label for="inviteUsers">QQ 列表（每行一个 QQ 号）</label>
+            <textarea id="inviteUsers" rows="9" placeholder="123456789&#10;234567890&#10;345678901" spellcheck="false"></textarea>
+            <div class="hint">每次最多 200 人，自动忽略空行和重复号码；跳过不在来源群及已在目标群的用户。每次邀请间隔 2 秒。</div>
+          </div>
+          <div class="bar">
+            <button class="btn btn-pri" id="inviteStart" onclick="doInvite()" disabled>开始邀请</button>
+            <span class="muted">邀请提交后，实际入群可能仍需对方同意或群管理员审批。</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">执行结果</div>
+          <p id="inviteProgress" role="status" aria-live="polite">暂无邀请任务</p>
+          <p id="inviteSummary" class="muted" style="margin:6px 0 12px"></p>
+          <div class="tbl-wrap">
+            <table><thead><tr><th>QQ 号</th><th>状态</th><th>说明</th></tr></thead><tbody id="inviteResults"><tr><td colspan="3" class="muted">执行后显示逐人结果</td></tr></tbody></table>
+          </div>
+        </div>
+      </div>
+
       <!-- ========== 验证状态 ========== -->
       <div class="page" id="page-sessions">
         <div class="card">
@@ -568,7 +608,7 @@ function fromLines(v){ return (v||'').split('\n').map(s=>s.trim()).filter(Boolea
 function fromCsv(v){ return (v||'').replace(/，/g,',').split(',').map(s=>s.trim()).filter(Boolean); }
 
 let C={}, GL=[], editMode='', logD=[], logFlt='all', logTmr=null;
-const PAGE_TITLES={dashboard:'仪表盘',global:'群管设置',assistant:'主人助手',activity:'活跃统计',sessions:'验证状态',logs:'调试日志'};
+const PAGE_TITLES={dashboard:'仪表盘',global:'群管设置',assistant:'主人助手',activity:'活跃统计',invites:'批量邀请',sessions:'验证状态',logs:'调试日志'};
 
 function openNav(){ $('eb-sidebar').classList.add('open'); $('eb-overlay').classList.add('show'); }
 function closeNav(){ $('eb-sidebar').classList.remove('open'); $('eb-overlay').classList.remove('show'); }
@@ -582,6 +622,7 @@ function go(page){
   if(page==='global') popGrpSel();
   if(page==='assistant') loadBlMgr();
   if(page==='activity'){ popActSel(); loadAct(); }
+  if(page==='invites') loadInvitePanel(); else stopInvitePolling();
   if(page==='sessions') loadSess();
   if(page==='logs'){ sck('l-db',C.debug); loadLogs(); startLR(); } else stopLR();
 }
@@ -798,6 +839,95 @@ async function loadSess(){
     }).join('');
   }catch(e){ c.innerHTML='<p class="muted">获取失败</p>'; }
 }
+
+// ── batch invites ──
+let inviteJob=null, inviteTimer=null, inviteLoading=false, invitePosting=false, inviteGroupsReady=false;
+function inviteControls(){
+  const busy=inviteLoading||invitePosting||inviteJob?.status==='running';
+  ['inviteBot','inviteSource','inviteTarget','inviteUsers','inviteRefresh'].forEach(id=>$(id).disabled=busy);
+  $('inviteStart').disabled=busy||!inviteGroupsReady;
+}
+function stopInvitePolling(){ if(inviteTimer){ clearInterval(inviteTimer); inviteTimer=null; } }
+function startInvitePolling(){
+  if(!inviteTimer&&$('page-invites').classList.contains('on')) inviteTimer=setInterval(loadInviteStatus,2000);
+}
+function renderInviteJob(){
+  const j=inviteJob;
+  if(!j){ $('inviteProgress').textContent='暂无邀请任务'; return; }
+  const rows=j.results||[], labels={running:'进行中',completed:'已完成',failed:'任务失败',cancelled:'已停止'};
+  $('inviteProgress').textContent=`${labels[j.status]||j.status} · 已处理 ${rows.length}/${j.total} 人 · ${j.message||''}`;
+  $('inviteSummary').textContent=`机器人 ${j.self_id} · 来源群 ${j.source_group_id} → 目标群 ${j.target_group_id} · 邀请已提交 ${rows.filter(r=>r.status==='submitted').length} 人 · 跳过 ${rows.filter(r=>r.status==='skipped').length} 人 · 失败 ${rows.filter(r=>r.status==='failed').length} 人 · 重复号码 ${j.duplicates||0} 个`;
+  const statusLabels={submitted:'邀请已提交',skipped:'已跳过',failed:'失败'};
+  $('inviteResults').innerHTML=rows.length?rows.map(r=>`<tr><td>${esc(r.user_id)}</td><td>${esc(statusLabels[r.status]||r.status)}</td><td>${esc(r.message)}</td></tr>`).join(''):'<tr><td colspan="3" class="muted">尚无逐人结果</td></tr>';
+}
+async function loadInviteStatus(){
+  try{
+    const d=await af('/invites');
+    if(!d.success) throw new Error(d.error||'获取邀请任务失败');
+    inviteJob=d.job||null;
+    renderInviteJob(); inviteControls();
+    if(inviteJob?.status==='running') startInvitePolling(); else stopInvitePolling();
+    return true;
+  }catch(e){ $('inviteProgress').textContent='获取邀请进度失败，请刷新；已启动的后台任务会继续执行。'; return false; }
+}
+async function loadInvitePanel(){
+  if(inviteLoading||invitePosting) return;
+  inviteLoading=true; inviteControls();
+  try{
+    if(!await loadInviteStatus()) throw new Error('获取邀请任务失败');
+    const d=await af('/invites/bots');
+    if(!d.success) throw new Error(d.error||'获取机器人账号失败');
+    const bots=(d.bots||[]).filter(b=>b.connected!==false);
+    const preferred=inviteJob?.status==='running'?inviteJob.self_id:($('inviteBot').value||localStorage.getItem('elainaqq_bot')||'');
+    $('inviteBot').replaceChildren();
+    if(!bots.length) $('inviteBot').add(new Option('暂无在线机器人',''));
+    bots.forEach(b=>{ const id=String(b.self_id||b.bot_qq||b.qq); $('inviteBot').add(new Option(`${b.name||id} (${id})`,id)); });
+    if(bots.some(b=>String(b.self_id||b.bot_qq||b.qq)===preferred)) $('inviteBot').value=preferred;
+    await fetchInviteGroups();
+  }catch(e){ inviteGroupsReady=false; toast(e.message||'加载邀请面板失败',true); }
+  finally{ inviteLoading=false; inviteControls(); }
+}
+async function fetchInviteGroups(){
+  const selfId=$('inviteBot').value;
+  inviteGroupsReady=false;
+  const sameJob=inviteJob?.self_id===selfId;
+  const source=sameJob?inviteJob.source_group_id:$('inviteSource').value;
+  const target=sameJob?inviteJob.target_group_id:$('inviteTarget').value;
+  $('inviteSource').replaceChildren(new Option('请选择来源群',''));
+  $('inviteTarget').replaceChildren(new Option('请选择目标群',''));
+  if(!selfId) return;
+  const d=await af('/invites/groups?self_id='+encodeURIComponent(selfId));
+  if(!d.success) throw new Error(d.error||'获取群列表失败');
+  (d.groups||[]).forEach(g=>{
+    const id=String(g.group_id), label=`${g.group_name||id} (${id})`;
+    $('inviteSource').add(new Option(label,id)); $('inviteTarget').add(new Option(label,id));
+  });
+  $('inviteSource').value=source; $('inviteTarget').value=target;
+  inviteGroupsReady=true;
+}
+async function loadInviteGroups(){
+  if(inviteLoading||invitePosting) return;
+  inviteLoading=true; inviteControls();
+  try{ await fetchInviteGroups(); }catch(e){ toast(e.message||'获取群列表失败',true); }
+  finally{ inviteLoading=false; inviteControls(); }
+}
+async function doInvite(){
+  if(invitePosting||inviteLoading||inviteJob?.status==='running') return;
+  const body={self_id:$('inviteBot').value,source_group_id:$('inviteSource').value,target_group_id:$('inviteTarget').value,users:$('inviteUsers').value};
+  if(!body.self_id||!body.source_group_id||!body.target_group_id){ toast('请选择机器人、来源群和目标群',true); return; }
+  if(body.source_group_id===body.target_group_id){ toast('来源群和目标群不能相同',true); return; }
+  if(!body.users.trim()){ toast('请输入 QQ 列表，每行一个 QQ 号',true); return; }
+  invitePosting=true; inviteControls();
+  try{
+    const d=await af('/invites','POST',body);
+    if(!d.success) throw new Error(d.error||'启动邀请任务失败');
+    inviteJob=d.job; renderInviteJob(); startInvitePolling(); toast('批量邀请任务已启动');
+  }catch(e){
+    toast(e.message||'请求失败，请先刷新任务进度',true);
+    if(!await loadInviteStatus()) inviteGroupsReady=false;
+  }finally{ invitePosting=false; inviteControls(); }
+}
+window.addEventListener('pagehide',stopInvitePolling);
 
 // ── logs ──
 async function loadLogs(){ try{ const d=await af('/logs'); if(d.success){ logD=d.logs||[]; rndLogs(); } }catch(e){ $('logC').innerHTML='<p style="color:var(--danger)">获取失败</p>'; } }

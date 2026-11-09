@@ -23,8 +23,8 @@ from .web import routes as webpanel
 __plugin_meta__ = {
     "name": "群管 (groupguard)",
     "author": "冷曦",
-    "description": "全功能群管理: 入群验证/违禁词/防撤回/刷屏检测/问答/黑白名单/名片锁定/活跃统计, 支持 Web 面板配置",
-    "version": "1.0.4",
+    "description": "全功能群管理: 入群验证/违禁词/防撤回/刷屏检测/问答/黑白名单/名片锁定/活跃统计/跨群批量邀请, 支持 Web 面板配置",
+    "version": "1.0.5",
 }
 
 log = get_logger(PLUGIN, "groupguard")

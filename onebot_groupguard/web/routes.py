@@ -1,9 +1,9 @@
 """Web 面板路由: /api/ext/groupguard/* (config/groups/sessions/activity/logs/presets)。"""
 
 from aiohttp import web
-from core.plugins import PLUGIN, get_logger, register_route
+from core.plugins import PLUGIN, get_api, get_logger, register_route
 
-from ..services import logbuf
+from ..services import invites, logbuf
 from ..services.runtime import get_runtime
 from ..services.utils import call_api
 from ..storage import repository as store
@@ -23,6 +23,10 @@ def register_routes():
     register_route("POST", _PREFIX + "/logs/clear", _clear_logs)
     register_route("GET", _PREFIX + "/presets", _get_presets)
     register_route("POST", _PREFIX + "/presets", _save_preset)
+    register_route("GET", _PREFIX + "/invites/bots", _invite_bots)
+    register_route("GET", _PREFIX + "/invites/groups", _invite_groups, timeout=45)
+    register_route("GET", _PREFIX + "/invites", _get_invites)
+    register_route("POST", _PREFIX + "/invites", _start_invites)
     log.info("群管面板路由已注册: /api/ext/groupguard/*")
 
 
@@ -31,6 +35,42 @@ async def _json(request: web.Request) -> dict:
         return await request.json()
     except Exception:  # noqa: BLE001
         return {}
+
+
+async def _invite_bots(request: web.Request):
+    return web.json_response({"success": True, "bots": get_api().bot_accounts()})
+
+
+async def _invite_groups(request: web.Request):
+    try:
+        self_id = invites.identity(request.query.get("self_id"), "机器人账号")
+        groups = await invites.list_groups(self_id)
+        return web.json_response({"success": True, "groups": groups})
+    except ValueError as exc:
+        return web.json_response({"success": False, "error": str(exc)}, status=400)
+    except Exception as exc:  # noqa: BLE001
+        return web.json_response({"success": False, "error": str(exc)}, status=502)
+
+
+async def _get_invites(request: web.Request):
+    return web.json_response(
+        {"success": True, "job": getattr(get_runtime(), "invite_job", None)}
+    )
+
+
+async def _start_invites(request: web.Request):
+    try:
+        if request.content_length is not None and request.content_length > 64 * 1024:
+            raise ValueError("QQ 列表不能超过 64 KB")
+        body = await _json(request)
+        if not isinstance(body, dict):
+            raise ValueError("请求体必须是 JSON 对象")
+        job = invites.start_invites(body)
+        return web.json_response({"success": True, "job": job}, status=202)
+    except ValueError as exc:
+        return web.json_response({"success": False, "error": str(exc)}, status=400)
+    except RuntimeError as exc:
+        return web.json_response({"success": False, "error": str(exc)}, status=409)
 
 
 async def _get_config(request: web.Request):
