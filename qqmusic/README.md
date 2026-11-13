@@ -1,6 +1,6 @@
 # 音乐点歌
 
-作者：ElainaBot、24801816。
+作者：冷曦、24801816。
 
 将整个 `qqmusic/` 目录放入 ElainaBot v2 的 `plugins/` 下并热重载。依赖框架已有的 `aiohttp`，语音转 SILK 由框架负责。默认 MP3 128kbps（`default_quality: 8`），已有配置值优先。
 
