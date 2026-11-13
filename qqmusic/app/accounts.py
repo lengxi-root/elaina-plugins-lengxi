@@ -10,7 +10,13 @@ import os
 import time
 from pathlib import Path
 
-from .client import QQMusicAPIError, QQMusicError, QQMusicService, _as_int
+from .client import (
+    QQMusicAPIError,
+    QQMusicError,
+    QQMusicService,
+    _as_int,
+    is_rate_limited,
+)
 
 AUTH_EXPIRED = {1000, 104400, 104401}
 POOLS = ('vip', 'normal', 'pending')
@@ -35,6 +41,7 @@ class AccountManager:
         self.sessions = {}
         self.locks = {}
         self.cursors = {}
+        self.search_cursors = {}
         self.check_errors = set()
         self.task = None
         self._started = False
@@ -136,6 +143,7 @@ class AccountManager:
         await asyncio.gather(*(client.stop() for client in clients))
         self.sessions.clear()
         self.clients.clear()
+        self.search_cursors.clear()
         self._started = False
 
     def _bind_legacy(self, bot):
@@ -207,13 +215,32 @@ class AccountManager:
         pool, record = self._find(account_id)
         if record is None or record['credential'] is not credential:
             return
+        # 删除前修正轮询位置，避免移除首个失效账号后跳过下一个账号。
+        bot = record.get('bot', '')
+        ids = self._search_ids(bot)
+        if account_id in ids:
+            cursor = self.search_cursors.get(bot, 0) % len(ids)
+            self.search_cursors[bot] = cursor - int(ids.index(account_id) < cursor)
         del self.pools[pool][account_id]
+        removed_owners = [owner for owner, value in self.owners.items() if value == account_id]
         self.owners = {owner: value for owner, value in self.owners.items() if value != account_id}
+        for owner in removed_owners:
+            session = self.sessions.get(owner)
+            # 保留正在进行的新扫码，清理已结束扫码会话中的旧凭据与状态。
+            if session and (not session.qr or session.qr.status not in ('waiting', 'scanned', 'confirming')):
+                session.credential = {}
+                session.login_cookies.clear()
+                session.refresh_error = ''
+                if session.qr and session.qr.status == 'logged_in':
+                    session.qr.status = 'invalid'
+                    session.qr.message = '账号已失效，请重新扫码登录'
         self.check_errors.discard(account_id)
         self._save()
         client = self.clients.pop(account_id, None)
         if client:
             client.credential = {}
+            client.login_cookies.clear()
+            client.refresh_error = ''
             await client.stop()
         self.ctx.log.info('QQ音乐已移除确认失效的账号记录')
 
@@ -228,58 +255,45 @@ class AccountManager:
             if not force and time.time() - record.get('checked_at', 0) < self._interval():
                 return pool != 'pending'
             client = self._client(account_id, record)
-            refresh_attempted = False
-            refresh_error = None
-            has_refresh = bool(client.credential.get('refresh_token') or client.credential.get('refresh_key'))
-            if has_refresh and self.config.get('auto_refresh', True) and client.refresh_due():
-                refresh_attempted = True
-                try:
-                    await client.refresh_credential(automatic=True)
-                except QQMusicError as exc:
-                    refresh_error = exc
-            for attempt in range(2):
-                credential = client.credential
-                try:
-                    await client.check_login()
-                    membership = await client.membership()
-                except QQMusicError as exc:
-                    if client.credential is not credential:
-                        return False
-                    self.check_errors.add(account_id)
-                    if not _expired(exc):
-                        return False
-                    has_refresh = bool(credential.get('refresh_token') or credential.get('refresh_key'))
-                    if has_refresh and self.config.get('auto_refresh', True) and attempt == 0:
-                        # 即使临期续期曾失败，只有刷新接口明确拒绝凭据才删除；
-                        # 网络错误、风控或异常数据均保留，等待下轮核验。
-                        if refresh_attempted:
-                            if refresh_error is None or _expired(refresh_error):
-                                await self._remove(account_id, credential)
-                            return False
-                        try:
-                            await client.refresh_credential(automatic=True)
-                        except QQMusicError as refresh_exc:
-                            if _expired(refresh_exc) and client.credential is credential:
-                                await self._remove(account_id, credential)
-                            return False
-                        continue
-                    await self._remove(account_id, credential)
-                    return False
+            if self.config.get('auto_refresh', True) and client.refresh_due():
+                await client.try_refresh()
+            credential = client.credential
+            try:
+                await client.check_login()
+                membership = await client.membership()
+            except QQMusicError as exc:
                 if client.credential is not credential:
                     return False
-                current_pool, current = self._find(account_id)
-                if current is None or current['credential'] is not credential:
-                    return False
-                target = 'vip' if membership['vip'] else 'normal'
-                if current_pool != target:
-                    del self.pools[current_pool][account_id]
-                    self.pools[target][account_id] = current
-                current['membership'] = membership
-                current['checked_at'] = int(time.time())
-                self.check_errors.discard(account_id)
-                self._save()
-                return True
-            return False
+                self.check_errors.add(account_id)
+                if _expired(exc):
+                    # 明确失效立即删除，不因存在刷新凭据而继续保留失效状态。
+                    await self._remove(account_id, credential)
+                return False
+            if client.credential is not credential:
+                return False
+            current_pool, current = self._find(account_id)
+            if current is None or current['credential'] is not credential:
+                return False
+            target = 'vip' if membership['vip'] else 'normal'
+            if current_pool != target:
+                del self.pools[current_pool][account_id]
+                self.pools[target][account_id] = current
+            current['membership'] = membership
+            current['checked_at'] = int(time.time())
+            self.check_errors.discard(account_id)
+            self._save()
+            return True
+
+    def account_counts(self, event):
+        bot, _ = self.identity(event)
+        self._bind_legacy(bot)
+        counts = {
+            tier: sum(1 for record in entries.values()
+                      if record.get('bot') == bot and record.get('credential', {}).get('cookie'))
+            for tier, entries in self.pools.items()
+        }
+        counts['total'] = sum(counts.values())
+        return counts
 
     async def status(self, event):
         _, owner = self.identity(event)
@@ -308,42 +322,109 @@ class AccountManager:
         self.cursors[key] = (start + 1) % len(ids)
         return ids[start:] + ids[:start]
 
+    def _search_ids(self, bot):
+        return [account for tier in ('normal', 'vip', 'pending')
+                for account, record in self.pools[tier].items() if record.get('bot') == bot]
+
+    def _next_search_account(self, bot, used):
+        # 搜索不依赖会员级别，所有已保存登录态统一轮换。
+        ids = self._search_ids(bot)
+        if not ids:
+            return None
+        start = self.search_cursors.get(bot, 0) % len(ids)
+        for offset in range(len(ids)):
+            index = (start + offset) % len(ids)
+            account = ids[index]
+            if account not in used:
+                # 等待网络前推进，避免并发请求都选中同一账号。
+                self.search_cursors[bot] = (index + 1) % len(ids)
+                return account
+        return None
+
+    async def search(self, event, keyword, limit=8):
+        bot, _ = self.identity(event)
+        self._bind_legacy(bot)
+        used = set()
+        last_error = None
+        for switch in range(3):
+            account = self._next_search_account(bot, used)
+            if account is None:
+                if not used:
+                    return await self.guest.search(keyword, limit)
+                break
+            used.add(account)
+            if switch:
+                self.ctx.log.info('QQ音乐搜索切换账号（%s/2）', switch)
+            async with self.locks.setdefault(account, asyncio.Lock()):
+                _, record = self._find(account)
+                if record is None:
+                    continue
+                client = self._client(account, record)
+                await client.ensure_fresh()
+                credential = client.credential
+                try:
+                    return await client.search(keyword, limit)
+                except QQMusicError as exc:
+                    last_error = exc
+            if _expired(last_error):
+                await self._remove(account, credential)
+            elif not is_rate_limited(last_error):
+                raise last_error
+            # 超频只换账号，不删除凭据；本次不会重复使用已尝试的账号。
+        if last_error:
+            raise last_error
+        raise QQMusicError('当前暂无可用的 QQ 音乐登录账号')
+
     async def audio_url(self, event, track, preferred=8):
         bot, _ = self.identity(event)
+        last_error = None
         self._bind_legacy(bot)
         # 新登录/迁移的账号要先核验，不能将未知会员默认归为普通账号。
         for account_id, record in list(self.pools['pending'].items()):
             if record.get('bot') == bot:
                 await self.check_account(account_id)
-        raw = track.get('raw') or {}
-        pay = raw.get('pay') or {}
+        raw = track.get('raw')
+        raw = raw if isinstance(raw, dict) else {}
+        pay = raw.get('pay')
         paid = isinstance(pay, dict) and _as_int(pay.get('pay_play')) > 0
-        tiers = ('vip', 'normal') if paid or _as_int(preferred, 8) < 8 else ('normal', 'vip')
+        # 按歌曲的播放权限选账号，不根据所选音质把普通歌曲提前分给绿钻。
+        tiers = ('vip',) if paid else ('normal', 'vip')
         # 实际进入某个池时才推进该池的序号，避免备用池的账号被跳过。
         for tier in tiers:
             for account_id in self._rotation(bot, tier):
                 if not await self.check_account(account_id):
                     continue
                 async with self.locks[account_id]:
-                    _, record = self._find(account_id)
-                    if record is None:
+                    current_tier, record = self._find(account_id)
+                    if record is None or current_tier != tier:
                         continue
                     client = self._client(account_id, record)
                     try:
-                        return await client.audio_url(track, preferred, _retry_login=False)
+                        result = await client.audio_url(track, preferred, _retry_login=False)
+                        if result and result[0]:
+                            return result
+                        raise QQMusicError('没有拿到可播放地址')
                     except QQMusicError as exc:
-                        if getattr(exc, 'code', None) in (429, 104604):
-                            raise
                         last_error = exc
                 # vkey 空地址或版权拒绝不能证明失效，另向登录接口确认。
                 if _expired(last_error) and await self.check_account(account_id, force=True):
                     async with self.locks[account_id]:
-                        _, record = self._find(account_id)
-                        if record:
+                        current_tier, record = self._find(account_id)
+                        if record and current_tier == tier:
                             try:
-                                return await self._client(account_id, record).audio_url(track, preferred, _retry_login=False)
+                                result = await self._client(account_id, record).audio_url(track, preferred, _retry_login=False)
+                                if result and result[0]:
+                                    return result
+                                last_error = QQMusicError('没有拿到可播放地址')
                             except QQMusicError as exc:
                                 last_error = exc
+                if tier == 'normal':
+                    # 普通账号本次获取失败，直接进入绿钻池兜底。
+                    break
+        if paid:
+            if last_error:
+                raise last_error
+            raise QQMusicError('没有拿到可播放地址：当前没有可用的绿钻账号')
         try:
             return await self.guest.audio_url(track, preferred, _retry_login=False)
         except QQMusicError as exc:

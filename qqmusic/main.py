@@ -2,9 +2,9 @@
 
 __plugin_meta__ = {
     'name': '音乐点歌',
-    'author': 'ElainaBot',
+    'author': '冷曦、24801816',
     'description': 'QQ音乐点歌、个人扫码登录和会员账号池轮询',
-    'version': '1.0.1',
+    'version': '1.0.7',
     'license': 'MIT',
 }
 

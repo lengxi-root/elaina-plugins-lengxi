@@ -1,13 +1,30 @@
-"""所有用户的私聊扫码登录与个人状态查询。"""
+"""扫码登录、个人状态与账号数量查询。"""
 
 from datetime import datetime, timedelta, timezone
 
 from core.message.event import Event
 from core.plugin.decorators import handler
 
-from .common import _BTN, _label, _reply, _reply_api_error
+from .common import _BTN, _LOGIN_BTN, _label, _reply, _reply_api_error
 from .qr_image import QRImageError, login_qr_markdown
 from .runtime import accounts
+
+
+@handler(r'^音乐在线账号数量$', name='音乐在线账号数量', desc='查看非绿钻和绿钻账号数量')
+async def account_count(event, match):
+    try:
+        counts = accounts.account_counts(event)
+    except Exception as exc:  # noqa: BLE001 - 保持消息异常边界一致
+        return await _reply_api_error(event, exc, '音乐在线账号数量')
+    lines = [
+        f'<@{event.user_id}> 音乐在线账号数量',
+        f'非绿钻账号：{counts["normal"]} 个',
+        f'绿钻账号：{counts["vip"]} 个',
+    ]
+    if counts['pending']:
+        lines.append(f'待核验账号：{counts["pending"]} 个')
+    lines.append(f'合计：{counts["total"]} 个')
+    await _reply(event, '\n'.join(lines), buttons=_LOGIN_BTN)
 
 
 @handler(r'^音乐登录状态$', name='音乐登录状态', desc='查看QQ音乐登录及自动续期状态')
@@ -24,6 +41,7 @@ async def login_status(event, match):
         'expired': '二维码已过期',
         'rejected': '登录已取消',
         'failed': '登录失败',
+        'invalid': '账号已失效，请重新扫码登录',
         'cancelled': '登录已取消',
     }
     if status['login_started']:

@@ -32,7 +32,7 @@ async def search_music(event, match):
             limit = max(1, min(int(service.config.get('search_limit', 8)), 10))
         except (TypeError, ValueError):
             limit = 8
-        songs = [song for song in await service.search(keyword, limit) if isinstance(song.get('name'), str) and song['name'].strip()]
+        songs = [song for song in await accounts.search(event, keyword, limit) if isinstance(song.get('name'), str) and song['name'].strip()]
     except Exception as exc:  # noqa: BLE001 - 边界仅记录异常类型，防止泄露请求票据
         return await _reply_api_error(event, exc, '点歌')
 

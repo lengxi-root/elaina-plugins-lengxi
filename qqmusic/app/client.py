@@ -15,6 +15,7 @@ import math
 import re
 import secrets
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -26,6 +27,8 @@ from uuid import uuid4
 import aiohttp
 
 MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
+SEARCH_ENDPOINTS = (MUSICU_URL, 'https://u6.y.qq.com/cgi-bin/musicu.fcg')
+SEARCH_CACHE_TTL = 30
 LEGACY_MUSIC_URL = 'https://u6.y.qq.com/cgi-bin/musics.fcg'
 PTQRSHOW_URL = 'https://ssl.ptlogin2.qq.com/ptqrshow'
 PTQRLOGIN_URL = 'https://ssl.ptlogin2.qq.com/ptqrlogin'
@@ -51,15 +54,54 @@ BASE_HEADERS = {
 class QQMusicError(RuntimeError):
     """QQ 音乐请求或登录失败。"""
 
+    def __init__(self, message, *, reason='', endpoint='', operation=''):
+        super().__init__(message)
+        self.reason = reason
+        self.endpoint = endpoint
+        self.operation = operation
+        self.attempts = []
+
 
 class QQMusicNetworkError(QQMusicError):
     """可以在扫码等待期内重试的网络异常。"""
 
 
 class QQMusicAPIError(QQMusicError):
-    def __init__(self, message: str, code: int):
-        super().__init__(message)
+    def __init__(self, message: str, code: int, **kwargs):
+        super().__init__(message, **kwargs)
         self.code = code
+
+
+class QQMusicHTTPError(QQMusicError):
+    def __init__(self, status: int, *, endpoint=''):
+        super().__init__(f'QQ 音乐返回 HTTP {status}', reason='http_status', endpoint=endpoint)
+        self.http_status = status
+
+
+def error_details(exc):
+    """只提取可安全记录的诊断字段，不读取异常原文、请求或响应正文。"""
+    result = {'type': type(exc).__name__}
+    for field_name in ('code', 'http_status'):
+        value = getattr(exc, field_name, None)
+        if isinstance(value, int):
+            result[field_name] = value
+    reason = getattr(exc, 'reason', '')
+    if reason in ('network', 'http_status', 'invalid_json', 'invalid_response', 'missing_operation', 'missing_song_list', 'api_code'):
+        result['reason'] = reason
+    endpoint = getattr(exc, 'endpoint', '')
+    # 只保留腾讯音乐网关名称，不记录带签名的播放地址或 URL 查询参数。
+    if endpoint in SEARCH_ENDPOINTS:
+        result['host'] = urlparse(endpoint).hostname
+    operation = getattr(exc, 'operation', '')
+    if operation in ('DoSearchForQQMusicMobile', 'DoSearchForQQMusicDesktop'):
+        result['operation'] = operation
+    return result
+
+
+def is_rate_limited(exc):
+    return getattr(exc, 'code', None) in (2001, 429, 104604) or getattr(exc, 'http_status', None) == 429 or any(
+        word in str(exc) for word in ('HTTP 429', '错误码 429', '请求过于频繁', '限流')
+    )
 
 
 @dataclass
@@ -304,6 +346,9 @@ class QQMusicService:
         self.login_cookies: dict[str, str] = {}
         self.login_lock = asyncio.Lock()
         self.refresh_lock = asyncio.Lock()
+        self.search_lock = asyncio.Lock()
+        self.search_cache = OrderedDict()
+        self.search_last_request = 0.0
         self.refresh_error = ''
         self.device_id = self.config.get('device_id') or secrets.token_hex(18)
         self._started = False
@@ -351,6 +396,7 @@ class QQMusicService:
 
     async def stop(self):
         await self.cancel_login()
+        self.search_cache.clear()
         task = self.refresh_task
         self.refresh_task = None
         if task and not task.done():
@@ -446,7 +492,7 @@ class QQMusicService:
         try:
             return await session.request(method, url, **kwargs)
         except (TimeoutError, aiohttp.ClientError) as exc:
-            raise QQMusicNetworkError('QQ 音乐网络请求失败，请稍后重试') from exc
+            raise QQMusicNetworkError('QQ 音乐网络请求失败，请稍后重试', reason='network', endpoint=url) from exc
 
     async def _json_request(
         self,
@@ -467,18 +513,18 @@ class QQMusicService:
                 if response_cookies is not None:
                     response_cookies.update(_response_cookies(response))
                 if response.status >= 400:
-                    raise QQMusicError(f'QQ 音乐返回 HTTP {response.status}')
+                    raise QQMusicHTTPError(response.status, endpoint=url)
                 try:
                     data = json.loads(body.decode('utf-8', errors='replace'))
                 except json.JSONDecodeError as exc:
-                    raise QQMusicError('QQ 音乐返回了非 JSON 数据') from exc
+                    raise QQMusicError('QQ 音乐返回了非 JSON 数据', reason='invalid_json', endpoint=url) from exc
                 if not isinstance(data, dict):
-                    raise QQMusicError('QQ 音乐返回格式不正确')
+                    raise QQMusicError('QQ 音乐返回格式不正确', reason='invalid_response', endpoint=url)
                 return data
         except QQMusicError:
             raise
         except (TimeoutError, aiohttp.ClientError) as exc:
-            raise QQMusicError(f'网络请求失败: {exc}') from exc
+            raise QQMusicNetworkError('QQ 音乐响应读取失败，请稍后重试', reason='network', endpoint=url) from exc
 
     def _comm(self, *, authenticated: bool = False, ct: str = '11') -> dict[str, Any]:
         comm: dict[str, Any] = {
@@ -515,24 +561,26 @@ class QQMusicService:
         *,
         authenticated: bool = False,
         endpoint: str = MUSICU_URL,
+        include_comm: bool = True,
     ) -> dict[str, Any]:
         request = dict(body)
-        request['comm'] = {**self._comm(authenticated=authenticated), **request.get('comm', {})}
+        if include_comm:
+            request['comm'] = {**self._comm(authenticated=authenticated), **request.get('comm', {})}
         cookie = _text(self.credential.get('cookie')) if authenticated else ''
         data = await self._json_request('POST', endpoint, payload=request, cookie=cookie)
         if data.get('code') not in (None, 0):
             code = _as_int(data.get('code'), -1)
-            raise QQMusicAPIError(f'QQ音乐接口返回错误码 {code}', code)
+            raise QQMusicAPIError(f'QQ音乐接口返回错误码 {code}', code, reason='api_code', endpoint=endpoint)
         for key, operation in body.items():
             if key == 'comm' or not isinstance(operation, dict):
                 continue
             item = data.get(key)
             method = _text(operation.get('method'))
             if not isinstance(item, dict):
-                raise QQMusicError(f'QQ音乐 {method} 响应缺少业务数据')
+                raise QQMusicError(f'QQ音乐 {method} 响应缺少业务数据', reason='missing_operation', endpoint=endpoint)
             if item.get('code') not in (None, 0):
                 code = _as_int(item.get('code'), -1)
-                raise QQMusicAPIError(f'QQ音乐 {method} 返回错误码 {code}', code)
+                raise QQMusicAPIError(f'QQ音乐 {method} 返回错误码 {code}', code, reason='api_code', endpoint=endpoint)
         return data
 
     async def begin_login(
@@ -982,29 +1030,50 @@ class QQMusicService:
         if not keyword:
             return []
         limit = max(1, min(_as_int(limit, 8), 10))
-        errors = []
-        for method in ('DoSearchForQQMusicDesktop', 'DoSearchForQQMusicMobile'):
-            body = {
-                'req_1': {
-                    'method': method,
-                    'module': 'music.search.SearchCgiService',
-                    'param': {
-                        'num_per_page': limit,
-                        'page_num': 1,
-                        'query': keyword,
-                        'search_type': 0,
-                        'searchid': str(secrets.randbits(63)),
-                        'highlight': 0,
-                        'grp': 1,
-                    },
-                },
-            }
-            try:
-                response = await self._musicu(body)
-                return self._extract_search_tracks(response)[:limit]
-            except QQMusicError as exc:
-                errors.append(str(exc))
-        raise QQMusicError('搜索接口调用失败：' + '；'.join(errors))
+        # 锁内再次查缓存：并发相同搜索只请求一次，且避免集中请求上游。
+        async with self.search_lock:
+            key = (keyword, limit)
+            cached = self.search_cache.get(key)
+            if cached and time.monotonic() - cached[0] < SEARCH_CACHE_TTL:
+                self.search_cache.move_to_end(key)
+                return list(cached[1])
+            tracks = await self._search_uncached(keyword, limit)
+            self.search_cache[key] = (time.monotonic(), tracks)
+            self.search_cache.move_to_end(key)
+            while len(self.search_cache) > 64:
+                self.search_cache.popitem(last=False)
+            return list(tracks)
+
+    async def _search_uncached(self, keyword, limit):
+        # 每个账号每次只请求一次；超频后的账号切换由 AccountManager 控制。
+        method = 'DoSearchForQQMusicMobile'
+        delay = max(0.0, 0.6 - (time.monotonic() - self.search_last_request))
+        if delay:
+            await asyncio.sleep(delay)
+        body = {
+            'req_1': {
+                'method': method,
+                'module': 'music.search.SearchCgiService',
+                'param': {'num_per_page': limit, 'page_num': 1, 'query': keyword, 'search_type': 0},
+            },
+        }
+        authenticated = bool(self.credential.get('cookie') and self.credential.get('musickey'))
+        try:
+            self.search_last_request = time.monotonic()
+            response = await asyncio.wait_for(
+                self._musicu(body, authenticated=authenticated), timeout=5,
+            )
+            return self._extract_search_tracks(response)[:limit]
+        except TimeoutError as exc:
+            error = QQMusicNetworkError('QQ音乐搜索请求超时', reason='network',
+                                        endpoint=MUSICU_URL, operation=method)
+            error.attempts = [error_details(error)]
+            raise error from exc
+        except QQMusicError as exc:
+            exc.endpoint = MUSICU_URL
+            exc.operation = method
+            exc.attempts = [error_details(exc)]
+            raise
 
     @staticmethod
     def _extract_search_tracks(response: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1029,7 +1098,7 @@ class QQMusicService:
                 found_list = True
                 tracks.extend(candidate)
         if not found_list:
-            raise QQMusicError('搜索接口返回异常，缺少歌曲列表')
+            raise QQMusicError('搜索接口返回异常，缺少歌曲列表', reason='missing_song_list')
         return [QQMusicService._normalize_track(item) for item in tracks if isinstance(item, dict)]
 
     @staticmethod
