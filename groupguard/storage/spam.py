@@ -1,8 +1,10 @@
 """刷屏检测配置与计数存储。"""
 
 import time
+from contextlib import closing
 from functools import lru_cache
 
+from .config import _get_group_cfg, _write_group_cfg
 from .core import ACTION_KEYS, SPAM_DEFAULT_WINDOW, SPAM_LOG_TTL, get_db
 
 _last_cleanup = 0
@@ -49,7 +51,8 @@ def get_spam_config(group_id):
     }
 
 
-def save_spam_config(
+def _write_spam_config(
+    connection,
     group_id,
     enabled,
     window_seconds,
@@ -72,7 +75,6 @@ def save_spam_config(
     if not 1 <= updated[4] <= 43200:
         raise ValueError("Invalid spam mute duration")
     legacy_punish = 0 if updated[3] == "recall" else updated[4]
-    connection = get_db()
     connection.execute(
         "INSERT OR REPLACE INTO spam_config "
         "(group_id, enabled, window_seconds, limit_count, action, mute_minutes, "
@@ -81,8 +83,20 @@ def save_spam_config(
     )
     if previous[:3] != updated[:3]:
         connection.execute("DELETE FROM spam_log WHERE group_id = ?", (group_id,))
-    connection.commit()
-    connection.close()
+
+
+def save_spam_config(group_id, enabled, window_seconds, limit_count, action, mute_minutes):
+    with closing(get_db()) as connection, connection:
+        _write_spam_config(connection, group_id, enabled, window_seconds, limit_count, action, mute_minutes)
+    _get_spam_config.cache_clear()
+
+
+def save_group_and_spam_config(config, enabled, window_seconds, limit_count, action, mute_minutes):
+    """原子写入面板提交的群规则和刷屏配置。"""
+    with closing(get_db()) as connection, connection:
+        _write_group_cfg(connection, config)
+        _write_spam_config(connection, config["group_id"], enabled, window_seconds, limit_count, action, mute_minutes)
+    _get_group_cfg.cache_clear()
     _get_spam_config.cache_clear()
 
 

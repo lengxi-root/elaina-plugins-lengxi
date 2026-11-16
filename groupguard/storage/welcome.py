@@ -4,6 +4,7 @@ import copy
 import json
 import string
 import time
+from contextlib import closing
 
 from .core import get_db
 
@@ -93,7 +94,7 @@ def _integer(value, lower, upper, label):
     return value
 
 
-def save_config(appid, group_id, patch):
+def _prepare_config(appid, group_id, patch):
     config = get_config(appid, group_id)
     if not isinstance(patch, dict) or set(patch) - set(DEFAULTS):
         raise ValueError("欢迎配置包含不支持的字段")
@@ -114,31 +115,53 @@ def save_config(appid, group_id, patch):
         config[key] = value
     if config["merge_enabled"] and config["delay_seconds"] == 0:
         raise ValueError("合并欢迎需要设置至少 1 秒的等待时间")
-    connection = get_db()
-    try:
-        connection.execute("INSERT OR REPLACE INTO welcome_config VALUES (?, ?, ?)",
-                           (str(appid), str(group_id), json.dumps(config, ensure_ascii=False)))
-        connection.commit()
-    finally:
-        connection.close()
     return config
 
 
-def save_settings(appid, patch):
+def _prepare_settings(appid, patch):
     if not isinstance(patch, dict) or set(patch) - set(SETTING_DEFAULTS):
         raise ValueError("监控配置包含不支持的字段")
     config = {**get_settings(appid), **patch}
     if not isinstance(config["enabled"], bool) or config["list_mode"] not in ("all", "whitelist", "blacklist"):
         raise ValueError("监控开关或群列表模式无效")
     _integer(config["inactive_days"], 1, 365, "不活跃天数")
-    connection = get_db()
-    try:
-        connection.execute("INSERT OR REPLACE INTO welcome_settings VALUES (?, ?)",
-                           (str(appid), json.dumps(config)))
-        connection.commit()
-    finally:
-        connection.close()
     return config
+
+
+def _write_config(connection, appid, group_id, config):
+    connection.execute(
+        "INSERT OR REPLACE INTO welcome_config VALUES (?, ?, ?)",
+        (str(appid), str(group_id), json.dumps(config, ensure_ascii=False)),
+    )
+
+
+def _write_settings(connection, appid, settings):
+    connection.execute(
+        "INSERT OR REPLACE INTO welcome_settings VALUES (?, ?)",
+        (str(appid), json.dumps(settings)),
+    )
+
+
+def save_config(appid, group_id, patch):
+    config = _prepare_config(appid, group_id, patch)
+    with closing(get_db()) as connection, connection:
+        _write_config(connection, appid, group_id, config)
+    return config
+
+
+def save_settings(appid, patch):
+    settings = _prepare_settings(appid, patch)
+    with closing(get_db()) as connection, connection:
+        _write_settings(connection, appid, settings)
+    return settings
+
+
+def save_config_and_settings(appid, group_id, config_patch, settings_patch):
+    config = _prepare_config(appid, group_id, config_patch)
+    settings = _prepare_settings(appid, settings_patch)
+    with closing(get_db()) as connection, connection:
+        _write_config(connection, appid, group_id, config)
+        _write_settings(connection, appid, settings)
 
 
 def group_list(appid):
@@ -162,11 +185,13 @@ def set_listed(appid, group_id, listed):
         connection.close()
 
 
-def is_allowed(appid, group_id):
+def is_allowed(appid, group_id, *, config=None):
     settings = get_settings(appid)
-    if not settings["enabled"] or not get_config(appid, group_id)["enabled"]:
+    if config is None:
+        config = get_config(appid, group_id)
+    if not settings["enabled"] or not config["enabled"]:
         return False
-    if get_config(appid, group_id)["mode"] == "recall":
+    if config["mode"] == "recall":
         return str(group_id) in group_list(appid)
     mode = settings["list_mode"]
     return mode == "all" or ((str(group_id) in group_list(appid)) == (mode == "whitelist"))
@@ -252,6 +277,23 @@ def record_delivery(appid, group_id, count, success, error=""):
         connection.close()
 
 
+def _sent_today(connection, appid, group_id):
+    now = int(time.time())
+    today = now - (now + 8 * 3600) % 86400
+    return connection.execute(
+        "SELECT COUNT(*) FROM welcome_deliveries WHERE appid=? AND group_id=? AND success=1 AND time>=?",
+        (str(appid), str(group_id), today),
+    ).fetchone()[0]
+
+
+def sent_today(appid, group_id):
+    connection = get_db()
+    try:
+        return _sent_today(connection, appid, group_id)
+    finally:
+        connection.close()
+
+
 def snapshot(appid, group_id):
     connection = get_db()
     try:
@@ -260,10 +302,8 @@ def snapshot(appid, group_id):
             "SELECT * FROM welcome_reviews WHERE appid=? AND group_id=? ORDER BY id DESC LIMIT 50", args)]
         deliveries = [dict(row) for row in connection.execute(
             "SELECT * FROM welcome_deliveries WHERE appid=? AND group_id=? ORDER BY id DESC LIMIT 50", args)]
-        today = int(time.time()) - (int(time.time()) + 8 * 3600) % 86400
-        sent_today = connection.execute(
-            "SELECT COUNT(*) FROM welcome_deliveries WHERE appid=? AND group_id=? AND success=1 AND time>=?", (*args, today)).fetchone()[0]
+        sent_count = _sent_today(connection, *args)
     finally:
         connection.close()
     return {"config": get_config(*args), "settings": get_settings(appid), "groups": group_list(appid),
-            "reviews": reviews, "deliveries": deliveries, "sent_today": sent_today}
+            "reviews": reviews, "deliveries": deliveries, "sent_today": sent_count}

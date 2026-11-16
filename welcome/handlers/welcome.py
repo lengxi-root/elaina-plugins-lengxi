@@ -8,7 +8,7 @@
 
     欢迎模式 (welcome_enabled=1):
       任何群有人入群都推送 welcome_template, 支持黑名单/白名单过滤。
-      两种模式可同时开启, 分别使用各自模板, 欢迎次数不限。
+      两种模式同时符合发送条件时, 可设置只发召回、只发欢迎或两者都发。
       支持合并用户欢迎 (merge_welcome + merge_template)。
 
   Web 面板 (侧边栏导航, 各模式页面自含设置):
@@ -59,6 +59,7 @@ _DEFAULT_CONFIG = {
     "reply_delay": "0",
     "recall_enabled": "1",
     "welcome_enabled": "0",
+    "overlap_mode": "both",
     "list_mode": "blacklist",
     # 召回模式独立模板/按钮
     "recall_template": DEFAULT_TEMPLATE,
@@ -1104,6 +1105,10 @@ async def on_member_add(event, match):
         cfg, recall_allowed, welcome_allowed = await _run_read(_member_state, gid)
         if cfg.get("monitor_enabled") != "1":
             return
+        if recall_allowed and welcome_allowed:
+            overlap_mode = cfg["overlap_mode"]
+            recall_allowed = overlap_mode != "welcome"
+            welcome_allowed = overlap_mode != "recall"
         delay = _clamp_delay(cfg.get("reply_delay", "0"))
         appid = str(getattr(event, "appid", "") or "")
         for mode, allowed in (("recall", recall_allowed), ("welcome", welcome_allowed)):
@@ -1189,6 +1194,7 @@ async def api_status(request):
                 "reply_delay": _clamp_delay(cfg.get("reply_delay", "0")),
                 "recall_enabled": cfg.get("recall_enabled") == "1",
                 "welcome_enabled": cfg.get("welcome_enabled") == "1",
+                "overlap_mode": cfg["overlap_mode"],
                 "list_mode": cfg.get("list_mode", "blacklist"),
                 "recall_template": cfg.get("recall_template", DEFAULT_TEMPLATE),
                 "recall_buttons": _parse_buttons(cfg.get("recall_buttons", "[]")),
@@ -1275,6 +1281,14 @@ async def api_config(request):
                 status=400,
             )
         updates["list_mode"] = mode
+    if "overlap_mode" in body:
+        mode = body["overlap_mode"]
+        if mode not in ("both", "recall", "welcome"):
+            return _json(
+                {"success": False, "message": "请选择有效的同时触发发送方式"},
+                status=400,
+            )
+        updates["overlap_mode"] = mode
 
     def save(conn):
         with conn:

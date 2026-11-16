@@ -40,18 +40,7 @@ async def save_welcome(request):
     async def action(body, gid, appid):
         config = body.get("config", {})
         settings = body.get("settings", {})
-        # 配置先全量校验，避免错误表单出现部分保存。
-        from ..storage.welcome import DEFAULTS, SETTING_DEFAULTS, _integer
-        if not isinstance(config, dict) or set(config) - set(DEFAULTS):
-            raise ValueError("欢迎配置包含不支持的字段")
-        if not isinstance(settings, dict) or set(settings) - set(SETTING_DEFAULTS):
-            raise ValueError("监控配置包含不支持的字段")
-        merged = {**store.get_settings(appid), **settings}
-        if not isinstance(merged["enabled"], bool) or merged["list_mode"] not in ("all", "whitelist", "blacklist"):
-            raise ValueError("监控设置无效")
-        _integer(merged["inactive_days"], 1, 365, "不活跃天数")
-        store.save_config(appid, gid, config)
-        store.save_settings(appid, settings)
+        store.save_config_and_settings(appid, gid, config, settings)
         record_web_action(gid, "config_change", True, appid=appid, details={"section": "welcome"})
         return store.snapshot(appid, gid)
     return await _run(request, action)
@@ -98,6 +87,7 @@ async def save_list(request):
 async def extract(request):
     async def action(body, gid, appid):
         from core.application import get_app
+
         from .routes import _group_catalog
         app = get_app()
         bot = app.get_bot(appid) if app else None

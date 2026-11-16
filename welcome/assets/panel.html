@@ -260,12 +260,21 @@ html, body, body *, body *::before, body *::after {
               <div class="toggle-info"><div class="toggle-title">入群监控</div><div class="toggle-desc">开启后, 有新成员入群时自动推送欢迎消息</div></div>
               <label class="toggle-switch"><input type="checkbox" id="sw-monitor" onchange="toggleMonitor()"><span class="toggle-track"></span></label>
             </div>
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
-              <div><div style="font-weight:600;font-size:13px">工作模式（可同时开启）</div><div style="font-size:11px;color:var(--text3)">召回: 群列表触发 | 欢迎: 全群推送+名单过滤。两项开启时分别发送各自模板。</div></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px">
+              <div><div style="font-weight:600;font-size:13px">工作模式（可同时开启）</div><div style="font-size:11px;color:var(--text3)">召回按群列表触发，欢迎按黑白名单过滤。</div></div>
               <div class="mode-select">
                 <label><input type="checkbox" id="sw-recall" onchange="toggleMode('recall')"><span>召回模式</span></label>
                 <label><input type="checkbox" id="sw-welcome" onchange="toggleMode('welcome')"><span>欢迎模式</span></label>
               </div>
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label for="overlap_mode">同时触发时发送</label>
+              <select id="overlap_mode" aria-describedby="overlap_hint">
+                <option value="both">两者都发</option>
+                <option value="recall">仅发召回</option>
+                <option value="welcome">仅发欢迎</option>
+              </select>
+              <div id="overlap_hint" class="hint">保存后，对同时符合召回和欢迎条件的新入群事件生效。</div>
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
@@ -582,6 +591,7 @@ async function loadStatus(){
   $('sw-monitor').checked = d.monitor_enabled;
   $('sw-recall').checked = STATE.recall;
   $('sw-welcome').checked = STATE.welcome;
+  $('overlap_mode').value = d.overlap_mode || 'both';
   $('test_group').value = d.test_group || '';
   $('reply_delay').value = d.reply_delay;
 
@@ -686,7 +696,8 @@ async function saveGlobalConfig(){
   if(!Number.isSafeInteger(delay) || delay<0){ toast('延迟必须为非负整数'); return; }
   const j = await api('/config','POST',{
     test_group: $('test_group').value.trim(),
-    reply_delay: delay
+    reply_delay: delay,
+    overlap_mode: $('overlap_mode').value
   });
   toast(j.success ? '已保存' : (j.message||'保存失败'));
   if(j.success) loadStatus();

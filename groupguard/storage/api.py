@@ -60,6 +60,7 @@ from .spam import (
     get_spam_config,
     record_and_check_spam,
     reset_spam,
+    save_group_and_spam_config,
     save_spam_config,
 )
 from .targets import (

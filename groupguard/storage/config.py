@@ -1,6 +1,7 @@
 """群管总开关与功能配置存储。"""
 
 import json
+from contextlib import closing
 from functools import lru_cache
 
 from .core import (
@@ -171,8 +172,7 @@ def get_group_cfg(group_id):
     }
 
 
-def save_group_cfg(config):
-    connection = get_db()
+def _write_group_cfg(connection, config):
     connection.execute(
         "INSERT OR REPLACE INTO group_config "
         "(group_id, enabled, notify, verify_mute, features, policies, join_policy) "
@@ -187,8 +187,11 @@ def save_group_cfg(config):
             json.dumps(config.get("join_policy") or {}),
         ),
     )
-    connection.commit()
-    connection.close()
+
+
+def save_group_cfg(config):
+    with closing(get_db()) as connection, connection:
+        _write_group_cfg(connection, config)
     _get_group_cfg.cache_clear()
 
 

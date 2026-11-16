@@ -5,6 +5,7 @@ import re
 
 from core.plugin.decorators import handler
 
+from ...services.identity import member_openid, target_mentions
 from ...services.permissions import ensure_admin_env, get_operable_members
 from ...services.utils import reply_at
 from ...storage import api as db
@@ -13,7 +14,7 @@ from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
 
 async def recall_batch(event, message_ids, limit):
     total = failed = 0
-    for message_id in message_ids:
+    for message_id in dict.fromkeys(message_ids):
         if not message_id or message_id == event.message_id:
             continue
         ok = False
@@ -64,7 +65,12 @@ async def cmd_recall_recent(event, match):
     if count_match:
         limit = max(1, min(50, int(count_match.group(1))))
 
-    members = [item for item in get_operable_members(event) if item[0] != event.user_id]
+    operator_id = member_openid(event)
+    members = [item for item in get_operable_members(event) if item[0] != operator_id]
+    unscoped_command = re.fullmatch(r"/?撤回最近\s*\d*\s*", event.content or "")
+    if not members and (any(target_mentions(event)) or not unscoped_command):
+        finish_action(event, "recall", False, details={"reason": "invalid_target"})
+        return await reply_at(event, "recall_user_empty")
     if members:
         messages = db.get_user_messages(group_id, members[0][0], limit * 2)
         if not messages:
@@ -81,7 +87,7 @@ async def cmd_recall_recent(event, match):
             item["id"]
             for item in infos
             if item["role"] not in ("admin", "owner")
-            and item["user_id"] != event.user_id
+            and item["user_id"] != operator_id
         ]
         if not messages:
             finish_action(

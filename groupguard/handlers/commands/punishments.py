@@ -4,6 +4,7 @@ import time
 
 from core.plugin.decorators import handler
 
+from ...services.identity import member_openid
 from ...services.permissions import ensure_admin_env, get_operable_members
 from ...services.utils import format_remaining, parse_duration, reply_at
 from ...storage import api as db
@@ -20,7 +21,7 @@ async def cmd_speak_recall(event, match):
     begin_action(event, "speak_recall")
     if not await ensure_admin_env(event):
         return
-    members = [item for item in get_operable_members(event) if item[0] != event.user_id]
+    members = [item for item in get_operable_members(event) if item[0] != member_openid(event)]
     if not members:
         finish_action(
             event, "speak_recall", False, details={"reason": "target_required"}

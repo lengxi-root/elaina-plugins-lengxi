@@ -21,10 +21,11 @@ def mask_word(word: str) -> str:
 
 def _get_hosting():
     with contextlib.suppress(ImportError, AttributeError):
-        from core.bot.manager import _bot_manager_ref
+        from core.application import get_app
 
-        if _bot_manager_ref and _bot_manager_ref.module_manager:
-            return _bot_manager_ref.module_manager.get("image_hosting")
+        app = get_app()
+        if app and app.module_manager:
+            return app.module_manager.get("image_hosting")
     return None
 
 
@@ -77,44 +78,44 @@ _ROWS_PER_COL = 15  # 每列最多条数
 
 
 def _render_sync(words: list) -> bytes:
-    S = _S
+    scale = _S
     n = len(words)
     cols = min(_COLS, (n + _ROWS_PER_COL - 1) // _ROWS_PER_COL)
     rows = (n + cols - 1) // cols
 
-    pad = 26 * S
-    col_w = 220 * S
-    row_h = 44 * S
-    header_h = 96 * S
+    pad = 26 * scale
+    col_w = 220 * scale
+    row_h = 44 * scale
+    header_h = 96 * scale
 
-    f_title = _font(28 * S, bold=True)
-    f_sub = _font(15 * S)
-    f_txt = _font(19 * S)
-    f_num = _font(17 * S, bold=True)
+    f_title = _font(28 * scale, bold=True)
+    f_sub = _font(15 * scale)
+    f_txt = _font(19 * scale)
+    f_num = _font(17 * scale, bold=True)
 
     # 宽度自适应: 条目少时也不能窄于标题/副标题宽度, 避免文字被截断
     _m = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    title_w = int(_m.textlength("违禁词列表", font=f_title)) + 22 * S
+    title_w = int(_m.textlength("违禁词列表", font=f_title)) + 22 * scale
     sub_w = (
         int(
             _m.textlength(
                 f"共 {n} 个 · 已脱敏, 删除请用编号: 违禁词删除 编号", font=f_sub
             )
         )
-        + 22 * S
+        + 22 * scale
     )
-    W = max(pad + (col_w + pad) * cols, pad * 2 + max(title_w, sub_w))
-    H = header_h + rows * row_h + pad + 40 * S
+    width = max(pad + (col_w + pad) * cols, pad * 2 + max(title_w, sub_w))
+    height = header_h + rows * row_h + pad + 40 * scale
 
-    img = Image.new("RGB", (W, H), (250, 240, 240))
+    img = Image.new("RGB", (width, height), (250, 240, 240))
     d = ImageDraw.Draw(img, "RGBA")
 
     d.rounded_rectangle(
-        (pad, 20 * S, pad + 8 * S, 20 * S + 52 * S), 4 * S, fill=_ACCENT
+        (pad, 20 * scale, pad + 8 * scale, 20 * scale + 52 * scale), 4 * scale, fill=_ACCENT
     )
-    d.text((pad + 22 * S, 18 * S), "违禁词列表", font=f_title, fill=_TEXT)
+    d.text((pad + 22 * scale, 18 * scale), "违禁词列表", font=f_title, fill=_TEXT)
     d.text(
-        (pad + 22 * S, 60 * S),
+        (pad + 22 * scale, 60 * scale),
         f"共 {n} 个 · 已脱敏, 删除请用编号: 违禁词删除 编号",
         font=f_sub,
         fill=_MUTED,
@@ -125,20 +126,20 @@ def _render_sync(words: list) -> bytes:
         x0 = pad + (col_w + pad) * c
         y0 = header_h + r * row_h
         d.rounded_rectangle(
-            (x0, y0, x0 + col_w, y0 + row_h - 8 * S), 10 * S, fill=_CARD
+            (x0, y0, x0 + col_w, y0 + row_h - 8 * scale), 10 * scale, fill=_CARD
         )
-        cy = y0 + (row_h - 8 * S) // 2
+        cy = y0 + (row_h - 8 * scale) // 2
         num = str(i + 1)
         nw = d.textlength(num, font=f_num)
         d.ellipse(
-            (x0 + 12 * S, cy - 13 * S, x0 + 38 * S, cy + 13 * S), fill=_ACCENT + (36,)
+            (x0 + 12 * scale, cy - 13 * scale, x0 + 38 * scale, cy + 13 * scale), fill=_ACCENT + (36,)
         )
-        d.text((x0 + 25 * S - nw / 2, cy - 11 * S), num, font=f_num, fill=_ACCENT)
-        d.text((x0 + 50 * S, cy - 13 * S), mask_word(w), font=f_txt, fill=_TEXT)
+        d.text((x0 + 25 * scale - nw / 2, cy - 11 * scale), num, font=f_num, fill=_ACCENT)
+        d.text((x0 + 50 * scale, cy - 13 * scale), mask_word(w), font=f_txt, fill=_TEXT)
 
     ft = "ElainaBot · 群管"
     fw = d.textlength(ft, font=f_sub)
-    d.text(((W - fw) / 2, H - 30 * S), ft, font=f_sub, fill=_MUTED)
+    d.text(((width - fw) / 2, height - 30 * scale), ft, font=f_sub, fill=_MUTED)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", compress_level=6)

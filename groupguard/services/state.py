@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import time
+from collections import OrderedDict
 from typing import Any
 
 pending_verify: dict[str, dict[str, dict[str, Any]]] = {}  # 群号和用户号对应验证状态
@@ -11,6 +12,29 @@ verify_cooldown: dict[str, dict[str, Any]] = {}  # 群号和用户号对应重�
 verification_muted: dict[str, set[str]] = {}  # 插件施加的验证临时禁言
 
 _cleanup_task = None
+_recent_membership_events = OrderedDict()
+_MEMBERSHIP_REPEAT_WINDOW = 300
+_MAX_RECENT_MEMBERSHIP_EVENTS = 4096
+
+
+def seen_membership_event(event, user_id):
+    """识别事件重投，退群后收到新的入群事件仍可验证。"""
+    identity = getattr(event, "event_id", "") or getattr(event, "timestamp", "")
+    if not identity:
+        return False
+    key = (str(event.appid), str(event.group_id), event.event_type, user_id, str(identity))
+    now = time.monotonic()
+    while _recent_membership_events:
+        oldest_time = next(iter(_recent_membership_events.values()))
+        if now - oldest_time < _MEMBERSHIP_REPEAT_WINDOW:
+            break
+        _recent_membership_events.popitem(last=False)
+    if key in _recent_membership_events:
+        return True
+    _recent_membership_events[key] = now
+    if len(_recent_membership_events) > _MAX_RECENT_MEMBERSHIP_EVENTS:
+        _recent_membership_events.popitem(last=False)
+    return False
 
 
 def _discard_member(mapping, group_id, user_id):
@@ -88,7 +112,7 @@ def expire_pending(group_id, user_id, now=None):
         pending_verify.pop(group_id, None)
     unverified.setdefault(group_id, set()).add(user_id)
     verify_cooldown.setdefault(group_id, {})[user_id] = {
-        "retry_count": info.get("retry_count", 0) + 1,
+        "retry_count": info.get("retry_count", 0),
         # 题目超时不是答错；用户下次操作时应能立即重新验证。
         "next_time": now,
     }

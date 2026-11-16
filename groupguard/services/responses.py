@@ -11,6 +11,7 @@ from ..storage.global_settings import (
     get_global_settings,
     redact_global_forbidden,
 )
+from .identity import member_openid
 from .templates import _get_cached_template, validate_template
 
 _UNSET = object()
@@ -241,7 +242,7 @@ def _base_variables(data, event=None):
     variables.update(_framework_variables(event))
     if "target_id" not in data:
         variables["target_id"] = str(
-            variables.get("user_id") or variables.get("raw_user_id") or ""
+            variables.get("raw_user_id") or variables.get("user_id") or ""
         )
     variables.update(
         {
@@ -258,6 +259,8 @@ def _base_variables(data, event=None):
             for alias, source in _FRAMEWORK_VARIABLE_ALIASES.items()
         }
     )
+    if getattr(event, "is_group", False):
+        variables["userid"] = member_openid(event)
     return variables
 
 
@@ -643,8 +646,8 @@ async def respond(
         small_buttons=small_buttons,
     )
     should_at_user = bool(message.at_user if at_user is _UNSET else at_user)
-    if should_at_user:
-        message.content = f"<@{event.user_id}> {message.content}"
+    if should_at_user and (openid := member_openid(event)):
+        message.content = f"<@{openid}> {message.content}"
     kwargs = message.delivery_kwargs()
     action = audit_action or current_action(event, f"reply:{key}")
     try:

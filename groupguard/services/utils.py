@@ -17,6 +17,21 @@ async def api_pair(awaitable, failure=False):
         return failure, {"message": type(error).__name__}
 
 
+async def remove_members(sender, group_id, member_openids):
+    ok, response = await api_pair(sender.batch_remove_group_members(group_id, member_openids))
+    if isinstance(response, dict):
+        result = response.get("remove_members_result")
+        if ok and result not in (None, "success"):
+            return False, {**response, "message": f"QQ 返回移出结果 {result}"}
+        if not ok:
+            codes = {str(response.get(key)) for key in ("code", "err_code")}
+            if "40103012" in codes:
+                return False, {**response, "message": "请群主在群内开启机器人的移除成员权限"}
+            if "40103011" in codes:
+                return False, {**response, "message": "请在 QQ 机器人管理端开启移除成员权限"}
+    return bool(ok), response
+
+
 async def reply_at(event, key, **data):
     """兼容别名；回复内容仅在 mod.replies 中定义。"""
     return await respond(event, key, **data)

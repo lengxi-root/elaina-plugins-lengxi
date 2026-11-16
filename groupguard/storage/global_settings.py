@@ -97,7 +97,7 @@ def delete_global_forbidden(word):
 def redact_global_forbidden(content):
     """将每个全局屏蔽词替换为一个掩码字符。"""
     text = str(content or "")
-    words = sorted(_get_global_forbidden(), key=len, reverse=True)
+    words = sorted(filter(None, _get_global_forbidden()), key=len, reverse=True)
     if not text or not words:
         return text
     pattern = re.compile("|".join(re.escape(word) for word in words), re.IGNORECASE)

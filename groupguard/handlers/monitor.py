@@ -11,6 +11,7 @@ from itertools import chain
 from core.plugin.decorators import interceptor
 
 from ..services import state
+from ..services.identity import member_openid
 from ..services.responses import respond
 from ..services.server_time import MuteTimeRetry, build_mute_members
 from ..services.verification import send_verify
@@ -35,7 +36,7 @@ async def _recall_safe(event, message_id=None, trigger="automatic"):
         "recall",
         "api",
         success=success,
-        target_id=str(getattr(event, "user_id", "") or ""),
+        target_id=member_openid(event),
         details={
             "trigger": trigger,
             "message_id": str(message_id or event.message_id or ""),
@@ -48,7 +49,7 @@ async def _recall_safe(event, message_id=None, trigger="automatic"):
         "recall",
         success,
         affected_count=1 if success else 0,
-        target_id=str(getattr(event, "user_id", "") or ""),
+        target_id=member_openid(event),
         details={
             "trigger": trigger,
             "message_id": str(message_id or event.message_id or ""),
@@ -65,7 +66,7 @@ async def _notify_safe(event, key, **data):
 
 
 async def _mute_safe(event, minutes, trigger="automatic"):
-    target_id = str(getattr(event, "user_id", "") or "")
+    target_id = member_openid(event)
     success, response = await MuteTimeRetry().execute(
         event.sender,
         event.group_id,
@@ -130,7 +131,7 @@ def _action_text(action, minutes, recalled, muted):
 async def _apply_policy(event, trigger, policy, notice=None, notify=False):
     action = policy.get("action", "recall")
     minutes = int(policy.get("mute_minutes", 10))
-    user_id = str(getattr(event, "user_id", "") or "")
+    user_id = member_openid(event)
     _begin_automatic(
         event,
         trigger,
@@ -246,6 +247,22 @@ def _strip_media_urls(event):
     return content.strip()
 
 
+def _blocked_card_policy(event, features):
+    """区分转发记录和卡片，也识别尚在使用的 ark 载荷。"""
+    message_type = str(getattr(event, "message_type", ""))
+    if message_type == "102":
+        return "block_forward" if features["block_forward"] else None
+    ark = getattr(event, "ark_data", None) or event.get("d/ark")
+    if not ark and message_type != "3":
+        return None
+    is_forward = _contains_forward_marker(ark)
+    if is_forward is not False and features["block_forward"]:
+        return "block_forward"
+    if is_forward is not True and features["block_cards"]:
+        return "block_cards"
+    return None
+
+
 async def _punish_spam(event, gid, user_id, config):
     """达到刷屏阈值后执行已配置的撤回或禁言操作。"""
     action = config["action"]
@@ -341,7 +358,7 @@ async def monitor_group_messages(event):
     if event.event_type not in ("GROUP_MESSAGE_CREATE", "GROUP_AT_MESSAGE_CREATE"):
         return False
     gid = event.group_id
-    user_id = event.user_id
+    user_id = member_openid(event)
     if not gid or not user_id or not event.message_id:
         return False
     if event.is_bot:
@@ -359,27 +376,19 @@ async def monitor_group_messages(event):
         return False
 
     gc = db.get_group_cfg(gid)
-    if not gc["enabled"]:
-        # 刷屏检测独立于群管总开关
-        if db.get_spam_config(gid)["enabled"] != 1:
-            return False
-        db.store_message(
-            gid,
-            user_id,
-            event.message_id,
-            event.member_role or "member",
-            event.username or "",
-        )
-        return await _check_and_punish_spam(event, gid, user_id)
-
-    # 群管开启时保留消息记录，供手动撤回和处罚列表使用。
-    db.store_message(
+    # 刷屏检测独立于群管总开关。
+    if not gc["enabled"] and db.get_spam_config(gid)["enabled"] != 1:
+        return False
+    if not db.store_message(
         gid,
         user_id,
         event.message_id,
         event.member_role or "member",
-        event.username or "",
-    )
+        getattr(event, "member_nickname", "") or event.username or "",
+    ):
+        return True
+    if not gc["enabled"]:
+        return await _check_and_punish_spam(event, gid, user_id)
 
     feat = gc["features"]
     policies = gc["policies"]
@@ -389,13 +398,14 @@ async def monitor_group_messages(event):
     if feat["join_verify"]:
         state.expire_pending(gid, user_id)
         is_unverified = user_id in state.unverified.get(gid, set())
-        has_pending = user_id in state.pending_verify.get(gid, {})
-        cooldown = state.verify_cooldown.get(gid, {}).get(user_id)
         if is_unverified:
             _begin_automatic(event, "unverified_member", user_id)
             await _recall_safe(event, trigger="unverified_member")
-            if not has_pending and (
-                not cooldown or time.time() >= cooldown["next_time"]
+            cooldown = state.verify_cooldown.get(gid, {}).get(user_id)
+            if (
+                user_id in state.unverified.get(gid, ())
+                and user_id not in state.pending_verify.get(gid, {})
+                and (not cooldown or time.time() >= cooldown["next_time"])
             ):
                 retry_count = cooldown["retry_count"] if cooldown else 0
                 await send_verify(event, gid, user_id, retry_count=retry_count)
@@ -414,33 +424,16 @@ async def monitor_group_messages(event):
         )
         return True
 
-    # 3. 禁止发卡片 / 合并转发 (ark 消息)
-    ark = event.get("d/ark")
-    if isinstance(ark, dict) and ark and (feat["block_forward"] or feat["block_cards"]):
-        is_forward = _contains_forward_marker(ark)
-        blocked = None
-        if is_forward is True and feat["block_forward"]:
-            blocked = ("blocked_forward", "block_forward_notice")
-        elif is_forward is False and feat["block_cards"]:
-            blocked = ("blocked_card", "block_card_notice")
-        elif is_forward is None:
-            if feat["block_forward"]:
-                blocked = ("blocked_forward", "block_forward_notice")
-            elif feat["block_cards"]:
-                blocked = ("blocked_card", "block_card_notice")
-        if blocked:
-            trigger, notice = blocked
-            policy_key = (
-                "block_forward" if trigger == "blocked_forward" else "block_cards"
-            )
-            await _apply_policy(
-                event,
-                trigger,
-                policies[policy_key],
-                notice=notice,
-                notify=do_notify,
-            )
-            return True
+    if (feat["block_forward"] or feat["block_cards"]) and (policy_key := _blocked_card_policy(event, feat)):
+        is_forward = policy_key == "block_forward"
+        await _apply_policy(
+            event,
+            "blocked_forward" if is_forward else "blocked_card",
+            policies[policy_key],
+            notice="block_forward_notice" if is_forward else "block_card_notice",
+            notify=do_notify,
+        )
+        return True
 
     # 4. 违禁词过滤
     if content and feat["forbidden_words"] and db.contains_forbidden(gid, content):

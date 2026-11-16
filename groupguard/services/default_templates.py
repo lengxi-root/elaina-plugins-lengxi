@@ -643,6 +643,10 @@ _DEFAULT_JSON_B64 = (
 
 DEFAULT_PAYLOAD = json.loads(base64.b64decode(_DEFAULT_JSON_B64).decode("utf-8"))
 
+_mute_too_many = DEFAULT_PAYLOAD["templates"]["mute_too_many"]
+LEGACY_MUTE_TOO_MANY_CONTENT = _mute_too_many["content"]
+_mute_too_many["content"] = LEGACY_MUTE_TOO_MANY_CONTENT.replace("`10` 人", "`20` 人")
+
 # 审批令牌仅保留在按钮数据中，不在消息正文内公开。
 _join_requests_template = DEFAULT_PAYLOAD["templates"]["join_requests"]
 LEGACY_JOIN_REVIEW_BUTTONS = json.loads(

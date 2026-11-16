@@ -1,8 +1,10 @@
 """欢迎通用命令；群内文案提交后交由面板审核。"""
 
+from core.application import get_app
 from core.plugin.decorators import handler
 
 from ...services import welcome
+from ...services.identity import member_openid
 from ...services.permissions import get_event_member_role, is_group_admin
 from ...storage import welcome as store
 
@@ -21,7 +23,7 @@ async def cmd_welcome_submit(event, match):
     if not is_group_admin(event, await get_event_member_role(event)):
         return
     try:
-        review_id = store.submit_review(event.appid, event.group_id, event.user_id, match.group(1))
+        review_id = store.submit_review(event.appid, event.group_id, member_openid(event), match.group(1))
     except ValueError as error:
         await event.reply(str(error))
         return
@@ -38,7 +40,8 @@ async def cmd_welcome_monitor(event, match):
 @handler(r"^测试发送(合并)?模板$", name="测试欢迎模板", owner_only=True, group_only=True)
 async def cmd_welcome_test(event, match):
     config = store.get_config(event.appid, event.group_id)
-    members = {str(event.user_id): str(getattr(event, "username", "") or event.user_id)}
+    openid = member_openid(event)
+    members = {openid: str(getattr(event, "member_nickname", "") or event.username or openid)}
     if match.group(1):
         record = await event.get_group_record(event.group_id)
         for member in (record or {}).get("users", [])[:3]:
@@ -52,8 +55,8 @@ async def cmd_welcome_test(event, match):
 @handler(r"^提取群列表$", name="提取不活跃群", owner_only=True)
 async def cmd_welcome_extract(event, match):
     from ...web.routes import _group_catalog
-    from core.application import get_app
-    bot = get_app()._bots.get(str(event.appid))
+    app = get_app()
+    bot = app.get_bot(event.appid) if app else None
     if bot is None:
         return
     groups = {item["group_id"] for item in _group_catalog() if item["appid"] == str(event.appid)}

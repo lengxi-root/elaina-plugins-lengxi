@@ -8,8 +8,8 @@ from aiohttp import web
 from core.base.logger import PLUGIN, get_logger
 from core.plugin.web_pages import register_route, unregister_route
 
-from ..services import state
 from ..services import rendering as fw_render
+from ..services import state
 from ..services import verification as verify
 from ..services.responses import api_error, render_template_preview
 from ..services.templates import list_reply_templates, save_reply_template
@@ -594,7 +594,12 @@ async def _save_config(request):
             "join_policy": join_policy,
         }
         spam_enabled = _require_bool(spam.get("enabled"), "刷屏检测开关")
-        db.save_group_cfg(updated)
+        db.save_group_and_spam_config(
+            updated, int(spam_enabled), window_seconds, limit_count,
+            spam_action, spam_mute_minutes,
+        )
+        if not updated["enabled"] or not updated["features"]["join_verify"]:
+            state.clear_group_verification(group_id)
         release_verify_mutes = (
             not updated["enabled"]
             or not updated["features"]["join_verify"]
@@ -608,16 +613,6 @@ async def _save_config(request):
             sender = getattr(bot, "sender", None) if bot else None
             if sender:
                 await verify.release_group_mutes(sender, group_id)
-        if not updated["enabled"] or not updated["features"]["join_verify"]:
-            state.clear_group_verification(group_id)
-        db.save_spam_config(
-            group_id,
-            int(spam_enabled),
-            window_seconds,
-            limit_count,
-            spam_action,
-            spam_mute_minutes,
-        )
         changed = []
         if current["enabled"] != updated["enabled"]:
             changed.append("enabled")

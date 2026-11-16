@@ -15,6 +15,7 @@ from .utils import api_pair
 
 log = get_logger(PLUGIN, "群管校时")
 
+MAX_MUTE_MEMBERS = 20
 _SYNC_TIMEOUT = 15
 _RECENT_SYNC_SECONDS = 30
 _sync_lock = asyncio.Lock()
@@ -38,12 +39,11 @@ def build_mute_members(member_ids, *, operation="add", seconds=0, minutes=0):
 
 def is_mute_expire_error(response):
     """仅识别平台明确返回的禁言到期时间参数错误。"""
-    if isinstance(response, dict):
-        text = json.dumps(response, ensure_ascii=False)
-    else:
-        text = str(response or "")
+    text = json.dumps(response, ensure_ascii=False) if isinstance(response, dict) else str(response or "")
     lowered = text.lower()
-    return "mute.expire_at" in lowered and ("参数无效" in text or "invalid" in lowered)
+    return ("mute.expire_at" in lowered or "mute_expire_at" in lowered) and (
+        "参数无效" in text or "invalid" in lowered
+    )
 
 
 def _run(command):
@@ -148,12 +148,11 @@ class MuteTimeRetry:
         success, response = await api_pair(
             sender.set_group_member_mute(group_id, members_factory())
         )
-        settings = get_global_settings()
         if (
             success
             or self.sync_attempted
-            or not settings.get("auto_sync_server_time", False)
             or not is_mute_expire_error(response)
+            or not get_global_settings().get("auto_sync_server_time", False)
         ):
             return success, response
 

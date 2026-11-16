@@ -8,12 +8,15 @@ import string
 import tempfile
 import threading
 
+from core.base.logger import PLUGIN, get_logger
+
 from .default_templates import (
     DEFAULT_PAYLOAD,
     JOIN_REQUEST_ITEM_CONTENT,
     JOIN_REVIEW_BUTTONS,
     LEGACY_JOIN_REQUEST_ITEM_CONTENT,
     LEGACY_JOIN_REVIEW_BUTTONS,
+    LEGACY_MUTE_TOO_MANY_CONTENT,
 )
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,6 +28,7 @@ _lock = threading.RLock()
 _cache = None
 _cache_mtime = None
 _formatter = string.Formatter()
+log = get_logger(PLUGIN, "群管模板")
 
 _LEGACY_BOT_NAME_TEXT = "授权后无需@伊蕾娜也可以处理指令"
 _DYNAMIC_BOT_NAME_TEXT = "授权后无需@{bot_name}也可以处理指令"
@@ -417,6 +421,10 @@ def initialize_reply_templates():
             if key not in payload["templates"]:
                 payload["templates"][key] = template
                 changed = True
+        mute_too_many = payload["templates"]["mute_too_many"]
+        if mute_too_many.get("content") == LEGACY_MUTE_TOO_MANY_CONTENT:
+            mute_too_many["content"] = defaults["templates"]["mute_too_many"]["content"]
+            changed = True
         legacy_template = payload["templates"].get("full_message_required")
         default_template = (
             defaults["templates"].get(
@@ -486,9 +494,12 @@ def _load_cached(force=False):
             return _cache
         try:
             payload = initialize_reply_templates()
-        except (OSError, ValueError, json.JSONDecodeError):
-            if force or _cache is None:
+        except (OSError, ValueError) as error:
+            if force:
                 raise
+            if _cache is None:
+                _cache = _load_defaults()
+            log.warning("无法读取回复模板，继续使用已加载的模板或内置默认值: %s", error)
             _cache_mtime = mtime
             return _cache
         _cache = payload

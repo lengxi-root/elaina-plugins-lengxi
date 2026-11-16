@@ -1,7 +1,5 @@
 """群管命令共用配置与响应辅助。"""
 
-import contextlib
-
 from ...services.responses import api_error as api_error
 from ...services.utils import api_pair as api_pair
 from ...storage.audit import (
@@ -53,8 +51,6 @@ def begin_action(event, action, details=None, *, source="command"):
             "content_length": len(str(getattr(event, "content", "") or "")),
         },
     )
-    with contextlib.suppress(Exception):
-        event._groupguard_received_logged = True
 
 
 def finish_action(event, action, success, **kwargs):

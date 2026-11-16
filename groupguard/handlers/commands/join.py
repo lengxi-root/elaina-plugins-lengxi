@@ -2,18 +2,14 @@
 
 from core.plugin.decorators import handler
 
-from ...services.permissions import (
-    ensure_admin_env,
-    get_event_member_role,
-    is_group_admin,
-)
+from ...services import approvals
+from ...services.permissions import ensure_admin_env
 from ...services.responses import join_review_buttons as join_review_buttons
 from ...services.utils import reply_at
 from ...storage.global_settings import get_global_settings
 from .common import (
     HANDLER_OPTIONS,
     JOIN_REVIEW_HANDLER_OPTIONS,
-    active_action,
     api_error,
     api_pair,
     begin_action,
@@ -24,21 +20,9 @@ from .common import (
 
 async def ensure_join_reviewer(event):
     """检查入群审批操作者权限。"""
-    action = active_action(event, "join_permission")
-    member_role = await get_event_member_role(event)
-    if not is_group_admin(event, member_role):
-        trace_phase(
-            event,
-            action,
-            "permission",
-            success=False,
-            details={"reason": "operator_denied"},
-        )
-        finish_action(event, action, False, details={"reason": "operator_denied"})
-        await reply_at(event, "join_reviewer_denied")
-        return False
-    trace_phase(event, action, "permission", success=True)
-    return await ensure_admin_env(event, member_role=member_role)
+    return await ensure_admin_env(
+        event, require_monitoring=False, denied_reply="join_reviewer_denied",
+    )
 
 
 async def _review_join_request(
@@ -69,16 +53,7 @@ async def _review_join_request(
     if not await ensure_join_reviewer(event):
         return False
 
-    success, response = await api_pair(
-        event.sender.review_group_join_request(
-            event.group_id,
-            member_id,
-            operation,
-            join_request_id=request_id,
-            reject_reason=reason if operation == "decline" else "",
-            add_to_member_blacklist=blacklisted,
-        )
-    )
+    success, response = await approvals.review(event, member_id, request_id, operation, reason=reason, blacklisted=blacklisted)
     details = {
         "request_id": request_id,
         "error": "" if success else api_error(response),
@@ -126,7 +101,7 @@ async def _review_join_request(
 )
 async def cmd_join_requests(event, match):
     begin_action(event, "join_list")
-    if not await ensure_admin_env(event):
+    if not await ensure_join_reviewer(event):
         return
     page, error = await api_pair(
         event.sender.get_group_join_requests(
@@ -152,10 +127,11 @@ async def cmd_join_requests(event, match):
     if not isinstance(requests, list):
         finish_action(event, "join_list", False, details={"error": "invalid_response"})
         return await reply_at(event, "join_list_failed", error="invalid_response")
-    if not requests:
+    requests = [item for item in requests if isinstance(item, dict)]
+    next_cursor = page.get("next_cursor") or ""
+    if not requests and not next_cursor:
         finish_action(event, "join_list", True, details={"count": 0})
         return await reply_at(event, "join_list_empty")
-    next_cursor = page.get("next_cursor") or ""
     finish_action(event, "join_list", True, details={"count": len(requests)})
     await reply_at(
         event,

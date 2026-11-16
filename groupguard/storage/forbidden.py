@@ -23,10 +23,11 @@ def get_forbidden(group_id):
 
 def contains_forbidden(group_id, content):
     """使用缓存的不可变词集匹配内容。"""
-    words = list(_get_forbidden(group_id))
-    if get_global_settings()["apply_global_forbidden_to_groups"]:
-        words.extend(get_global_forbidden())
-    return any(word in content for word in words)
+    if any(word and word in content for word in _get_forbidden(group_id)):
+        return True
+    return get_global_settings()["apply_global_forbidden_to_groups"] and any(
+        word and word in content for word in get_global_forbidden()
+    )
 
 
 def add_forbidden(group_id, word):

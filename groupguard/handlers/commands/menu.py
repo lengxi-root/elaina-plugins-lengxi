@@ -71,11 +71,11 @@ async def cmd_gm_on(event, match):
 @handler(r"^/?群管关闭\s*$", name="群管关闭", desc="关闭群管总开关", **HANDLER_OPTIONS)
 async def cmd_gm_off(event, match):
     begin_action(event, "config_change", {"key": "enabled", "value": False})
-    if not await ensure_admin_env(event):
+    if not await ensure_admin_env(event, require_monitoring=False):
         return
     db.set_enabled(event.group_id, False)
-    await verify.release_group_mutes(event.sender, event.group_id)
     state.clear_group_verification(event.group_id)
+    await verify.release_group_mutes(event.sender, event.group_id)
     trace_phase(
         event,
         "config_change",
@@ -115,7 +115,7 @@ TOGGLE_COMMANDS = [
 def make_toggle(key, enabled):
     async def toggle(event, match):
         begin_action(event, "config_change", {"key": key, "value": enabled})
-        if not await ensure_admin_env(event):
+        if not await ensure_admin_env(event, require_monitoring=enabled):
             return
         if key == "mute_during_verify":
             db.set_verify_mute(event.group_id, enabled)
@@ -124,8 +124,8 @@ def make_toggle(key, enabled):
         else:
             db.set_feature(event.group_id, key, enabled)
         if key == "join_verify" and not enabled:
-            await verify.release_group_mutes(event.sender, event.group_id)
             state.clear_group_verification(event.group_id)
+            await verify.release_group_mutes(event.sender, event.group_id)
         trace_phase(
             event,
             "config_change",

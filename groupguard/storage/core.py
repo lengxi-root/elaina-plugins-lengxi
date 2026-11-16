@@ -135,6 +135,8 @@ def init_tables(connection):
             ON message_log(group_id, user_id, time DESC);
         CREATE INDEX IF NOT EXISTS idx_message_log_group_time
             ON message_log(group_id, time DESC);
+        CREATE INDEX IF NOT EXISTS idx_message_log_group_message
+            ON message_log(group_id, message_id);
         CREATE INDEX IF NOT EXISTS idx_message_log_time ON message_log(time);
         CREATE INDEX IF NOT EXISTS idx_audit_group_time ON audit_log(group_id, time DESC);
         CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(time);

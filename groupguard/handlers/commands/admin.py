@@ -2,15 +2,19 @@
 
 import asyncio
 import time
+import weakref
 from collections import OrderedDict
 
 from core.plugin.decorators import handler, on_unload
 
-from ...services import welcome
 from ...services import verification as verify
+from ...services import welcome
+from ...services.identity import member_openid
 from ...services.permissions import (
+    bot_state_from_api,
     ensure_admin_env,
     get_bot_group_state,
+    get_event_member_role,
     get_operable_members,
     is_group_admin,
 )
@@ -19,7 +23,7 @@ from ...storage import api as db
 from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
 
 _REFRESH_INTERVAL = 180.0
-_refresh_locks: dict[str, asyncio.Lock] = {}
+_refresh_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
 _last_refresh: OrderedDict[str, float] = OrderedDict()
 _MAX_REFRESH_RECORDS = 2048
 
@@ -32,9 +36,8 @@ def _clear_refresh_state():
 
 def _refresh_remaining(group_id, now=None):
     now = time.monotonic() if now is None else now
-    return max(
-        0, int(_last_refresh.get(str(group_id), 0.0) + _REFRESH_INTERVAL - now + 0.999)
-    )
+    last = _last_refresh.get(str(group_id))
+    return max(0, int(last + _REFRESH_INTERVAL - now + 0.999)) if last is not None else 0
 
 
 def _remember_refresh(group_id, now=None):
@@ -85,23 +88,13 @@ async def _refresh_current_group(event):
                 "error_endpoints": ["refresh_group_info"],
             }
 
-    errors = result.get("errors") if isinstance(result, dict) else None
-    bot_state_ok = isinstance(result, dict) and result.get("bot_state") is not None
-    group_info_ok = isinstance(result, dict) and result.get("group_info") is not None
-    bot_state = result.get("bot_state") if bot_state_ok else {}
-    state = (
-        {
-            "is_admin": str(bot_state.get("member_role") or "") in ("admin", "owner"),
-            "is_full_access": bot_state.get("recv_msg_setting") == "all",
-            "allow_proactive_msg": bool(bot_state.get("allow_proactive_msg")),
-            "in_group": True,
-        }
-        if bot_state_ok
-        else None
-    )
+    result = result if isinstance(result, dict) else {}
+    errors = result.get("errors")
+    state = None if result.get("removed") or result.get("left_group") else bot_state_from_api(result.get("bot_state"))
+    bot_state_ok = state is not None
     return state, {
         "operation": "refresh_group_info",
-        "group_info": group_info_ok,
+        "group_info": result.get("group_info") is not None,
         "bot_state": bot_state_ok,
         "success": bot_state_ok,
         "error_endpoints": (
@@ -120,7 +113,7 @@ async def _refresh_current_group(event):
 )
 async def cmd_refresh_group_state(event, match):
     begin_action(event, "refresh_group_state")
-    if not is_group_admin(event):
+    if not is_group_admin(event, await get_event_member_role(event)):
         trace_phase(
             event,
             "refresh_group_state",
@@ -144,7 +137,7 @@ async def cmd_refresh_group_state(event, match):
     if refresh_details.get("reason") == "cooldown":
         finish_action(event, "refresh_group_state", False, details=refresh_details)
         return await event.reply(
-            f"<@{event.user_id}> 本群刚刚已刷新过，请 {refresh_details['remaining']} 秒后再试。"
+            f"<@{member_openid(event)}> 本群刚刚已刷新过，请 {refresh_details['remaining']} 秒后再试。"
         )
     if state is None:
         finish_action(

@@ -1,13 +1,16 @@
 """群管权限检查与机器人群状态读取。"""
 
 import asyncio
+import contextlib
 import time
 import weakref
 from collections import OrderedDict
 
+from core.application import get_app
 from core.base.config import cfg
 
 from ..storage.audit import current_action, record_audit
+from .identity import member_openid, mentioned_members
 from .responses import respond
 
 
@@ -16,7 +19,7 @@ def is_bot_owner(event):
     if not bot_cfg:
         return False
     user_id = str(getattr(event, "user_id", "") or "")
-    return user_id in {
+    return bool(user_id) and user_id in {
         str(owner_id or "") for owner_id in (bot_cfg.get("owner_ids") or [])
     }
 
@@ -29,27 +32,40 @@ def is_group_admin(event, member_role=None):
     return is_bot_owner(event)
 
 
-async def get_group_member_role(event, member_id=None):
-    """从核心 data.db 的群成员 JSON 中读取成员角色。"""
-    if not event.group_id:
+def _log_service(event):
+    app = get_app()
+    bot = app.get_bot(event.appid) if app else None
+    return getattr(bot, "log_service", None)
+
+
+async def get_group_member_role(event, member_id=None, *, refresh=False):
+    """按钮回调优先向 QQ 查询当前身份，普通消息使用本地成员索引。"""
+    group_id = event.group_id
+    target_id = str(member_id or member_openid(event))
+    if not group_id or not target_id:
         return ""
-    target_id = str(member_id or event.user_id or "")
-    if not target_id:
-        return ""
+    if refresh:
+        role = await _platform_member_role(event, group_id, target_id)
+        if role:
+            return role
+    log_service = _log_service(event)
+    if log_service is not None:
+        with contextlib.suppress(Exception):
+            row = await log_service.db_fetch_one(
+                "SELECT member_role FROM group_members WHERE group_id=? AND user_id=?",
+                (group_id, target_id),
+            )
+            if row and row.get("member_role"):
+                return str(row["member_role"]).strip().lower()
+    return "" if refresh else await _platform_member_role(event, group_id, target_id)
+
+
+async def _platform_member_role(event, group_id, target_id):
     try:
-        record = await event.get_group_record(event.group_id)
+        member = await event.sender.get_group_member(group_id, member_openid=target_id)
     except Exception:
         return ""
-    users = record.get("users") if isinstance(record, dict) else None
-    if not isinstance(users, list):
-        return ""
-    for item in users:
-        if not isinstance(item, dict):
-            continue
-        user_id = item.get("userid") or item.get("user_id") or item.get("id")
-        if str(user_id or "") == target_id:
-            return str(item.get("member_role") or "member")
-    return ""
+    return str(member.get("member_role") or "").strip().lower() if isinstance(member, dict) else ""
 
 
 async def get_event_member_role(event):
@@ -57,11 +73,13 @@ async def get_event_member_role(event):
     role = str(getattr(event, "member_role", "") or "").strip().lower()
     if role in ("admin", "owner", "member"):
         return role
-    return await get_group_member_role(event)
+    return await get_group_member_role(
+        event, refresh=getattr(event, "event_type", "") == "INTERACTION_CREATE",
+    )
 
 
-_state_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
-_state_last_request: OrderedDict[str, float] = OrderedDict()
+_state_locks: weakref.WeakValueDictionary[tuple[str, str], asyncio.Lock] = weakref.WeakValueDictionary()
+_state_last_request: OrderedDict[tuple[str, str], float] = OrderedDict()
 _STATE_REQUEST_INTERVAL = 60
 _MAX_STATE_REQUESTS = 2048
 
@@ -88,7 +106,7 @@ def _normalize_state(row):
     }
 
 
-def _state_from_api(data):
+def bot_state_from_api(data):
     if not isinstance(data, dict):
         return None
     return {
@@ -103,6 +121,15 @@ async def _read_group_state(event):
     """通过框架公开方法读取 data.db，不调用任何群接口。"""
     if not event.group_id:
         return None
+    log_service = _log_service(event)
+    if log_service is not None:
+        with contextlib.suppress(Exception):
+            row = await log_service.db_fetch_one(
+                "SELECT is_admin, is_full_access, allow_proactive_msg, in_group "
+                "FROM groups_users WHERE group_id=?",
+                (event.group_id,),
+            )
+            return _normalize_state(row)
     try:
         return _normalize_state(await event.get_group_record(event.group_id))
     except Exception:
@@ -142,9 +169,9 @@ async def get_bot_group_state(event, *, refresh=False):
             data = await event.sender.get_group_bot_state(event.group_id)
         except Exception:
             data = None
-        state = _state_from_api(data)
+        state = bot_state_from_api(data)
         if state is None:
-            return cached
+            return await _read_group_state(event)
         # 接口成功后优先使用框架同步的数据。
         return await _read_group_state(event) or state
 
@@ -163,16 +190,14 @@ async def check_has_full_msg(event, state=None):
     return state["is_full_access"] and state["allow_proactive_msg"]
 
 
-async def ensure_admin_env(event, *, member_role=None):
+async def ensure_admin_env(event, *, member_role=None, require_monitoring=True, denied_reply="user_no_permission"):
     """群管指令前置检查：机器人能力、用户权限和机器人管理权限。"""
     action = current_action(event, "permission_check")
     if member_role is None:
-        member_role = str(getattr(event, "member_role", "") or "").strip().lower()
-        if member_role not in ("admin", "owner", "member"):
-            member_role = await get_event_member_role(event)
+        member_role = await get_event_member_role(event)
     if not is_group_admin(event, member_role):
         return await _deny_admin_env(
-            event, action, "operator_denied", "user_no_permission"
+            event, action, "operator_denied", denied_reply
         )
     state = await get_bot_group_state(event)
     if state is None:
@@ -181,7 +206,7 @@ async def ensure_admin_env(event, *, member_role=None):
         )
     if not await check_bot_is_admin(event, state):
         return await _deny_admin_env(event, action, "bot_not_admin", "bot_no_admin")
-    if not await check_has_full_msg(event, state):
+    if require_monitoring and not await check_has_full_msg(event, state):
         return await _deny_admin_env(
             event, action, "full_message_unavailable", "full_message_required"
         )
@@ -199,22 +224,7 @@ async def _deny_admin_env(event, action, reason, reply_key):
 
 def get_operable_members(event):
     """提取可被群管操作的普通成员艾特。"""
-    ids = []
-    seen = set()
-    for mention in getattr(event, "mentions", None) or []:
-        if (
-            isinstance(mention, dict)
-            and mention.get("id")
-            and not mention.get("is_you")
-            and not mention.get("bot")
-            and mention.get("scope") != "all"
-            and mention.get("member_role") == "member"
-        ):
-            member_id = str(mention["id"])
-            if member_id not in seen:
-                seen.add(member_id)
-                ids.append((member_id, "member"))
-    return ids
+    return list(dict.fromkeys((openid, role) for openid, role in mentioned_members(event) if role == "member"))
 
 
 mention_user_ids = get_operable_members

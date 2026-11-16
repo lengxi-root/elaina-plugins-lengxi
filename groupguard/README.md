@@ -34,19 +34,17 @@
 
 欢迎支持变量：`{user_id}`、`{user_ids}`、`{username}`、`{group_id}`、`{count}`。按钮格式与原群管消息模板一致。
 
-## 本地验证
+## 群管理权限和本地验证
 
-在插件仓库根目录运行，框架仓库默认位于同级 `ElainaBot_v2`：
+踢人、禁言与入群审批使用当前机器人的群成员 OpenID。成员禁言或解禁接口每次可处理 20 人。移出成员时，QQ 会分别校验群主打开的操作权限和机器人管理端的权限设置。
+
+同一份入群申请的自动规则、群命令和按钮回调共用审批状态。按钮权限优先查询 QQ 的当前成员身份，查询不可用时读取本地成员记录。入退群事件重投会去重，真实重新加入仍可验证。面板一次保存的群规则与刷屏设置、欢迎语与监控设置分别在同一事务中写入。
+
+用框架开发环境的 Python 在插件仓库根目录运行以下命令，测试使用同级的 `ElainaBot_v2`、临时 SQLite 和模拟 QQ 请求。
 
 ```powershell
-python groupguard/tests/test_merge.py -v
+python -m pytest -q groupguard/tests/test_groupguard.py
 node --check groupguard/assets/panel.js
-node --test groupguard/tests/test_template_preview.mjs
-python -m compileall -q groupguard
 ```
-
-隔离预览：`python groupguard/tests/preview.py`，访问 `http://127.0.0.1:8768`。预览使用临时样例数据库，七个页面使用实际面板 API；`/mobile` 提供 390px 预览，`/?theme=dark` 检查深色主题。预览不启动机器人，不连接 QQ；退出后临时数据清理。
-
-真实 QQ 入群事件、主动消息权限和发送结果仍需在部署环境验收。
 
 消息预览部署时直接使用已打包的本地资源，无 CDN 或新增 Python 依赖。框架渲染器更新后，开发环境可运行 `node groupguard/tools/build-preview.mjs`，默认从同级 `ElainaBot_v2_web` 的源码和已安装依赖更新；也可将前端仓库路径作为第一个参数。生成文件带源文件 SHA-256，第三方许可位于 `assets/PREVIEW_LICENSES.txt`。

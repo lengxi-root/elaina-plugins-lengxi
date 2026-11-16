@@ -8,16 +8,19 @@ _last_cleanup = 0
 
 
 def store_message(group_id, user_id, message_id, role, username=""):
+    """记录首次收到的群消息，重复投递返回 False。"""
     global _last_cleanup
     if not message_id:
-        return
+        return False
     connection = get_db()
     now = int(time.time())
-    connection.execute(
+    inserted = connection.execute(
         "INSERT INTO message_log "
-        "(group_id, user_id, message_id, user_role, username, time) VALUES (?, ?, ?, ?, ?, ?)",
-        (group_id, user_id, message_id, role, username or "", now),
-    )
+        "(group_id, user_id, message_id, user_role, username, time) "
+        "SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS ("
+        "SELECT 1 FROM message_log WHERE group_id = ? AND message_id = ?)",
+        (group_id, user_id, message_id, role, username or "", now, group_id, message_id),
+    ).rowcount > 0
     if now - _last_cleanup >= 600:
         connection.execute(
             "DELETE FROM message_log WHERE time < ?", (now - MESSAGE_LOG_TTL,)
@@ -25,6 +28,7 @@ def store_message(group_id, user_id, message_id, role, username=""):
         _last_cleanup = now
     connection.commit()
     connection.close()
+    return inserted
 
 
 def get_user_messages(group_id, user_id, limit, since_seconds=RECALL_WINDOW):

@@ -10,14 +10,14 @@ from .handlers import commands as _commands  # noqa: F401
 from .handlers import events as _events  # noqa: F401
 from .handlers import monitor as _monitor  # noqa: F401
 from .services import state, welcome
-from .services.templates import initialize_reply_templates
+from .services.templates import load_reply_templates
 from .web import routes as webpanel
 
 __plugin_meta__ = {
     "name": "群管中心",
     "author": "冷曦",
     "description": "违禁词过滤、入群验证、禁言、入群审批、消息撤回、入群欢迎和配置审核",
-    "version": "3.0.4",
+    "version": "3.0.5",
     "license": "MIT",
 }
 
@@ -36,7 +36,7 @@ _ICON = (
 
 @on_load
 async def _init():
-    initialize_reply_templates()
+    load_reply_templates()
     welcome.start()
     state.start_cleanup()
     register_page(

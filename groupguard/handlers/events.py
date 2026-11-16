@@ -2,8 +2,9 @@
 
 from core.plugin.decorators import handler
 
-from ..services import state, welcome
+from ..services import approvals, state, welcome
 from ..services import verification as verify
+from ..services.identity import member_openid
 from ..services.permissions import get_event_member_role, is_group_admin
 from ..services.responses import _build, api_error
 from ..services.utils import api_pair
@@ -45,7 +46,7 @@ def _join_request_item(event):
     )["review_qa_list"]
     return {
         "username": str(getattr(event, "username", "") or ""),
-        "member_openid": str(getattr(event, "user_id", "") or ""),
+        "member_openid": member_openid(event),
         "join_request_id": str(getattr(event, "join_request_id", "") or ""),
         "verify_info": verify_info,
     }
@@ -60,11 +61,9 @@ def _has_join_verification(item):
 
 
 async def _show_join_verification(event, mode):
-    if not db.get_global_settings()["show_join_verification"]:
-        return
     item = _join_request_item(event)
     if not _has_join_verification(item):
-        return
+        return False
     try:
         message = _build(
             "join_request_notice",
@@ -76,15 +75,18 @@ async def _show_join_verification(event, mode):
             },
             event,
         )
-        await event.sender.send_to_group(
-            event.group_id,
-            message.content,
-            skip_suffix=True,
-            **message.delivery_kwargs(),
+        ok, _ = await api_pair(
+            event.sender.send_to_group(
+                event.group_id,
+                message.content,
+                skip_suffix=True,
+                **message.delivery_kwargs(),
+            )
         )
+        return bool(ok)
     except Exception:
         # 通知失败不能阻断自动入群策略。
-        return
+        return False
 
 
 @handler(
@@ -95,18 +97,28 @@ async def _show_join_verification(event, mode):
 )
 async def on_join_request(event, match):
     group_id = str(event.group_id or "")
-    member_id = str(event.user_id or "")
+    member_id = member_openid(event)
     request_id = str(event.join_request_id or "")
     if not group_id or not member_id:
         return
+    if getattr(event, "auto_approved", None):
+        if request_id:
+            approvals.mark_reviewed(event, member_id, request_id)
+        return
     config = db.get_group_cfg(group_id)
+    if not config["enabled"]:
+        return
     policy = config.get("join_policy") or {}
     mode = policy.get("mode", "manual")
-    if not config["enabled"] or mode == "manual":
-        if config["enabled"]:
+    if db.get_global_settings()["show_join_verification"]:
+        if request_id:
+            await approvals.notify_once(
+                event, member_id, request_id, lambda: _show_join_verification(event, mode),
+            )
+        else:
             await _show_join_verification(event, mode)
+    if mode == "manual":
         return
-    await _show_join_verification(event, mode)
 
     decline = mode in ("auto_decline", "auto_blacklist")
     blacklisted = mode == "auto_blacklist"
@@ -133,17 +145,12 @@ async def on_join_request(event, match):
     if decline:
         details["reason"] = reason
     record_received(event, action, source="automatic", details=details)
-    success, response = await api_pair(
-        event.sender.review_group_join_request(
-            group_id,
-            member_id,
-            "decline" if decline else "approve",
-            join_request_id=request_id,
-            reject_reason=reason if decline else "",
-            add_to_member_blacklist=blacklisted,
-        )
+    success, response = await approvals.review(
+        event, member_id, request_id, "decline" if decline else "approve",
+        reason=reason, blacklisted=blacklisted,
     )
-    success = bool(success)
+    if not success and isinstance(response, dict) and response.get("code") == approvals.DUPLICATE_REVIEW:
+        return
     error = "" if success else api_error(response)
     result_details = {**details, "error": error}
     record_result(
@@ -165,17 +172,16 @@ async def on_join_request(event, match):
 )
 async def on_member_add(event, match):
     gid = event.group_id
-    if not gid:
+    member_id = member_openid(event)
+    if not gid or not member_id or state.seen_membership_event(event, member_id):
         return
     gc = db.get_group_cfg(gid)
     if not gc["enabled"] or not gc["features"]["join_verify"]:
         await welcome.enqueue(event)
         return
-    welcome.hold_member(event)
-    member_id = event.user_id
-    if not member_id:
+    if member_id in state.unverified.get(gid, ()):
         return
-    state.clear_verification(gid, member_id)
+    welcome.hold_member(event)
     state.unverified.setdefault(gid, set()).add(member_id)
     await send_verify(event, gid, member_id, retry_count=0)
 
@@ -187,10 +193,17 @@ async def on_member_add(event, match):
     event_types=["GROUP_MEMBER_REMOVE"],
 )
 async def on_member_remove(event, match):
-    member_id = event.user_id
-    if event.group_id and member_id:
+    member_id = member_openid(event)
+    if event.group_id and member_id and not state.seen_membership_event(event, member_id):
         welcome.remove_member(event)
         state.clear_member(event.group_id, member_id)
+
+
+@handler(r"", name="机器人退群清理", event_types=["GROUP_DEL_ROBOT"])
+async def on_bot_remove(event, match):
+    if event.group_id and not state.seen_membership_event(event, member_openid(event)):
+        state.clear_group(event.group_id)
+        welcome.clear_group(event.appid, event.group_id)
 
 
 @handler(
@@ -207,7 +220,7 @@ async def on_verify_click(event, match):
     gid = event.group_id
     if not gid or parts[1] != gid:
         return
-    member_id = event.user_id
+    member_id = member_openid(event)
     if not member_id:
         return
     gc = db.get_group_cfg(gid)

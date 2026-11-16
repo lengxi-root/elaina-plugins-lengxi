@@ -4,13 +4,14 @@ import re
 
 from core.plugin.decorators import handler
 
+from ...services.identity import member_openid, mentioned_members, target_mentions
 from ...services.panels import show_mute_panel
 from ...services.permissions import (
     get_bot_group_state,
     get_event_member_role,
     get_operable_members,
 )
-from ...services.server_time import MuteTimeRetry, build_mute_members
+from ...services.server_time import MAX_MUTE_MEMBERS, MuteTimeRetry, build_mute_members
 from ...services.utils import reply_at
 from .common import (
     HANDLER_OPTIONS,
@@ -27,9 +28,7 @@ from .common import (
 async def ensure_mute_operator(event):
     """校验命令发起者和机器人的群管理权限。"""
     action = active_action(event, "mute_permission")
-    member_role = str(getattr(event, "member_role", "") or "").strip().lower()
-    if member_role not in ("admin", "owner", "member"):
-        member_role = await get_event_member_role(event)
+    member_role = await get_event_member_role(event)
     if member_role not in ("admin", "owner"):
         trace_phase(
             event,
@@ -66,9 +65,9 @@ async def ensure_mute_operator(event):
 
 
 def parse_members_and_minutes(event, arg):
-    """读取最多十个可操作艾特及一个禁言分钟数。"""
+    """读取可操作的艾特和禁言分钟数。"""
     members = get_operable_members(event)
-    text = str(arg or "")
+    text = re.sub(r"<@!?[\w-]+>", "", str(arg or ""))
     if members:
         minute_matches = re.findall(
             r"(?<![A-Za-z0-9])(\d+)(?:\s*(?:分钟|分|min))?(?![A-Za-z0-9])",
@@ -118,13 +117,13 @@ async def cmd_mute_member(event, match):
     if not members:
         finish_action(event, "mute", False, details={"reason": "invalid_format"})
         return await reply_at(event, "mute_format")
-    if len(members) > 10:
+    if len(members) > MAX_MUTE_MEMBERS:
         finish_action(event, "mute", False, details={"reason": "too_many_targets"})
         return await reply_at(event, "mute_too_many")
     if not 1 <= minutes <= 43200:
         finish_action(event, "mute", False, details={"reason": "invalid_duration"})
         return await reply_at(event, "mute_duration_invalid")
-    if any(member_id == event.user_id for member_id, _role in members):
+    if any(member_id == member_openid(event) for member_id, _role in members):
         finish_action(event, "mute", False, details={"reason": "self_target"})
         return await reply_at(event, "mute_self_denied")
 
@@ -177,17 +176,10 @@ async def cmd_mute_member(event, match):
 
 def _parse_unmute_target(event, arg):
     # 解禁允许管理员和群主，只排除机器人与 @全体成员。
-    for mention in getattr(event, "mentions", None) or []:
-        if not isinstance(mention, dict):
-            continue
-        member_id = str(mention.get("id") or "").strip()
-        if (
-            member_id
-            and not mention.get("is_you")
-            and not mention.get("bot")
-            and mention.get("scope") != "all"
-        ):
-            return member_id, str(mention.get("member_role") or "member")
+    for member_id, role in mentioned_members(event):
+        return member_id, role or "member"
+    if any(target_mentions(event)):
+        return None, ""
     member_id = str(arg or "").strip()
     if member_id in {"", "@", "@用户", "用户", "对方"}:
         member_id = ""

@@ -4,7 +4,7 @@ from core.plugin.decorators import handler
 
 from ...services.permissions import ensure_admin_env, get_operable_members
 from ...services.responses import api_error
-from ...services.utils import api_pair, reply_at
+from ...services.utils import remove_members, reply_at
 from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
 
 
@@ -17,7 +17,7 @@ from .common import HANDLER_OPTIONS, begin_action, finish_action, trace_phase
 async def cmd_kick_member(event, match):
     """移出被艾特的普通群成员。"""
     begin_action(event, "kick")
-    if not await ensure_admin_env(event):
+    if not await ensure_admin_env(event, require_monitoring=False):
         return
 
     members = get_operable_members(event)
@@ -29,9 +29,7 @@ async def cmd_kick_member(event, match):
         return await reply_at(event, "kick_too_many")
 
     member_ids = [member_id for member_id, _role in members]
-    success, response = await api_pair(
-        event.sender.batch_remove_group_members(event.group_id, member_ids)
-    )
+    success, response = await remove_members(event.sender, event.group_id, member_ids)
     error = "" if success else api_error(response)
     trace_phase(
         event,

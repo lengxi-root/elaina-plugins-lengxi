@@ -73,6 +73,7 @@ let templates = {};
 let selectedTemplateKey = '';
 let activePage = 'overview';
 let welcomeData = null;
+let welcomeDataContext = '';
 let dashboardRequest = 0;
 let welcomeRequest = 0;
 let welcomeDirty = false;
@@ -186,17 +187,21 @@ async function loadTemplates(){
 }
 async function loadDashboard(){
   const groupId=currentGroup(),appid=currentBot(),request=++dashboardRequest;
-  welcomeRequest++;welcomeData=null;
+  const groupPages=document.querySelectorAll('.page:not(#page-templates):not(#page-welcome):not(#page-reviews)');
+  welcomeRequest++;welcomeData=null;welcomeDataContext='';setWelcomeReady(false);
   if(!groupId||!appid)return;
-  $('loading').hidden=false;document.querySelectorAll('.page').forEach(node=>node.inert=true);
+  $('loading').hidden=false;groupPages.forEach(node=>node.inert=true);
   try{
     const data=await api(`/dashboard?appid=${encodeURIComponent(appid)}&group_id=${encodeURIComponent(groupId)}&days=${encodeURIComponent($('days-select').value)}`);
     if(request!==dashboardRequest||groupId!==currentGroup()||appid!==currentBot())return;
     dashboard=data;renderAll();showReady(true);
+    groupPages.forEach(node=>node.inert=false);
     $('connection-state').textContent='群管数据已连接';
     await loadWelcome();
-    if(request===dashboardRequest)document.querySelectorAll('.page').forEach(node=>node.inert=false);
-  }catch(error){if(request===dashboardRequest){$('loading').hidden=true;$('connection-state').textContent='数据读取失败';toast(error.message,true)}}
+  }catch(error){
+    if(request!==dashboardRequest||groupId!==currentGroup()||appid!==currentBot())return;
+    dashboard=null;showReady(false);$('connection-state').textContent='数据读取失败';toast(error.message,true);
+  }
 }
 function renderAll(){
   if(!dashboard)return;
@@ -376,6 +381,7 @@ sidebarMedia.addEventListener('change',()=>setSidebar(sidebarMedia.matches));set
 
 function welcomeContext(){return {appid:currentBot(),group_id:currentGroup()}}
 function welcomeQuery(){return new URLSearchParams(welcomeContext()).toString()}
+function setWelcomeReady(ready){$('page-welcome').inert=!ready;$('page-reviews').inert=!ready}
 function renderWelcome(){
   if(!welcomeData)return;
   const c=welcomeData.config,g=welcomeData.settings;
@@ -403,11 +409,18 @@ function previewWelcome(){
 }
 async function loadWelcome(){
   const context=welcomeQuery(),request=++welcomeRequest;if(!currentGroup())return;
-  try{const data=await api('/welcome?'+context);if(request!==welcomeRequest||context!==welcomeQuery())return;welcomeData=data;renderWelcome()}
-  catch(error){if(request===welcomeRequest)toast(error.message,true)}
+  if(welcomeDataContext!==context)setWelcomeReady(false);
+  try{
+    const data=await api('/welcome?'+context);
+    if(request!==welcomeRequest||context!==welcomeQuery())return;
+    welcomeData=data;welcomeDataContext=context;renderWelcome();setWelcomeReady(true);
+  }catch(error){if(request===welcomeRequest&&context===welcomeQuery())toast(error.message,true)}
 }
 async function welcomeMutation(path,body,button){
-  const context=welcomeContext(),key=welcomeQuery();if(!context.appid||!context.group_id){toast('请先选择机器人和群聊',true);return false}
+  const context=welcomeContext(),key=welcomeQuery();
+  if(!context.appid||!context.group_id){toast('请先选择机器人和群聊',true);return false}
+  if(!welcomeData||welcomeDataContext!==key){toast('请先加载当前群的欢迎配置',true);return false}
+  welcomeRequest++;
   if(button)button.disabled=true;
   try{const data=await api(path,{method:path==='/welcome'||path==='/welcome/list'?'PUT':'POST',body:JSON.stringify({...context,...body})});if(key!==welcomeQuery())return false;if(data.config){welcomeData=data;renderWelcome()}toast(path==='/welcome/extract'?`已添加 ${data.added} 个不活跃群`:'操作成功');return true}
   catch(error){toast(error.message,true);return false}finally{if(button)button.disabled=false}
