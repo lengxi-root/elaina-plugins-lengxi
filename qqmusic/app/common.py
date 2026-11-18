@@ -61,6 +61,16 @@ def _is_rate_limited(exc):
     return is_rate_limited(exc)
 
 
+async def _reply_music_error(event):
+    return await _reply(
+        event,
+        f'<@{event.user_id}> 内置账号获取音乐链接频繁，请稍后重试\n'
+        '>如果您有绿钻账号可以点击下方链接进行扫码登录Q音，不会影响你的正常听歌。\n\n'
+        '<qqbot-cmd-input text="音乐扫码登录" show="扫码登录Q音" />',
+        buttons=_LOGIN_BTN,
+    )
+
+
 async def _reply_api_error(event, exc, action):
     uid = str(event.user_id)
     if _is_rate_limited(exc):
@@ -75,14 +85,10 @@ async def _reply_api_error(event, exc, action):
         diagnostics['attempts'] = exc.attempts
     if action == '点歌':
         _log.error('点歌请求失败：%s；诊断：%s', exc, json.dumps(diagnostics, ensure_ascii=False), exc_info=True)
-        return await _reply(
-            event,
-            f'<@{uid}> 当前账号获取列表超出频率限制，请稍后重试\n'
-            '>你可以提供绿钻账号登录，来获取更加稳定的服务(完全不影响你听歌等操作)',
-            buttons=_LOGIN_BTN,
-        )
     else:
         _log.warning('%s请求失败：%s', action, json.dumps(diagnostics, ensure_ascii=False))
+    if action in ('点歌', '听歌'):
+        return await _reply_music_error(event)
     return await _reply(event, f'<@{uid}> {message}', buttons=_BTN)
 
 

@@ -2,18 +2,17 @@
 
 from core.plugin.decorators import handler
 
-from .client import QQMusicError, QQMusicNetworkError
 from .common import (
     _BTN,
     _cache,
     _cache_get,
     _cache_key,
     _cache_put,
-    _is_rate_limited,
     _label,
     _log,
     _reply,
     _reply_api_error,
+    _reply_music_error,
 )
 from .runtime import accounts, service
 
@@ -66,23 +65,17 @@ async def play_music(event, match):
     try:
         quality = service.config.get('default_quality', 8)
         music_url, _ = await accounts.audio_url(event, selected, quality)
-    except QQMusicNetworkError as exc:
-        return await _reply_api_error(event, exc, '听歌')
-    except QQMusicError as exc:
-        if _is_rate_limited(exc) or '没有拿到可播放地址' not in str(exc):
-            return await _reply_api_error(event, exc, '听歌')
-        music_url = None
     except Exception as exc:  # noqa: BLE001 - 边界仅记录异常类型，防止泄露请求票据
         return await _reply_api_error(event, exc, '听歌')
 
     if not music_url:
-        return await _reply(event, f'<@{uid}> 未获取到歌曲链接，请换一首歌尝试吧！', buttons=_BTN)
+        return await _reply_music_error(event)
     try:
         sent = await event.reply_voice(music_url)
         if sent is not None:
             return
     except Exception as exc:  # noqa: BLE001 - 边界仅记录异常类型，防止泄露请求票据
         _log.warning('歌曲语音发送失败（%s）', type(exc).__name__)
-    await _reply(event, f'<@{uid}> 歌曲发送失败，请稍后重试或换一首歌', buttons=_BTN)
+    await _reply_music_error(event)
 
 
