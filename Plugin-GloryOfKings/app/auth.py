@@ -3,6 +3,8 @@
 import asyncio
 import time
 
+from core.message.event import INTERACTION_CREATE, MESSAGE_TYPES
+
 from ..lib import auth as A
 from ..lib import qq_login as QQ
 from ..lib import render
@@ -130,6 +132,7 @@ async def cmd_wx_login(event, match):
     r"^王者(?:wx|微信|扫码)全局登录$",
     name="王者wx全局登录",
     desc="微信扫码登录并设为全局默认登录态, 所有人可用",
+    event_types=MESSAGE_TYPES | {INTERACTION_CREATE},
 )
 async def cmd_wx_global_login(event, match):
     await _start_login(event, is_global=True)
@@ -211,6 +214,7 @@ async def cmd_qq_login(event, match):
     r"^王者QQ全局登录$",
     name="王者QQ全局登录",
     desc="使用手机QQ扫码登录并设为全局默认登录态, 所有人可用",
+    event_types=MESSAGE_TYPES | {INTERACTION_CREATE},
 )
 async def cmd_qq_global_login(event, match):
     await _start_qq_login(event, is_global=True)

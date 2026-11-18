@@ -2,6 +2,8 @@
 
 from html import escape as _esc
 
+from core.message.event import INTERACTION_CREATE, MESSAGE_TYPES
+
 from ..lib import data as D
 from ..lib import render
 from ..lib.api import AuthFailure
@@ -141,6 +143,7 @@ def _detail_buttons(count: int) -> list:
     r"^(?:查询|王者)战绩(?!\s*(?:报告|导出|日\s*报|周\s*报|月\s*报))\s*(.*)$",
     name="王者战绩",
     desc="查询王者战绩列表 / 单局详情",
+    event_types=MESSAGE_TYPES | {INTERACTION_CREATE},
 )
 async def cmd_battle(event, match):
     rt = _get_runtime()

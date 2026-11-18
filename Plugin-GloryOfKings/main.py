@@ -15,7 +15,7 @@ __plugin_meta__ = {
         "王者荣耀: 营地ID绑定(多账号) + 主页/战绩/单局详情/英雄战力/皮肤查询 "
         "+ 群战绩订阅推送"
     ),
-    "version": "1.1.4",
+    "version": "1.1.5",
     "github": "https://github.com/lengxi-root/elaina-plugins-lengxi",
 }
 

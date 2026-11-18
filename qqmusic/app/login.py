@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from core.message.event import Event
+from core.message.event import INTERACTION_CREATE, MESSAGE_TYPES, Event
 from core.plugin.decorators import handler
 
 from .common import _BTN, _LOGIN_BTN, _label, _reply, _reply_api_error
@@ -27,7 +27,7 @@ async def account_count(event, match):
     await _reply(event, '\n'.join(lines), buttons=_LOGIN_BTN)
 
 
-@handler(r'^音乐登录状态$', name='音乐登录状态', desc='查看QQ音乐登录及自动续期状态')
+@handler(r'^音乐登录状态$', name='音乐登录状态', desc='查看QQ音乐登录及自动续期状态', event_types=MESSAGE_TYPES | {INTERACTION_CREATE})
 async def login_status(event, match):
     try:
         status = await accounts.status(event)
@@ -71,7 +71,7 @@ async def login_status(event, match):
     await _reply(event, '\n'.join(lines), buttons=_BTN)
 
 
-@handler(r'^音乐扫码登录$', name='音乐扫码登录', desc='扫码登录QQ音乐', direct_only=True)
+@handler(r'^音乐扫码登录$', name='音乐扫码登录', desc='扫码登录QQ音乐', direct_only=True, event_types=MESSAGE_TYPES | {INTERACTION_CREATE})
 async def scan_login(event, match):
     uid = str(event.user_id)
     target = Event()

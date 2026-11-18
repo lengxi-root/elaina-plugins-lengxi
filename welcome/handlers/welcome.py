@@ -1069,10 +1069,12 @@ async def cmd_toggle_welcome(event, match):
     if list_mode == "blacklist":
         if await _is_disabled(gid):
             await _remove_disabled(gid)
-            await event.reply("✅ 已将本群从黑名单移除, 恢复入群欢迎")
+            await event.reply("✅ 本群已恢复入群欢迎")
         else:
             await _add_disabled(gid, event.user_id or "")
-            await event.reply("✅ 已将本群加入黑名单, 不再推送入群欢迎")
+            await event.reply(
+                '✅ 已关闭推送入群欢迎\n>如需打开请点击<qqbot-cmd-input text="切换欢迎" show="开启新人欢迎" />。'
+            )
     else:
         if await _is_whitelisted(gid):
             await _remove_whitelist(gid)
