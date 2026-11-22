@@ -112,19 +112,47 @@ class DeliveryQueue:
             }
         )
 
+    def _reconcile(self, batch: dict) -> bool:
+        """将批次目标对齐到当前配置，避免沿用已失效的目标。"""
+        current = {target.key: target.progress() for target in self.targets()}
+        existing = batch.setdefault("targets", {})
+        changed = False
+
+        for key in list(existing):
+            if key not in current:
+                existing.pop(key)
+                changed = True
+        for key, progress in current.items():
+            if key not in existing:
+                existing[key] = progress
+                changed = True
+
+        unassigned = not existing
+        if batch.get("unassigned") != unassigned:
+            batch["unassigned"] = unassigned
+            changed = True
+        return changed
+
+    def reconcile(self, state: dict) -> bool:
+        """将状态中所有待发批次与当前通知目标对齐。
+
+        返回值表示是否修改了状态；调用方可在需要时持久化修改后的状态。
+        """
+        changed = False
+        for batch in state["outbox"]:
+            changed = self._reconcile(batch) or changed
+        return changed
+
     async def flush(
         self, state: dict, persist: Callable[[], Awaitable[None]]
     ) -> DeliveryReport:
         sent = 0
         blocked: set[str] = set()
         for batch in list(state["outbox"]):
-            if batch.get("unassigned"):
-                targets = {target.key: target.progress() for target in self.targets()}
-                if not targets:
-                    continue
-                batch["targets"] = targets
-                batch["unassigned"] = False
+            if self._reconcile(batch):
                 await persist()
+            if batch.get("unassigned"):
+                continue
             if batch.get("image_pending"):
                 try:
                     if self.prepare_images is None:

@@ -21,7 +21,7 @@ __plugin_meta__ = {
     "name": "QQ 官方文档更新监控",
     "author": "ElainaBot",
     "description": "全量监控 QQ 官方文档，以页面链接与差异图片通知主人及订阅群，优先共享 PIL 渲染",
-    "version": "2.1.2",
+    "version": "2.1.3",
     "homepage": "https://bot.q.qq.com/wiki/",
     "license": "MIT",
 }
@@ -294,6 +294,8 @@ async def docs_monitor_status(event, match) -> None:
         return
     from .delivery import queue_report
 
+    if _monitor is not None:
+        _monitor.delivery.reconcile(state)
     status = (
         _monitor.status if _monitor is not None and _monitor.status else saved_status
     )
