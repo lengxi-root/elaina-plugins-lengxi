@@ -65,8 +65,7 @@ async def _reply_music_error(event):
     return await _reply(
         event,
         f'<@{event.user_id}> 内置账号获取音乐链接频繁，请稍后重试\n'
-        '>如果您有绿钻账号可以点击下方链接进行扫码登录Q音，不会影响你的正常听歌。\n\n'
-        '<qqbot-cmd-input text="音乐扫码登录" show="扫码登录Q音" />',
+        '>如果您有绿钻账号，可以通过下方「音乐扫码登录」按钮登录，不会影响您的正常听歌。',
         buttons=_LOGIN_BTN,
     )
 
